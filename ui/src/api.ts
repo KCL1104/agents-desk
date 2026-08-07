@@ -1,6 +1,18 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { BootStatus, SessionMeta, Tab } from './types';
+import type { BootStatus, Lifecycle, Outcome, SessionMeta, Tab, Task } from './types';
+
+/** What opening an attempt produced. Mirrors core.rs OpenedAttempt. */
+export interface OpenedAttempt {
+  attempt_id: string;
+  session_id: string;
+  branch: string;
+  worktree_path: string;
+  prompt: string;
+  /** False for a CLI whose argument conventions we have not measured: the
+      session is real, but the first message is yours to deliver. */
+  prompt_sent: boolean;
+}
 
 export const api = {
   bootStatus: () => invoke<BootStatus>('boot_status'),
@@ -28,6 +40,30 @@ export const api = {
   updateTab: (id: string, layout: string, slots: Array<string | null>) =>
     invoke<void>('update_tab', { id, layout, slots }),
 
+  listTasks: () => invoke<Task[]>('list_tasks'),
+  createTask: (title: string, prompt: string, repoPath: string, baseBranch: string) =>
+    invoke<string>('create_task', { title, prompt, repoPath, baseBranch }),
+  /** Move a card between columns, or reorder within one. Only a drag calls this. */
+  moveTask: (id: string, lifecycle: Lifecycle, position: number) =>
+    invoke<void>('move_task', { id, lifecycle, position }),
+  deleteTask: (id: string) => invoke<void>('delete_task', { id }),
+
+  /** The first message as it would be sent, for the dialog to show and edit. */
+  previewPrompt: (taskId: string, agent: string) =>
+    invoke<{ prompt: string; willSend: boolean }>('preview_prompt', { taskId, agent }),
+  openAttempt: (
+    taskId: string,
+    agent: string,
+    prompt: string | null,
+    cols: number,
+    rows: number,
+  ) => invoke<OpenedAttempt>('open_attempt', { taskId, agent, prompt, cols, rows }),
+  reopenAttempt: (attemptId: string, cols: number, rows: number) =>
+    invoke<string>('reopen_attempt', { attemptId, cols, rows }),
+  finishAttempt: (attemptId: string, outcome: Outcome) =>
+    invoke<void>('finish_attempt', { attemptId, outcome }),
+  attemptDiff: (attemptId: string) => invoke<string>('attempt_diff', { attemptId }),
+
   /** Replay buffer for a pane mounting after its PTY already started. */
   termSnapshot: (id: string) => invoke<{ data: string; seq: number }>('term_snapshot', { id }),
 
@@ -42,6 +78,7 @@ export interface Handlers {
   onSessions: (s: SessionMeta[]) => void;
   onExit: (id: string, status: string) => void;
   onTabs: (tabs: Tab[]) => void;
+  onTasks: (tasks: Task[]) => void;
   onBadge: (count: number) => void;
   onCoreReady: () => void;
   onCoreFailed: (error: string) => void;
@@ -50,6 +87,7 @@ export interface Handlers {
 export async function subscribe(h: Handlers): Promise<UnlistenFn> {
   const offs: UnlistenFn[] = [];
   offs.push(await listen<SessionMeta[]>('sessions:changed', (e) => h.onSessions(e.payload)));
+  offs.push(await listen<Task[]>('tasks:changed', (e) => h.onTasks(e.payload)));
   offs.push(
     await listen<{ id: string; status: string }>('term:exit', (e) =>
       h.onExit(e.payload.id, e.payload.status),

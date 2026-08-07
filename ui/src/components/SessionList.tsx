@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { needsYou, type SessionMeta } from '../types';
-import { elapsed, SECTION_LABEL, useSections, type Section } from '../sections';
+import { elapsed, SECTION_LABEL, STATUS_LABEL, useSections, type Section } from '../sections';
 import { DRAG_MIME, encodeDrag } from '../layout';
 
 interface Props {
@@ -15,16 +15,6 @@ interface Props {
 }
 
 const ORDER: Section[] = ['working', 'waiting', 'done'];
-
-const STATUS_LABEL: Record<SessionMeta['status'], string> = {
-  starting: '啟動中',
-  running: '執行中',
-  waiting_permission: '等你授權',
-  waiting_input: '等你回覆',
-  idle: '待命',
-  saved: '已關閉',
-  exited: '已結束',
-};
 
 export function SessionList({
   sessions,

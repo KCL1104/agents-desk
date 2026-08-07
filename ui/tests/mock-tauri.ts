@@ -21,6 +21,33 @@ export interface MockSession {
   activity: { tool: string; detail: string } | null;
   activity_since: number;
   completed: boolean;
+  attempt_id: string | null;
+}
+
+export interface MockAttempt {
+  id: string;
+  task_id: string;
+  seq: number;
+  agent: string;
+  worktree_path: string;
+  branch: string;
+  base_sha: string;
+  outcome: string | null;
+  frozen_diff: string | null;
+  created_at: number;
+  session_id: string | null;
+}
+
+export interface MockTask {
+  id: string;
+  title: string;
+  prompt: string;
+  repo_path: string;
+  base_branch: string;
+  lifecycle: string;
+  position: number;
+  created_at: number;
+  attempts: MockAttempt[];
 }
 
 export interface MockTab {
@@ -36,8 +63,13 @@ declare global {
     __mock: {
       sessions: MockSession[];
       tabs: MockTab[];
+      tasks: MockTask[];
+      /** Which repositories exist, and what branches they have. The core
+          refuses a card it cannot open a worktree for, so the mock must too. */
+      repos: Record<string, string[]>;
       persist(): void;
       pushSessions(): void;
+      pushTasks(): void;
       sorted(): MockSession[];
       calls: Array<{ cmd: string; args: unknown }>;
       listeners: Map<string, number[]>;
@@ -65,6 +97,8 @@ export function installMock(): void {
       sessionStorage.getItem('__mockTabs') ??
         '[{"id":"t1","name":"工作區","layout":"{\\"mode\\":\\"auto\\",\\"cols\\":\\"auto\\"}","slots":[],"position":0}]',
     ) as MockTab[],
+    tasks: JSON.parse(sessionStorage.getItem('__mockTasks') ?? '[]') as MockTask[],
+    repos: { '/Users/test/picked-repo': ['main', 'develop'] } as Record<string, string[]>,
     calls: [] as Array<{ cmd: string; args: unknown }>,
     listeners: new Map<string, number[]>(),
     cbSeq: 0,
@@ -99,12 +133,18 @@ export function installMock(): void {
     persist() {
       sessionStorage.setItem('__mockTabs', JSON.stringify(mock.tabs));
       sessionStorage.setItem('__mockSessions', JSON.stringify(mock.sessions));
+      sessionStorage.setItem('__mockTasks', JSON.stringify(mock.tasks));
     },
 
     /** Save, then broadcast — the order the real core writes and emits in. */
     pushSessions() {
       mock.persist();
       queueMicrotask(() => mock.emit('sessions:changed', mock.sorted()));
+    },
+
+    pushTasks() {
+      mock.persist();
+      queueMicrotask(() => mock.emit('tasks:changed', mock.tasks));
     },
 
     feed(id: string, data: string, seq: number) {
@@ -121,6 +161,18 @@ export function installMock(): void {
         s.activity_since = Date.now();
       }
       mock.emit('sessions:changed', mock.sorted());
+    },
+
+    /** The core renumbers both affected columns on every move. */
+    renumber() {
+      for (const life of ['backlog', 'running', 'review', 'done', 'abandoned']) {
+        mock.tasks
+          .filter((t) => t.lifecycle === life)
+          .sort((a, b) => a.position - b.position)
+          .forEach((t, i) => {
+            t.position = i;
+          });
+      }
     },
   };
 
@@ -143,6 +195,7 @@ export function installMock(): void {
       activity: null,
       activity_since: 0,
       completed: false,
+      attempt_id: null,
     };
   };
 
@@ -258,6 +311,161 @@ export function installMock(): void {
     term_snapshot: (args) => mock.snapshots.get(String(args.id)) ?? { data: '', seq: 0 },
     term_write: () => null,
     term_resize: () => null,
+
+    /* ---------------------------- board ---------------------------- */
+
+    list_tasks: () => mock.tasks,
+
+    create_task: (args) => {
+      const repo = String(args.repoPath);
+      const branch = String(args.baseBranch);
+      // The core checks both when the card is made, not when it is first run,
+      // so a card that could never produce an attempt cannot be created.
+      const branches = mock.repos[repo];
+      if (!branches) throw new Error(`${repo} is not a git repository`);
+      if (!branches.includes(branch)) throw new Error(`${repo} has no branch \`${branch}\``);
+
+      const id = `k${mock.tasks.length + 1}`;
+      mock.tasks.push({
+        id,
+        title: String(args.title),
+        prompt: String(args.prompt),
+        repo_path: repo,
+        base_branch: branch,
+        lifecycle: 'backlog',
+        position: mock.tasks.filter((t) => t.lifecycle === 'backlog').length,
+        created_at: now(),
+        attempts: [],
+      });
+      mock.pushTasks();
+      return id;
+    },
+
+    move_task: (args) => {
+      const t = mock.tasks.find((x) => x.id === args.id);
+      if (!t) throw new Error(`no such task: ${String(args.id)}`);
+      const to = String(args.lifecycle);
+      const at = Number(args.position);
+      const column = mock.tasks
+        .filter((x) => x.lifecycle === to && x.id !== t.id)
+        .sort((a, b) => a.position - b.position);
+      t.lifecycle = to;
+      // Insert at `at`, then renumber both columns from scratch — exactly what
+      // the core does, because a position only means anything relative to its
+      // neighbours.
+      column.splice(Math.max(0, Math.min(at, column.length)), 0, t);
+      column.forEach((x, i) => {
+        x.position = i;
+      });
+      mock.renumber();
+      mock.pushTasks();
+      return null;
+    },
+
+    delete_task: (args) => {
+      const t = mock.tasks.find((x) => x.id === args.id);
+      // Attempts still holding a worktree give it back with the card.
+      const ids = new Set((t?.attempts ?? []).map((a) => a.session_id));
+      mock.sessions = mock.sessions.filter((s) => !ids.has(s.id));
+      mock.tasks = mock.tasks.filter((x) => x.id !== args.id);
+      mock.renumber();
+      mock.pushSessions();
+      mock.pushTasks();
+      return null;
+    },
+
+    preview_prompt: (args) => {
+      const t = mock.tasks.find((x) => x.id === args.taskId);
+      const seq = (t?.attempts.length ?? 0) + 1;
+      return {
+        prompt:
+          `[AgentDesk 任務] ${t?.title ?? ''}\n\n` +
+          `你在一個專為這張卡開的 git worktree：分支 agentdesk/card-${seq}，` +
+          `從 ${t?.base_branch ?? 'main'} @ abcd1234 開出。\n\n---\n\n${t?.prompt ?? ''}\n`,
+        // Only Claude Code's argument conventions have been measured.
+        willSend: String(args.agent) === 'claude',
+      };
+    },
+
+    open_attempt: (args) => {
+      const t = mock.tasks.find((x) => x.id === args.taskId);
+      if (!t) throw new Error(`no such task: ${String(args.taskId)}`);
+      const agent = String(args.agent ?? 'claude');
+      const seq = t.attempts.length + 1;
+      const attemptId = `${t.id}-a${seq}`;
+      const session = makeSession(`/Users/test/worktrees/card-${seq}`, agent);
+      session.title = `${t.title} #${seq}`;
+      session.attempt_id = attemptId;
+      // A brand-new worktree always opens on the folder-trust prompt, and no
+      // hook reports it — the core sets this directly.
+      session.status = agent === 'claude' ? 'awaiting_trust' : 'starting';
+      mock.sessions.push(session);
+      mock.snapshots.set(session.id, { data: '', seq: 0 });
+
+      t.attempts.push({
+        id: attemptId,
+        task_id: t.id,
+        seq,
+        agent,
+        worktree_path: session.cwd,
+        branch: `agentdesk/card-${seq}`,
+        base_sha: 'abcd1234deadbeef',
+        outcome: null,
+        frozen_diff: null,
+        created_at: now(),
+        session_id: session.id,
+      });
+      t.lifecycle = 'running';
+      mock.renumber();
+      mock.pushSessions();
+      mock.pushTasks();
+      return {
+        attempt_id: attemptId,
+        session_id: session.id,
+        branch: `agentdesk/card-${seq}`,
+        worktree_path: session.cwd,
+        prompt: String(args.prompt ?? ''),
+        prompt_sent: agent === 'claude',
+      };
+    },
+
+    reopen_attempt: (args) => {
+      const attempt = mock.tasks
+        .flatMap((t) => t.attempts)
+        .find((a) => a.id === args.attemptId);
+      if (!attempt) throw new Error(`no such attempt: ${String(args.attemptId)}`);
+      if (attempt.outcome !== null) throw new Error('attempt is finished');
+      const s = mock.sessions.find((x) => x.id === attempt.session_id);
+      if (s) {
+        s.live = true;
+        s.status = 'starting';
+      }
+      mock.pushSessions();
+      mock.pushTasks();
+      return attempt.session_id;
+    },
+
+    finish_attempt: (args) => {
+      const attempt = mock.tasks
+        .flatMap((t) => t.attempts)
+        .find((a) => a.id === args.attemptId);
+      if (!attempt) throw new Error(`no such attempt: ${String(args.attemptId)}`);
+      attempt.outcome = String(args.outcome);
+      attempt.frozen_diff = 'diff --git a/app.txt b/app.txt\n+fixed\n';
+      // The worktree goes, and the session with it.
+      mock.sessions = mock.sessions.filter((s) => s.id !== attempt.session_id);
+      attempt.session_id = null;
+      mock.pushSessions();
+      mock.pushTasks();
+      return null;
+    },
+
+    attempt_diff: (args) => {
+      const attempt = mock.tasks
+        .flatMap((t) => t.attempts)
+        .find((a) => a.id === args.attemptId);
+      return attempt?.frozen_diff ?? 'diff --git a/app.txt b/app.txt\n+work in progress\n';
+    },
 
     'plugin:event|listen': (args) => {
       const event = String(args.event);

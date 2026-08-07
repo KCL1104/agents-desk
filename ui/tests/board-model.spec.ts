@@ -1,0 +1,182 @@
+import { test, expect } from '@playwright/test';
+import {
+  columnOf,
+  currentAttempt,
+  dropIndex,
+  liveLabel,
+  liveStateOf,
+  liveTone,
+} from '../src/board';
+import type { Attempt, Lifecycle, SessionMeta, Status, Task } from '../src/types';
+
+function attempt(over: Partial<Attempt> & { id: string; seq: number }): Attempt {
+  return {
+    task_id: 'k1',
+    agent: 'claude',
+    worktree_path: `/wt/${over.id}`,
+    branch: `agentdesk/card-${over.seq}`,
+    base_sha: 'abcd1234',
+    outcome: null,
+    frozen_diff: null,
+    created_at: 1000 + over.seq,
+    session_id: null,
+    ...over,
+  };
+}
+
+function task(over: Partial<Task> = {}): Task {
+  return {
+    id: 'k1',
+    title: '修好登入',
+    prompt: 'p',
+    repo_path: '/repo',
+    base_branch: 'main',
+    lifecycle: 'running',
+    position: 0,
+    created_at: 1000,
+    attempts: [],
+    ...over,
+  };
+}
+
+function session(over: Partial<SessionMeta> & { id: string }): SessionMeta {
+  return {
+    cwd: '/wt/a1',
+    title: 't',
+    agent: 'claude',
+    status: 'running' as Status,
+    created_at: 1000,
+    last_active_at: 1000,
+    live: true,
+    reports_status: true,
+    activity: null,
+    activity_since: 0,
+    completed: false,
+    attempt_id: null,
+    ...over,
+  };
+}
+
+test.describe('which attempt a card is about', () => {
+  test('the newest open one, because opening another is how you switch agent', () => {
+    const t = task({
+      attempts: [
+        attempt({ id: 'a1', seq: 1, outcome: 'superseded' }),
+        attempt({ id: 'a2', seq: 2 }),
+      ],
+    });
+    expect(currentAttempt(t)?.id).toBe('a2');
+  });
+
+  test('order comes from the attempt number, not from the array', () => {
+    const t = task({
+      attempts: [attempt({ id: 'a2', seq: 2 }), attempt({ id: 'a1', seq: 1 })],
+    });
+    expect(currentAttempt(t)?.id).toBe('a2');
+  });
+
+  /// Once everything is finished the card still has to show something, or a
+  /// finished card would look as though it had never been started.
+  test('falls back to the newest finished one when none are open', () => {
+    const t = task({
+      attempts: [
+        attempt({ id: 'a1', seq: 1, outcome: 'discarded' }),
+        attempt({ id: 'a2', seq: 2, outcome: 'merged' }),
+      ],
+    });
+    expect(currentAttempt(t)?.id).toBe('a2');
+  });
+
+  test('a card with no attempts has none', () => {
+    expect(currentAttempt(task())).toBeNull();
+  });
+});
+
+test.describe('the second axis', () => {
+  test('a live session reports its own status', () => {
+    const t = task({ attempts: [attempt({ id: 'a1', seq: 1, session_id: 's1' })] });
+    const live = liveStateOf(t, [session({ id: 's1', status: 'waiting_permission' })]);
+    expect(live.kind).toBe('session');
+    expect(liveLabel(live)).toBe('等你授權');
+    expect(liveTone(live)).toBe('waiting_permission');
+  });
+
+  /**
+   * The state every attempt is in after a restart: the app kills its PTYs on
+   * the way out, so a card left in 進行中 has no agent behind it. Showing it
+   * as running would be a lie, and it is the common case rather than an edge
+   * one.
+   */
+  test('an attempt whose session is not live reads as stopped, not running', () => {
+    const t = task({ attempts: [attempt({ id: 'a1', seq: 1, session_id: 's1' })] });
+    const live = liveStateOf(t, [session({ id: 's1', live: false, status: 'saved' })]);
+    expect(live.kind).toBe('stopped');
+    expect(liveLabel(live)).toBe('未執行');
+  });
+
+  test('an attempt whose session row is gone is still resumable', () => {
+    const t = task({ attempts: [attempt({ id: 'a1', seq: 1, session_id: null })] });
+    expect(liveStateOf(t, []).kind).toBe('stopped');
+  });
+
+  test('a finished attempt names how it ended', () => {
+    const t = task({ attempts: [attempt({ id: 'a1', seq: 1, outcome: 'merged' })] });
+    const live = liveStateOf(t, []);
+    expect(live.kind).toBe('finished');
+    expect(liveLabel(live)).toBe('已合併');
+  });
+
+  test('a card nobody has started says so', () => {
+    expect(liveLabel(liveStateOf(task(), []))).toBe('尚未開始');
+  });
+
+  /// A card that is merely stopped must not look like a warning, or the
+  /// warning colour stops meaning anything.
+  test('only a session that is really blocked takes the warning tone', () => {
+    const stopped = liveStateOf(
+      task({ attempts: [attempt({ id: 'a1', seq: 1, session_id: null })] }),
+      [],
+    );
+    expect(liveTone(stopped)).toBe('saved');
+  });
+});
+
+test.describe('dropping a card', () => {
+  const cards = [
+    task({ id: 'a', position: 0 }),
+    task({ id: 'b', position: 1 }),
+    task({ id: 'c', position: 2 }),
+  ];
+
+  test('onto a card inserts before it', () => {
+    expect(dropIndex(cards, 'x', 'b')).toBe(1);
+  });
+
+  test('onto empty space appends', () => {
+    expect(dropIndex(cards, 'x', null)).toBe(3);
+  });
+
+  /**
+   * Dragging within a column: the card being moved is not in the running
+   * order any more, so counting it would make every move past itself land one
+   * place short.
+   */
+  test('the card being dragged does not count towards its own destination', () => {
+    expect(dropIndex(cards, 'a', 'c')).toBe(1);
+    expect(dropIndex(cards, 'a', null)).toBe(2);
+  });
+
+  test('a card dropped on nothing recognisable goes to the end', () => {
+    expect(dropIndex(cards, 'x', 'nonexistent')).toBe(3);
+  });
+});
+
+test('a column is ordered by position, not by arrival', () => {
+  const tasks = [
+    task({ id: 'late', lifecycle: 'running', position: 2 }),
+    task({ id: 'first', lifecycle: 'running', position: 0 }),
+    task({ id: 'elsewhere', lifecycle: 'done' as Lifecycle, position: 0 }),
+    task({ id: 'mid', lifecycle: 'running', position: 1 }),
+  ];
+  expect(columnOf(tasks, 'running').map((t) => t.id)).toEqual(['first', 'mid', 'late']);
+});

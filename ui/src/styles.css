@@ -428,3 +428,97 @@ textarea { resize: vertical; }
 .pane:hover .pane-zoom { opacity: 1; }
 .pane-zoom:hover { color: var(--fg); background: transparent; }
 .pane.zoomed { border-color: var(--accent); }
+
+/* ---------- board ---------- */
+
+.board { flex: 1; overflow: auto; display: flex; flex-direction: column; padding: 14px 16px 18px; gap: 16px; }
+
+.board-cols {
+  display: grid; gap: 12px; align-items: start;
+  grid-template-columns: repeat(4, minmax(210px, 1fr));
+  min-height: 0;
+}
+
+.board-col {
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px; min-height: 120px;
+}
+/* Only while something is being dragged over it, so the board is calm at rest. */
+.board-col.drop-over { border-color: var(--accent); background: #16192099; }
+
+.board-col-head {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 9px; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em; color: var(--fg-dim);
+}
+.board-col-head .icon { margin-left: auto; padding: 0 6px; }
+
+.board-cards { display: flex; flex-direction: column; gap: 8px; }
+.board-empty { margin: 4px 0 0; text-align: center; }
+
+.board-card {
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--bg-3); border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: 8px; padding: 9px 11px;
+  cursor: grab;
+}
+.board-card.enterable { cursor: pointer; }
+.board-card.dragging { opacity: 0.4; }
+/* The card the drop would land in front of. */
+.board-card.insert-before { box-shadow: 0 -2px 0 var(--accent); }
+
+/* The whole point of the second axis: a card in 進行中 that is blocked on you
+   has to be findable from across the room, without opening anything. */
+.board-card.needs-you {
+  border-left-color: var(--warn);
+  background: #1e1a12;
+  animation: board-breathe 2.4s ease-in-out infinite;
+}
+@keyframes board-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 175, 104, 0); }
+  50% { box-shadow: 0 0 0 2px rgba(224, 175, 104, 0.28); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-card.needs-you { animation: none; box-shadow: 0 0 0 2px rgba(224, 175, 104, 0.28); }
+}
+
+.board-card[data-live='session'] { border-left-color: var(--accent); }
+.board-card[data-live='stopped'] { border-left-color: #4a4a52; }
+.board-card[data-live='finished'] { opacity: 0.62; }
+
+.board-card-head { display: flex; align-items: center; gap: 7px; }
+.board-card-title {
+  flex: 1; font-weight: 600; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.board-card-state { font-size: 11px; color: var(--fg-dim); }
+.board-card.needs-you .board-card-state { color: var(--warn); font-weight: 600; }
+.board-card-activity { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.board-card-foot { display: flex; align-items: center; gap: 6px; padding-top: 5px; }
+.board-card-foot button { padding: 3px 9px; font-size: 11px; }
+
+/* Outside the columns on purpose: no worktree, no branch, no lifecycle. */
+.board-adhoc {
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px;
+}
+.adhoc-row { display: flex; flex-wrap: wrap; gap: 7px; }
+.adhoc-chip {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 10px; font-size: 12px;
+}
+.adhoc-chip.needs-you { border-color: var(--warn); background: #1e1a12; }
+.adhoc-title { font-weight: 600; }
+
+.dot.awaiting_trust { background: var(--warn); }
+.dot.waiting_input { background: var(--warn); }
+.dot.exited, .dot.saved { background: #4a4a52; }
+
+.modal.wide { width: 720px; }
+.dialog-error { color: var(--err); font-size: 12px; margin: 10px 0 0; }
+.dialog-warn {
+  color: var(--warn); margin: 8px 0 0; line-height: 1.6;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 7px;
+}

@@ -10,6 +10,22 @@ export const SECTION_LABEL: Record<Section, string> = {
 };
 
 /**
+ * What each status is called on screen. One copy, because the sidebar, the
+ * overview and the board all name the same thing and a status that reads
+ * differently depending on where you are looking is a bug in itself.
+ */
+export const STATUS_LABEL: Record<Status, string> = {
+  starting: '啟動中',
+  awaiting_trust: '等你確認資料夾',
+  running: '執行中',
+  waiting_permission: '等你授權',
+  waiting_input: '等你回覆',
+  idle: '待命',
+  saved: '已關閉',
+  exited: '已結束',
+};
+
+/**
  * How long a session must stay calm before it is allowed to leave 開發中.
  *
  * `Stop` fires at the end of every turn, so a session you are actively
@@ -25,6 +41,9 @@ export function sectionOf(s: SessionMeta): Section {
     case 'starting':
     case 'running':
       return 'working';
+    // A new worktree's folder-trust prompt is a human being waited on, the
+    // same as the other two, so it files the same way.
+    case 'awaiting_trust':
     case 'waiting_permission':
     case 'waiting_input':
     case 'idle':
@@ -38,11 +57,13 @@ export function sectionOf(s: SessionMeta): Section {
 /**
  * A move that must not wait.
  *
- * Being blocked on a permission decision is the one state where a delay costs
- * the user real time, so it overrides the settle window.
+ * Being blocked on a permission decision costs the user real time, so it
+ * overrides the settle window. So does the folder-trust prompt: the agent has
+ * not started at all until it is answered, which is the most expensive kind
+ * of waiting there is.
  */
 function isUrgent(status: Status): boolean {
-  return status === 'waiting_permission';
+  return status === 'waiting_permission' || status === 'awaiting_trust';
 }
 
 /**

@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type * as React from 'react';
 import { api, subscribe } from './api';
-import type { BootStatus, SessionMeta, Tab } from './types';
+import type { BootStatus, Lifecycle, SessionMeta, Tab, Task } from './types';
 import { BootGate } from './components/BootGate';
 import { SessionList } from './components/SessionList';
 import { EdgeDrop, EmptyGrid, Pane } from './components/Pane';
 import { Splitter } from './components/Splitter';
 import { Overview } from './components/Overview';
+import { Board } from './components/Board';
 import { TabStrip } from './components/TabStrip';
 import { NewSessionDialog } from './components/NewSessionDialog';
+import { NewTaskDialog, rememberRepo } from './components/NewTaskDialog';
+import { StartAttemptDialog } from './components/StartAttemptDialog';
 import {
   addMember,
   autoCols,
@@ -45,7 +48,7 @@ import { useSize } from './useSize';
 const INITIAL_COLS = 120;
 const INITIAL_ROWS = 32;
 
-type View = 'terminal' | 'overview';
+type View = 'terminal' | 'board' | 'overview';
 const VIEW_KEY = 'agentdesk.view';
 const TAB_KEY = 'agentdesk.activeTab';
 
@@ -87,6 +90,13 @@ export default function App() {
   const [showNew, setShowNew] = useState(false);
   const [showEnv, setShowEnv] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [showNewTask, setShowNewTask] = useState(false);
+  /** The card whose start dialog is open. */
+  const [starting, setStarting] = useState<Task | null>(null);
+  /** Kept beside the dialog rather than in the toast: a rejected repository
+   *  is something to correct in the form, not to be told about elsewhere. */
+  const [dialogError, setDialogError] = useState<string | null>(null);
 
   const [gridRef, size] = useSize<HTMLDivElement>();
 
@@ -104,6 +114,7 @@ export default function App() {
           setLoaded(true);
         },
         onTabs: setTabs,
+        onTasks: setTasks,
         onExit: () => {},
         onBadge: () => {},
         onCoreReady: () => void api.bootStatus().then(setBoot),
@@ -114,12 +125,14 @@ export default function App() {
       // both lists as it starts, which is before this window can be
       // listening — without the read the app would sit empty until something
       // happened to change.
-      const [initialTabs, initialSessions] = await Promise.all([
+      const [initialTabs, initialSessions, initialTasks] = await Promise.all([
         api.listTabs().catch(() => []),
         api.listSessions().catch(() => []),
+        api.listTasks().catch(() => []),
       ]);
       setTabs((cur) => (cur.length ? cur : initialTabs));
       setSessions((cur) => (cur.length ? cur : initialSessions));
+      setTasks((cur) => (cur.length ? cur : initialTasks));
       setLoaded(true);
     })();
     return () => dispose?.();
@@ -300,7 +313,7 @@ export default function App() {
     [commit, members],
   );
 
-  /** From the overview: focus a session and go look at its terminal. */
+  /** From the overview or the board: focus a session and go look at it. */
   const onOpen = useCallback(
     async (id: string) => {
       await onSelect(id);
@@ -308,6 +321,73 @@ export default function App() {
     },
     [onSelect],
   );
+
+  /* ------------------------------ board ----------------------------- */
+
+  const onCreateTask = useCallback(
+    async (title: string, prompt: string, repoPath: string, baseBranch: string) => {
+      setDialogError(null);
+      try {
+        await api.createTask(title, prompt, repoPath, baseBranch);
+        rememberRepo(repoPath);
+        setShowNewTask(false);
+      } catch (e) {
+        // The core refuses a repository that is not one, or a base branch
+        // that does not exist. Both are things to fix in this form.
+        setDialogError(String(e));
+      }
+    },
+    [],
+  );
+
+  /**
+   * Start an attempt, then go straight into its terminal.
+   *
+   * Landing in the TUI is the point: the first thing a new worktree does is
+   * ask whether you trust the folder, and the answer is one keystroke away
+   * only if you are already looking at it.
+   */
+  const onStartAttempt = useCallback(
+    async (task: Task, agent: string, prompt: string) => {
+      setDialogError(null);
+      try {
+        const opened = await api.openAttempt(
+          task.id,
+          agent,
+          prompt,
+          INITIAL_COLS,
+          INITIAL_ROWS,
+        );
+        setStarting(null);
+        await onOpen(opened.session_id);
+      } catch (e) {
+        setDialogError(String(e));
+      }
+    },
+    [onOpen],
+  );
+
+  /** Put a terminal back on an attempt — the state every attempt is in after
+   *  a restart, so this has to land you in the TUI just like starting does. */
+  const onResumeAttempt = useCallback(
+    async (attemptId: string) => {
+      try {
+        const sessionId = await api.reopenAttempt(attemptId, INITIAL_COLS, INITIAL_ROWS);
+        await onOpen(sessionId);
+      } catch (e) {
+        setError(`繼續 attempt 失敗：${String(e)}`);
+      }
+    },
+    [onOpen],
+  );
+
+  const onMoveTask = useCallback((id: string, lifecycle: Lifecycle, position: number) => {
+    void api.moveTask(id, lifecycle, position).catch((e) => setError(`搬移卡片失敗：${String(e)}`));
+  }, []);
+
+  const onDeleteTask = useCallback((id: string) => {
+    void api.deleteTask(id).catch((e) => setError(`刪除卡片失敗：${String(e)}`));
+  }, []);
 
   if (!boot?.ready) {
     return <BootGate boot={boot} onRetry={() => void api.bootStatus().then(setBoot)} />;
@@ -366,7 +446,9 @@ export default function App() {
               <span className="muted mono">{active.cwd}</span>
             </>
           ) : (
-            <strong>{view === 'overview' ? '總覽' : '尚無 session'}</strong>
+            <strong>
+              {view === 'overview' ? '總覽' : view === 'board' ? '看板' : '尚無 session'}
+            </strong>
           )}
           <span className="spacer" />
           {view === 'terminal' && <ColumnPicker layout={layout} onPick={onPickCols} />}
@@ -378,6 +460,15 @@ export default function App() {
               onClick={() => setView('terminal')}
             >
               終端機
+            </button>
+            <button
+              role="tab"
+              aria-selected={view === 'board'}
+              className={view === 'board' ? 'active' : ''}
+              data-testid="view-board"
+              onClick={() => setView('board')}
+            >
+              看板
             </button>
             <button
               role="tab"
@@ -482,6 +573,25 @@ export default function App() {
           </div>
         </div>
 
+        {view === 'board' && (
+          <Board
+            tasks={tasks}
+            sessions={sessions}
+            onOpenSession={onOpen}
+            onMove={onMoveTask}
+            onStart={(task) => {
+              setDialogError(null);
+              setStarting(task);
+            }}
+            onResume={onResumeAttempt}
+            onNewTask={() => {
+              setDialogError(null);
+              setShowNewTask(true);
+            }}
+            onDeleteTask={onDeleteTask}
+          />
+        )}
+
         {view === 'overview' && (
           <Overview
             sessions={sessions}
@@ -500,6 +610,21 @@ export default function App() {
       )}
 
       {showNew && <NewSessionDialog onCancel={() => setShowNew(false)} onCreate={onCreate} />}
+      {showNewTask && (
+        <NewTaskDialog
+          error={dialogError}
+          onCancel={() => setShowNewTask(false)}
+          onCreate={onCreateTask}
+        />
+      )}
+      {starting && (
+        <StartAttemptDialog
+          task={starting}
+          error={dialogError}
+          onCancel={() => setStarting(null)}
+          onStart={(agent, prompt) => void onStartAttempt(starting, agent, prompt)}
+        />
+      )}
       {showEnv && <EnvPanel boot={boot} onClose={() => setShowEnv(false)} />}
     </div>
   );

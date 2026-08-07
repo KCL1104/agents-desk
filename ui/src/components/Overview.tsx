@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { SessionMeta } from '../types';
-import { elapsed, SECTION_LABEL, sectionOf, type Section } from '../sections';
+import { elapsed, SECTION_LABEL, sectionOf, STATUS_LABEL, type Section } from '../sections';
 
 interface Props {
   sessions: SessionMeta[];
@@ -10,16 +10,6 @@ interface Props {
 }
 
 const ORDER: Section[] = ['working', 'waiting', 'done'];
-
-const STATUS_LABEL: Record<SessionMeta['status'], string> = {
-  starting: '啟動中',
-  running: '執行中',
-  waiting_permission: '等你授權',
-  waiting_input: '等你回覆',
-  idle: '待命',
-  saved: '已關閉',
-  exited: '已結束',
-};
 
 /**
  * The oversight view: every session at once, as text.

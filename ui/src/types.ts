@@ -3,6 +3,10 @@
 export type Status =
   | 'saved'
   | 'starting'
+  /** Sitting on Claude Code's folder-trust prompt, which every new worktree
+      opens on. No hook reports this — nothing runs until it is answered — so
+      the core sets it directly. See core.rs. */
+  | 'awaiting_trust'
   | 'running'
   /** Blocked on a permission decision — cannot continue without you. */
   | 'waiting_permission'
@@ -13,10 +17,52 @@ export type Status =
   | 'exited';
 
 /** The states where an agent is actually blocked on a human. */
-export const NEEDS_YOU: readonly Status[] = ['waiting_permission', 'waiting_input'];
+export const NEEDS_YOU: readonly Status[] = [
+  'waiting_permission',
+  'waiting_input',
+  'awaiting_trust',
+];
 
 export function needsYou(s: Status): boolean {
   return NEEDS_YOU.includes(s);
+}
+
+/** Where a card sits on the board. Moved by hand, only ever by hand. */
+export type Lifecycle = 'backlog' | 'running' | 'review' | 'done' | 'abandoned';
+
+/** How an attempt ended. Setting one removes its worktree. */
+export type Outcome = 'merged' | 'discarded' | 'superseded';
+
+/** Mirrors core.rs AttemptView. */
+export interface Attempt {
+  id: string;
+  task_id: string;
+  /** Which try this is, for `<slug>-<n>`. */
+  seq: number;
+  agent: string;
+  worktree_path: string;
+  branch: string;
+  base_sha: string;
+  /** `null` while it is still going. */
+  outcome: Outcome | null;
+  /** The diff, captured before the worktree was removed. */
+  frozen_diff: string | null;
+  created_at: number;
+  /** `null` once the attempt's session has been archived out from under it. */
+  session_id: string | null;
+}
+
+/** Mirrors core.rs TaskView. */
+export interface Task {
+  id: string;
+  title: string;
+  prompt: string;
+  repo_path: string;
+  base_branch: string;
+  lifecycle: Lifecycle;
+  position: number;
+  created_at: number;
+  attempts: Attempt[];
 }
 
 export interface SessionMeta {
@@ -39,6 +85,9 @@ export interface SessionMeta {
   /** True once the status plugin has reported, so the UI can tell "idle" from
       "this CLI does not report status". */
   reports_status: boolean;
+  /** The attempt this session runs, or `null` for an ad-hoc session that
+      lives outside the board. */
+  attempt_id: string | null;
 }
 
 export interface BootStatus {
