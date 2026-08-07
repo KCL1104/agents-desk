@@ -213,16 +213,18 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Everything below is optional. Unset secrets arrive as empty strings and
-          # Tauri simply skips signing, producing unsigned (but working) installers.
-          # See the release section of README.md for what to add when you want signed
-          # builds.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # No signing env here on purpose. The bundler treats APPLE_CERTIFICATE as
+          # "sign this" whenever the variable EXISTS, empty value included — it does
+          # not test for a non-empty one. Wiring the secrets in unconditionally
+          # therefore broke both macOS jobs on a repo that has none of them:
+          #   security: SecKeychainItemImport: One or more parameters ... not valid
+          #   failed to bundle project: failed codesign application
+          # Omitting them is what produces a working unsigned build.
+          #
+          # To sign, add the secrets to the repository and put them back here:
+          #   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+          #   APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+          # Add them only once they hold real values, for the reason above.
         with:
           # Empty on workflow_dispatch, which makes the action build without
           # touching any release.
@@ -236,7 +238,13 @@ jobs:
           # Always keep a downloadable copy on the run itself, which is the only
           # output when the workflow is dispatched manually.
           uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: agentdesk-${{ matrix.name }}
+          # The action uploads once PER BUNDLE, naming each from this pattern, so a
+          # constant name collides the moment a platform produces more than one:
+          # Linux alone emits deb + rpm + AppImage, and the second upload came back
+          # "(409) Conflict: an artifact with this name already exists".
+          # [platform]-[arch]-[bundle] is unique both within a job and across the
+          # matrix — it is the action's own default, kept here with a prefix.
+          workflowArtifactNamePattern: agentdesk-[platform]-[arch]-[bundle]
           retryAttempts: 2
 
   # ---------------------------------------------------------------------------

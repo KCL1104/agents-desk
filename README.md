@@ -215,11 +215,17 @@ platforms are unsigned. The first launch will be blocked:
 - **Windows** — the blue SmartScreen dialog: "More info" → "Run anyway"
 - **Linux** — nothing blocks you
 
-To sign properly, the workflow's environment is already wired up; adding the
-matching secrets to the repository is enough: `APPLE_CERTIFICATE`,
-`APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
-`APPLE_PASSWORD`, `APPLE_TEAM_ID`. When they are unset they arrive as empty
-strings, Tauri skips signing, and the build does not fail because of it.
+To sign, add `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
+`APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID` to the
+repository secrets, then pass them through as `env` on the build step in
+`release.yml` — there is a comment there marking the spot.
+
+They are deliberately **not** wired in ahead of time. The bundler decides to sign
+whenever `APPLE_CERTIFICATE` *exists*, empty value included; it never checks for a
+non-empty one. Referencing a secret this repository does not have therefore sets
+it to `""`, and both macOS jobs die with `failed codesign application: failed to
+import keychain certificate`. Add the variables in the same change as the real
+secrets, not before.
 
 ### Icons
 

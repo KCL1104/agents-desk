@@ -176,10 +176,15 @@ repo 裡沒有任何簽章金鑰，所以三個平台的產物都是未簽章的
 - **Windows** —— SmartScreen 藍色視窗，「更多資訊」→「仍要執行」
 - **Linux** —— 不擋
 
-要正式簽章的話 workflow 的 env 已經接好了，把對應的 secrets 加進 repo 就會生效：
-`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、
-`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`。沒設的時候它們是空字串，Tauri 會
-直接跳過簽章，build 不會因此失敗。
+要正式簽章的話，把 `APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、
+`APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID` 加進 repo
+secrets，然後在 `release.yml` 的 build step 上把它們接成 `env` —— 那裡有註解標了位置。
+
+**刻意不預先接好。** bundler 判斷「要不要簽」看的是 `APPLE_CERTIFICATE`
+**存不存在**，空字串也算存在，它不會去檢查有沒有值。所以在一個沒有這些 secrets 的
+repo 裡去引用它們，等於把變數設成 `""`，兩個 macOS job 就會死在
+`failed codesign application: failed to import keychain certificate`。
+要加就跟真正的 secrets 同一次加，不要提前。
 
 ### icon
 
