@@ -112,18 +112,18 @@ CLI 會停在歡迎畫面、永遠不會開始一個 session，於是測試會�
 
 三個平台的安裝檔由 GitHub Actions 產生（`.github/workflows/release.yml`）。
 
-版本號的真相在 `src-tauri/tauri.conf.json` —— bundler 用它命名所有產物，跟 git tag
-無關。所以 workflow 第一件事就是比對 tag 與它一不一致，不一致直接失敗，免得
-`v0.2.0` 的 release 裡掛著一堆 `AgentDesk_0.1.0_*`。
-
-```bash
-# src-tauri/tauri.conf.json、src-tauri/Cargo.toml、package.json 的 version 一起改
-git tag v0.1.0
-git push origin v0.1.0
-```
+發版是一個按鈕加一個決定：**Actions → Release → Run workflow → 選 `bump`** ——
+`patch` 修 bug、`minor` 加功能、`major` 破壞相容。run 會自己算下一版、寫進
+`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`、`package.json` 四個檔案、commit 回
+`main`，再從那個 commit 建四平台並發佈。沒有人手動維護版本號，所以它每一版
+**必然**會動。
 
 接著：建 draft release → 四個平台平行 build → **全綠才把 release 轉正**。
-有平台掛掉就停在 draft，不會出半套。
+有平台掛掉就停在 draft，不會出半套。版本號 guard 仍守著手動路徑：推 tag（或
+dispatch 填明確的 `tag`）時，tag 跟 `tauri.conf.json` 不一致就直接失敗，免得
+`v0.2.0` 的 release 裡掛著一堆 `AgentDesk_0.1.0_*`。明確 `tag` 也是失敗重跑的
+路徑 —— bump commit 已經落地但發佈失敗時，用已經燒掉的那個 tag 重發，
+不要再 bump 一次。
 
 ### nightly build
 
@@ -141,11 +141,10 @@ release API 上的位置。有平台失敗的話，那份 draft 會被丟掉、�
 這也是為什麼 `ci.yml` 不再打包 —— 它以前每次 push 到 main 都建三個平台，然後
 整包丟掉。
 
-另外兩種情況用 Actions 頁面的手動 dispatch。填 `tag` 輸入（例如 `v0.1.0`）
-就是直接發那個版本 —— 完全不經過本機 git，tag 由 GitHub 在 release 發佈時自己建，
-跟 nightly 的 tag 同一套機制。留空則只 build：產物掛在該次 run 的 artifacts 底下，
-不碰任何 release。其實每次 run 都會掛，所以 tag 與 nightly 的 build 也都能直接
-從 run 裡下載。
+沒有任何發版路徑會用 git 推 tag：tag 一律由 GitHub 在 release 發佈時建在
+build 的那個 commit 上，跟 nightly 的 tag 同一套機制。兩個輸入都留空則只 build：
+產物掛在該次 run 的 artifacts 底下，不碰任何 release。其實每次 run 都會掛，
+所以正式版與 nightly 的 build 也都能直接從 run 裡下載。
 
 | 平台 | runner | 產物 |
 | --- | --- | --- |

@@ -141,20 +141,22 @@ the skip says why on stderr. `AGENTDESK_TEST_ASSUME_CLAUDE=1` runs them anyway.
 Installers for all three platforms are produced by GitHub Actions
 (`.github/workflows/release.yml`).
 
-The version of record lives in `src-tauri/tauri.conf.json` — the bundler names
-every artifact from it, with no reference to the git tag. So the first thing the
-workflow does is check the tag against it and fail outright if they disagree,
-rather than shipping a `v0.2.0` release full of `AgentDesk_0.1.0_*`.
-
-```bash
-# bump version in src-tauri/tauri.conf.json, src-tauri/Cargo.toml and package.json together
-git tag v0.1.0
-git push origin v0.1.0
-```
+Cutting a release is one click and one decision: **Actions → Release → Run
+workflow → pick a `bump`** — `patch` for fixes, `minor` for features, `major`
+for breaking changes. The run computes the next version, writes it into
+`tauri.conf.json`, `Cargo.toml`, `Cargo.lock` and `package.json`, commits that
+to `main`, builds all four platforms from that commit, and publishes. Nobody
+maintains the version number by hand, so it moves on every release by
+construction.
 
 Then: create a draft release → build all four platforms in parallel → **publish
 only when every one is green**. If a platform fails it stays a draft, so nothing
-half-built ships.
+half-built ships. The version guard still protects the manual paths: pushing a
+tag (or dispatching with the explicit `tag` input) fails outright unless the tag
+matches `tauri.conf.json`, rather than shipping a `v0.2.0` release full of
+`AgentDesk_0.1.0_*` files. The explicit `tag` input is also the recovery path —
+a release that failed after its bump commit landed is re-cut with the tag it
+already burned, not bumped a second time.
 
 ### Nightly builds
 
@@ -174,13 +176,11 @@ newest commit's binaries are wanted — whereas a tag build is never cancelled.
 This is why `ci.yml` does not build installers: it used to bundle three
 platforms on every push to main and throw them away.
 
-Manual dispatch from the Actions tab covers the other two cases. Dispatched
-with the `tag` input (e.g. `v0.1.0`), it cuts that versioned release without any
-local git — GitHub creates the tag itself when the release publishes, the same
-way the nightly's tag is made. Dispatched with the input empty, it only builds:
-the artifacts hang off the run and no release is touched. Every run attaches
-artifacts that way regardless, so tagged and nightly builds are also
-downloadable from the run itself.
+No release path pushes a tag over git: GitHub creates the tag at the built
+commit when the release publishes, the same way the nightly's tag is made.
+Dispatching with both inputs empty only builds — the artifacts hang off the run
+and no release is touched. Every run attaches artifacts that way regardless, so
+tagged and nightly builds are also downloadable from the run itself.
 
 | Platform | Runner | Artifacts |
 | --- | --- | --- |

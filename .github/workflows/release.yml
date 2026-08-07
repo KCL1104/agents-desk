@@ -2,22 +2,32 @@ name: Release
 
 # Builds AgentDesk installers for Linux, macOS (Apple Silicon + Intel) and Windows.
 #
-# Four ways to run it:
-#   1. Push a tag like `v0.1.0` -> builds every platform into a GitHub Release named
-#      after the tag, published once all four builds are green.
-#   2. Dispatch it manually WITH the `tag` input -> exactly the same as pushing that
-#      tag, except the tag itself is created by GitHub when the release publishes.
-#      This is how a release is cut from the Actions UI with no local git at all —
-#      which also makes it the only path from environments whose credentials can
-#      push branches but not tags.
-#   3. Push to main -> builds every platform into the rolling `nightly` prerelease,
+# The normal way to cut a release: Actions -> Release -> Run workflow -> pick a
+# `bump` (patch / minor / major). The run computes the next version, writes it into
+# tauri.conf.json / Cargo.toml / Cargo.lock / package.json, commits that to main,
+# builds every platform from that commit and publishes the release. Nobody edits a
+# version number by hand, so the number moves on every release by construction.
+#
+# All the ways it runs:
+#   1. Dispatch with a `bump` -> the flow above. `patch` for fixes, `minor` for
+#      features, `major` for breaking changes.
+#   2. Dispatch with an explicit `tag` (e.g. v0.3.0) -> release exactly that tag.
+#      The version files must already match — the guard refuses otherwise. This is
+#      the recovery path: a release run that failed after its bump commit landed is
+#      re-cut with the tag it already burned, not bumped a second time.
+#   3. Push a tag like `v0.1.0` -> same as 2. Kept for people who prefer local git;
+#      note some environments' credentials can push branches but not tags, which is
+#      why the dispatch paths exist.
+#   4. Push to main -> builds every platform into the rolling `nightly` prerelease,
 #      replacing whatever was there before. This is how the binaries CI produces stay
 #      downloadable instead of being thrown away at the end of the run.
-#   4. Dispatch it manually with NO tag input -> builds every platform and attaches
-#      the installers as workflow artifacts. No release is created or touched.
+#   5. Dispatch with no bump and no tag -> builds every platform and attaches the
+#      installers as workflow artifacts. No release is created or touched.
 #
-# Every run also attaches the installers to the run itself, so a build is downloadable
-# even when no release was involved.
+# In modes 1-2 no tag is ever pushed over git: GitHub creates it at the built commit
+# when the release publishes, the same mechanism the nightly's tag has always used.
+# Every run also attaches the installers to the run itself, so a build is
+# downloadable even when no release was involved.
 on:
   push:
     branches:
@@ -26,8 +36,14 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
+      bump:
+        description: "Cut a release by bumping the version: patch = fixes, minor = features, major = breaking. Writes the new version into the repo itself."
+        required: false
+        type: choice
+        options: ["none", "patch", "minor", "major"]
+        default: "none"
       tag:
-        description: "Cut a versioned release with this tag (e.g. v0.1.0); must match the version in tauri.conf.json. Leave empty to only build."
+        description: "Or release an exact existing version (e.g. v0.1.0); must match tauri.conf.json. Leave both empty to only build."
         required: false
         type: string
         default: ""
@@ -53,14 +69,77 @@ jobs:
   # tag, where the point is a build without touching any release.
   # ---------------------------------------------------------------------------
   create-release:
-    if: ${{ github.event_name == 'push' || inputs.tag != '' }}
+    if: ${{ github.event_name == 'push' || inputs.tag != '' || (inputs.bump != '' && inputs.bump != 'none') }}
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create.outputs.release_id }}
       tag: ${{ steps.create.outputs.tag }}
       nightly: ${{ steps.create.outputs.nightly }}
+      # The commit the platform jobs must build: the bump commit when one was
+      # made, otherwise empty and the build falls back to the triggering sha.
+      build_sha: ${{ steps.bump.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
+
+      # Two different answers to "which version?" cannot both win.
+      - name: Refuse ambiguous inputs
+        if: ${{ inputs.tag != '' && inputs.bump != '' && inputs.bump != 'none' }}
+        run: |
+          echo "::error::Set either 'bump' or 'tag', not both."
+          exit 1
+
+      # The whole point of the bump path: the version number is maintained by the
+      # release itself, not by anyone's memory. Computes the next version, writes
+      # it into every file that carries one, and commits that to main so the repo
+      # and the release can never drift apart. Cargo.lock is edited too — CI runs
+      # `cargo test --locked`, which a stale lock entry would fail.
+      #
+      # The push uses the run's own GITHUB_TOKEN, and pushes made with that token
+      # do not trigger new workflow runs — so this cannot recurse into another
+      # nightly build.
+      - name: Bump the version
+        id: bump
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.bump != '' && inputs.bump != 'none' && inputs.tag == '' }}
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          current="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          IFS=. read -r MA MI PA <<<"$current"
+          case "$BUMP" in
+            major) MA=$((MA + 1)); MI=0; PA=0 ;;
+            minor) MI=$((MI + 1)); PA=0 ;;
+            patch) PA=$((PA + 1)) ;;
+            *) echo "::error::Unknown bump '$BUMP'"; exit 1 ;;
+          esac
+          next="${MA}.${MI}.${PA}"
+          echo "bumping ${current} -> ${next}"
+
+          # Surgical regex edits rather than JSON re-serialisation, so the only
+          # line that changes in the diff is the version itself.
+          python3 - "$next" <<'PY'
+          import re, sys
+          next_v = sys.argv[1]
+          def sub(path, pattern, repl):
+              s = open(path).read()
+              s, n = re.subn(pattern, repl, s, count=1)
+              assert n == 1, f"version not found in {path}"
+              open(path, 'w').write(s)
+          sub('src-tauri/tauri.conf.json', r'("version":\s*")[^"]+(")', rf'\g<1>{next_v}\g<2>')
+          sub('package.json',              r'("version":\s*")[^"]+(")', rf'\g<1>{next_v}\g<2>')
+          sub('src-tauri/Cargo.toml',      r'(?m)^version = "[^"]+"', f'version = "{next_v}"')
+          sub('src-tauri/Cargo.lock',
+              r'(\[\[package\]\]\nname = "agentdesk"\nversion = ")[^"]+(")',
+              rf'\g<1>{next_v}\g<2>')
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock package.json
+          git commit -m "Release v${next}"
+          git push origin HEAD:main
+          echo "tag=v${next}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       # The bundler names every artifact after the version in tauri.conf.json, not
       # after the git tag. Without this guard, tagging v0.2.0 while the config still
@@ -95,15 +174,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DISPATCH_TAG: ${{ inputs.tag }}
+          BUMP_TAG: ${{ steps.bump.outputs.tag }}
+          # The commit the release points at and the platform jobs build: the
+          # bump commit when one was made, otherwise whatever triggered the run.
+          BUILD_SHA: ${{ steps.bump.outputs.sha || github.sha }}
         run: |
           set -euo pipefail
 
-          # Which release is this? A dispatched tag takes precedence: its tag does
-          # not exist in git yet, and never needs to — GitHub creates it at
-          # GITHUB_SHA when the draft is published, exactly the mechanism the
-          # nightly already relies on. No git push of a tag happens anywhere.
+          # Which release is this? None of the dispatch tags exist in git yet, and
+          # never need to — GitHub creates the tag at BUILD_SHA when the draft is
+          # published, exactly the mechanism the nightly already relies on. No git
+          # push of a tag happens anywhere.
           if [ -n "${DISPATCH_TAG}" ]; then
             tag="$DISPATCH_TAG"
+          elif [ -n "${BUMP_TAG}" ]; then
+            tag="$BUMP_TAG"
           elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             tag="$GITHUB_REF_NAME"
           else
@@ -114,11 +199,11 @@ jobs:
             echo "nightly=false" >> "$GITHUB_OUTPUT"
             # Re-running should reuse the release rather than fail. --target is
             # ignored when the tag already exists (the pushed-tag case) and pins
-            # the dispatched case to the commit this run actually built.
+            # the dispatched cases to the commit this run actually builds.
             if ! gh release view "$tag" >/dev/null 2>&1; then
               gh release create "$tag" \
                 --draft \
-                --target "$GITHUB_SHA" \
+                --target "$BUILD_SHA" \
                 --title "AgentDesk $tag" \
                 --generate-notes
             fi
@@ -194,7 +279,12 @@ jobs:
         shell: bash
 
     steps:
+      # A bump run must build the bump commit, not the commit the dispatch froze
+      # at — github.sha predates the version change. Empty (no bump) falls back
+      # to the triggering commit.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.create-release.outputs.build_sha || github.sha }}
 
       - uses: actions/setup-node@v7
         with:
