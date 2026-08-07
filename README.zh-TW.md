@@ -141,9 +141,11 @@ release API 上的位置。有平台失敗的話，那份 draft 會被丟掉、�
 這也是為什麼 `ci.yml` 不再打包 —— 它以前每次 push 到 main 都建三個平台，然後
 整包丟掉。
 
-只想拿執行檔、完全不碰 release：到 Actions 頁面手動跑 Release，產物會掛在該次
-run 的 artifacts 底下。其實每次 run 都會掛，所以 tag 與 nightly 的 build 也都能
-直接從 run 裡下載。
+另外兩種情況用 Actions 頁面的手動 dispatch。填 `tag` 輸入（例如 `v0.1.0`）
+就是直接發那個版本 —— 完全不經過本機 git，tag 由 GitHub 在 release 發佈時自己建，
+跟 nightly 的 tag 同一套機制。留空則只 build：產物掛在該次 run 的 artifacts 底下，
+不碰任何 release。其實每次 run 都會掛，所以 tag 與 nightly 的 build 也都能直接
+從 run 裡下載。
 
 | 平台 | runner | 產物 |
 | --- | --- | --- |

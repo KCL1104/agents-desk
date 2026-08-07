@@ -174,10 +174,13 @@ newest commit's binaries are wanted — whereas a tag build is never cancelled.
 This is why `ci.yml` does not build installers: it used to bundle three
 platforms on every push to main and throw them away.
 
-To get binaries without touching any release, run the Release workflow manually
-from the Actions tab; the artifacts hang off that run. Every run attaches them
-that way regardless, so a tagged or nightly build is also downloadable from the
-run itself.
+Manual dispatch from the Actions tab covers the other two cases. Dispatched
+with the `tag` input (e.g. `v0.1.0`), it cuts that versioned release without any
+local git — GitHub creates the tag itself when the release publishes, the same
+way the nightly's tag is made. Dispatched with the input empty, it only builds:
+the artifacts hang off the run and no release is touched. Every run attaches
+artifacts that way regardless, so tagged and nightly builds are also
+downloadable from the run itself.
 
 | Platform | Runner | Artifacts |
 | --- | --- | --- |

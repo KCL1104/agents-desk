@@ -2,14 +2,19 @@ name: Release
 
 # Builds AgentDesk installers for Linux, macOS (Apple Silicon + Intel) and Windows.
 #
-# Three ways to run it:
+# Four ways to run it:
 #   1. Push a tag like `v0.1.0` -> builds every platform into a GitHub Release named
 #      after the tag, published once all four builds are green.
-#   2. Push to main -> builds every platform into the rolling `nightly` prerelease,
+#   2. Dispatch it manually WITH the `tag` input -> exactly the same as pushing that
+#      tag, except the tag itself is created by GitHub when the release publishes.
+#      This is how a release is cut from the Actions UI with no local git at all —
+#      which also makes it the only path from environments whose credentials can
+#      push branches but not tags.
+#   3. Push to main -> builds every platform into the rolling `nightly` prerelease,
 #      replacing whatever was there before. This is how the binaries CI produces stay
 #      downloadable instead of being thrown away at the end of the run.
-#   3. Run it manually (workflow_dispatch) -> builds every platform and attaches the
-#      installers as workflow artifacts. No release is created or touched.
+#   4. Dispatch it manually with NO tag input -> builds every platform and attaches
+#      the installers as workflow artifacts. No release is created or touched.
 #
 # Every run also attaches the installers to the run itself, so a build is downloadable
 # even when no release was involved.
@@ -20,27 +25,35 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Cut a versioned release with this tag (e.g. v0.1.0); must match the version in tauri.conf.json. Leave empty to only build."
+        required: false
+        type: string
+        default: ""
 
 # Needed so the workflow can create the GitHub Release and upload assets to it.
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  # The event name is part of the group so a routine push to main can never
+  # cancel a manually dispatched release build running on the same branch.
+  group: release-${{ github.ref }}-${{ github.event_name }}
   # Superseding only makes sense for the rolling build: when several commits land
   # on main at once, only the newest one's binaries are wanted, and the run that
-  # takes over recreates the nightly release from scratch anyway. A tag build must
-  # never be cancelled — its artifacts are the release.
-  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+  # takes over recreates the nightly release from scratch anyway. A tag build or
+  # a dispatched release must never be cancelled — its artifacts are the release.
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref_type == 'branch' }}
 
 jobs:
   # ---------------------------------------------------------------------------
   # Creates the draft release the build matrix uploads into, so the four platform
-  # jobs never race to create it themselves. Skipped on manual dispatch, where the
-  # point is a build without touching any release.
+  # jobs never race to create it themselves. Skipped on a manual dispatch with no
+  # tag, where the point is a build without touching any release.
   # ---------------------------------------------------------------------------
   create-release:
-    if: github.event_name == 'push'
+    if: ${{ github.event_name == 'push' || inputs.tag != '' }}
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create.outputs.release_id }}
@@ -53,16 +66,26 @@ jobs:
       # after the git tag. Without this guard, tagging v0.2.0 while the config still
       # says 0.1.0 silently ships files called AgentDesk_0.1.0_*.
       #
-      # Only applies to tags. A nightly is whatever main currently says it is, so
-      # there is nothing for it to disagree with.
+      # Applies to both versioned paths — pushed tag and dispatched tag. A nightly
+      # is whatever main currently says it is, so there is nothing for it to
+      # disagree with.
       - name: Check the tag matches tauri.conf.json
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: ${{ github.ref_type == 'tag' || inputs.tag != '' }}
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          tag_version="${GITHUB_REF_NAME#v}"
+          case "$TAG" in
+            v[0-9]*) ;;
+            *)
+              echo "::error::'${TAG}' does not look like a release tag (vX.Y.Z)."
+              exit 1
+              ;;
+          esac
+          tag_version="${TAG#v}"
           config_version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
           echo "tag=${tag_version}  tauri.conf.json=${config_version}"
           if [ "$tag_version" != "$config_version" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match version ${config_version} in src-tauri/tauri.conf.json."
+            echo "::error::Tag ${TAG} does not match version ${config_version} in src-tauri/tauri.conf.json."
             echo "::error::Bump the version in src-tauri/tauri.conf.json (and Cargo.toml / package.json) or retag."
             exit 1
           fi
@@ -71,21 +94,35 @@ jobs:
         id: create
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
 
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+          # Which release is this? A dispatched tag takes precedence: its tag does
+          # not exist in git yet, and never needs to — GitHub creates it at
+          # GITHUB_SHA when the draft is published, exactly the mechanism the
+          # nightly already relies on. No git push of a tag happens anywhere.
+          if [ -n "${DISPATCH_TAG}" ]; then
+            tag="$DISPATCH_TAG"
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             tag="$GITHUB_REF_NAME"
+          else
+            tag="nightly"
+          fi
+
+          if [ "$tag" != "nightly" ]; then
             echo "nightly=false" >> "$GITHUB_OUTPUT"
-            # Re-running a tag should reuse its release rather than fail.
+            # Re-running should reuse the release rather than fail. --target is
+            # ignored when the tag already exists (the pushed-tag case) and pins
+            # the dispatched case to the commit this run actually built.
             if ! gh release view "$tag" >/dev/null 2>&1; then
               gh release create "$tag" \
                 --draft \
+                --target "$GITHUB_SHA" \
                 --title "AgentDesk $tag" \
                 --generate-notes
             fi
           else
-            tag="nightly"
             echo "nightly=true" >> "$GITHUB_OUTPUT"
             version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
             # A rolling release has to be replaced, not appended to, or it would
@@ -226,8 +263,8 @@ jobs:
           #   APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
           # Add them only once they hold real values, for the reason above.
         with:
-          # Empty on workflow_dispatch, which makes the action build without
-          # touching any release.
+          # Empty when dispatched without a tag, which makes the action build
+          # without touching any release.
           releaseId: ${{ needs.create-release.outputs.release_id }}
           tauriScript: npm run tauri
           args: ${{ matrix.args }}
@@ -254,7 +291,9 @@ jobs:
   # ---------------------------------------------------------------------------
   publish-release:
     needs: [create-release, build]
-    if: ${{ github.event_name == 'push' && needs.build.result == 'success' }}
+    # create-release succeeding covers every mode that owns a release — pushed
+    # tag, dispatched tag, nightly — and is skipped on a build-only dispatch.
+    if: ${{ always() && needs.create-release.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Publish release
