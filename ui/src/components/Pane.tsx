@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import type * as React from 'react';
+import { useT } from '../i18n';
 import { TerminalView } from './TerminalView';
 import {
   decodeDrag,
@@ -95,6 +96,7 @@ export function Pane({
   onDrop,
   onEject,
 }: PaneProps) {
+  const t = useT();
   const { zone, handlers } = useDropTarget(onDrop);
 
   const onDragStart = useCallback(
@@ -121,14 +123,14 @@ export function Pane({
         draggable
         onDragStart={onDragStart}
         onDoubleClick={onToggleZoom}
-        title="拖到別的 pane 中央可對調，拖到邊緣可切分；雙擊放大"
+        title={t('pane.dragHint')}
       >
         <span className={`dot ${session.status}`} />
         <span className="pane-title">{basename(session.cwd)}</span>
         <span className="pane-agent mono">{session.agent}</span>
         <button
           className="pane-zoom"
-          title={zoomed ? '還原' : '放大到滿版'}
+          title={zoomed ? t('pane.restore') : t('pane.zoom')}
           data-testid={`zoom-${session.id}`}
           onClick={(e) => {
             e.stopPropagation();
@@ -139,7 +141,7 @@ export function Pane({
         </button>
         <button
           className="pane-eject"
-          title="從佈局移除（session 繼續執行）"
+          title={t('pane.remove')}
           data-testid={`eject-${session.id}`}
           onClick={(e) => {
             e.stopPropagation();
@@ -193,6 +195,7 @@ export function EdgeDrop({
 
 /** The whole grid when a tab holds nothing yet, and a drop target for it. */
 export function EmptyGrid({ onDrop }: { onDrop: (payload: DragPayload) => void }) {
+  const t = useT();
   const { zone, handlers } = useDropTarget((p) => onDrop(p), false);
 
   return (
@@ -201,7 +204,7 @@ export function EmptyGrid({ onDrop }: { onDrop: (payload: DragPayload) => void }
       data-testid="empty-grid"
       {...handlers}
     >
-      <p className="muted small">把 session 從左側拖進來，或直接點選</p>
+      <p className="muted small">{t('pane.empty')}</p>
     </div>
   );
 }

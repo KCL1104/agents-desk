@@ -7,7 +7,11 @@ import {
   liveStateOf,
   liveTone,
 } from '../src/board';
+import { translator } from '../src/i18n/messages';
 import type { Attempt, Lifecycle, SessionMeta, Status, Task } from '../src/types';
+
+/** These assertions name the Chinese labels, so the model is asked in Chinese. */
+const zh = translator('zh-TW');
 
 function attempt(over: Partial<Attempt> & { id: string; seq: number }): Attempt {
   return {
@@ -98,7 +102,7 @@ test.describe('the second axis', () => {
     const t = task({ attempts: [attempt({ id: 'a1', seq: 1, session_id: 's1' })] });
     const live = liveStateOf(t, [session({ id: 's1', status: 'waiting_permission' })]);
     expect(live.kind).toBe('session');
-    expect(liveLabel(live)).toBe('等你授權');
+    expect(liveLabel(live, zh)).toBe('等你授權');
     expect(liveTone(live)).toBe('waiting_permission');
   });
 
@@ -112,7 +116,7 @@ test.describe('the second axis', () => {
     const t = task({ attempts: [attempt({ id: 'a1', seq: 1, session_id: 's1' })] });
     const live = liveStateOf(t, [session({ id: 's1', live: false, status: 'saved' })]);
     expect(live.kind).toBe('stopped');
-    expect(liveLabel(live)).toBe('未執行');
+    expect(liveLabel(live, zh)).toBe('未執行');
   });
 
   test('an attempt whose session row is gone is still resumable', () => {
@@ -124,11 +128,11 @@ test.describe('the second axis', () => {
     const t = task({ attempts: [attempt({ id: 'a1', seq: 1, outcome: 'merged' })] });
     const live = liveStateOf(t, []);
     expect(live.kind).toBe('finished');
-    expect(liveLabel(live)).toBe('已合併');
+    expect(liveLabel(live, zh)).toBe('已合併');
   });
 
   test('a card nobody has started says so', () => {
-    expect(liveLabel(liveStateOf(task(), []))).toBe('尚未開始');
+    expect(liveLabel(liveStateOf(task(), []), zh)).toBe('尚未開始');
   });
 
   /**
@@ -139,7 +143,7 @@ test.describe('the second axis', () => {
   test('a card waiting for a slot says where it is in the queue', () => {
     const live = liveStateOf(task({ queued_at: 2 }), []);
     expect(live.kind).toBe('queued');
-    expect(liveLabel(live)).toBe('排隊中 · 第 2 個');
+    expect(liveLabel(live, zh)).toBe('排隊中 · 第 2 個');
   });
 
   /// Once it starts, the attempt is what the card is about.

@@ -1,23 +1,24 @@
+import type { MessageKey, TFn } from './i18n';
 import type { Attempt, Lifecycle, SessionMeta, Status, Task } from './types';
-import { STATUS_LABEL } from './sections';
+import { STATUS_KEY } from './sections';
 
-export { STATUS_LABEL };
+export { STATUS_KEY };
 
 /** Left to right. `abandoned` has no column — a card there is off the board. */
 export const COLUMNS: readonly Lifecycle[] = ['backlog', 'running', 'review', 'done'];
 
-export const COLUMN_LABEL: Record<Lifecycle, string> = {
-  backlog: '待辦',
-  running: '進行中',
-  review: '待驗收',
-  done: '完成',
-  abandoned: '已放棄',
+export const COLUMN_KEY: Record<Lifecycle, MessageKey> = {
+  backlog: 'lifecycle.backlog',
+  running: 'lifecycle.running',
+  review: 'lifecycle.review',
+  done: 'lifecycle.done',
+  abandoned: 'lifecycle.abandoned',
 };
 
-export const OUTCOME_LABEL: Record<string, string> = {
-  merged: '已合併',
-  discarded: '已丟棄',
-  superseded: '已被取代',
+export const OUTCOME_KEY: Record<string, MessageKey> = {
+  merged: 'outcome.merged',
+  discarded: 'outcome.discarded',
+  superseded: 'outcome.superseded',
 };
 
 /** The mime type a dragged card carries, kept apart from the pane layout's. */
@@ -80,18 +81,20 @@ export function liveStateOf(task: Task, sessions: readonly SessionMeta[]): Live 
 }
 
 /** What the card's light says. */
-export function liveLabel(live: Live): string {
+export function liveLabel(live: Live, t: TFn): string {
   switch (live.kind) {
     case 'none':
-      return '尚未開始';
+      return t('live.notStarted');
     case 'queued':
-      return `排隊中 · 第 ${live.position} 個`;
+      return t('live.queued', { position: live.position });
     case 'stopped':
-      return '未執行';
-    case 'finished':
-      return OUTCOME_LABEL[live.attempt.outcome ?? ''] ?? '已結束';
+      return t('live.stopped');
+    case 'finished': {
+      const key = OUTCOME_KEY[live.attempt.outcome ?? ''];
+      return key ? t(key) : t('live.ended');
+    }
     case 'session':
-      return STATUS_LABEL[live.status];
+      return t(STATUS_KEY[live.status]);
   }
 }
 

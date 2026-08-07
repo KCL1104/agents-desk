@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { useT } from '../i18n';
 import type { Attempt, Lifecycle, SessionMeta, Task } from '../types';
 import { needsYou } from '../types';
 import {
   columnOf,
-  COLUMN_LABEL,
+  COLUMN_KEY,
   COLUMNS,
   dropIndex,
   liveLabel,
   liveStateOf,
   liveTone,
-  STATUS_LABEL,
+  STATUS_KEY,
   TASK_MIME,
   type Live,
 } from '../board';
@@ -54,6 +55,7 @@ export function Board({
   onNewTask,
   onDeleteTask,
 }: Props) {
+  const t = useT();
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<{ col: Lifecycle; taskId: string | null } | null>(null);
 
@@ -108,10 +110,10 @@ export function Board({
               }}
             >
               <h2 className="board-col-head">
-                {COLUMN_LABEL[col]}
+                {t(COLUMN_KEY[col])}
                 <span className="section-count">{cards.length}</span>
                 {col === 'backlog' && (
-                  <button className="icon" onClick={onNewTask} title="新增卡片" aria-label="新增卡片">
+                  <button className="icon" onClick={onNewTask} title={t('board.newCard')} aria-label={t('board.newCard')}>
                     ＋
                   </button>
                 )}
@@ -163,7 +165,7 @@ export function Board({
           purpose: they have no worktree, no branch, and no lifecycle. */}
       <section className="board-adhoc" data-testid="adhoc">
         <h2 className="board-col-head">
-          臨時 session
+          {t('board.adHoc')}
           <span className="section-count">{adHoc.length}</span>
         </h2>
         <div className="adhoc-row">
@@ -176,10 +178,10 @@ export function Board({
             >
               <span className={`dot ${s.status}`} />
               <span className="adhoc-title">{s.title}</span>
-              <span className="muted small">{STATUS_LABEL[s.status]}</span>
+              <span className="muted small">{t(STATUS_KEY[s.status])}</span>
             </button>
           ))}
-          {adHoc.length === 0 && <p className="muted small">沒有臨時 session。</p>}
+          {adHoc.length === 0 && <p className="muted small">{t('board.adHocEmpty')}</p>}
         </div>
       </section>
     </div>
@@ -194,6 +196,7 @@ export function Board({
  * all of them. Cards over the limit wait and then go by themselves.
  */
 function Concurrency({ running, tasks }: { running: number; tasks: Task[] }) {
+  const t = useT();
   const [max, setMax] = useState<number | null>(null);
   const queued = tasks.filter((t) => t.queued_at !== null).length;
 
@@ -216,11 +219,11 @@ function Concurrency({ running, tasks }: { running: number; tasks: Task[] }) {
   if (max === null) return null;
   return (
     <div className="board-limit" data-testid="concurrency">
-      <span className="muted small">同時執行</span>
+      <span className="muted small">{t('board.concurrency')}</span>
       <button
         className="icon"
         disabled={max <= 1}
-        aria-label="減少同時執行數"
+        aria-label={t('board.less')}
         onClick={() => change(max - 1)}
       >
         −
@@ -228,12 +231,12 @@ function Concurrency({ running, tasks }: { running: number; tasks: Task[] }) {
       <strong data-testid="concurrency-max">
         {running} / {max}
       </strong>
-      <button className="icon" aria-label="增加同時執行數" onClick={() => change(max + 1)}>
+      <button className="icon" aria-label={t('board.more')} onClick={() => change(max + 1)}>
         ＋
       </button>
       {queued > 0 && (
         <span className="muted small" data-testid="queue-count">
-          · {queued} 個排隊中
+          {t('board.queued', { count: queued })}
         </span>
       )}
     </div>
@@ -271,6 +274,7 @@ function Card({
   onCancelQueued: (taskId: string) => void;
   onDelete: () => void;
 }) {
+  const t = useT();
   const waiting = live.kind === 'session' && needsYou(live.status);
   const hasAttempt = live.kind !== 'none' && live.kind !== 'queued';
   const agent = hasAttempt ? live.attempt.agent : null;
@@ -309,7 +313,7 @@ function Card({
 
       <div className="board-card-state" data-testid={`state-${task.id}`}>
         {waiting && <span aria-hidden="true">⚠ </span>}
-        {liveLabel(live)}
+        {liveLabel(live, t)}
         {hasAttempt && <span className="muted small mono"> #{live.attempt.seq}</span>}
       </div>
 
@@ -322,7 +326,7 @@ function Card({
       <footer className="board-card-foot">
         {live.kind === 'none' && (
           <button className="primary" onClick={stop(onStart)}>
-            開始
+            {t('board.start')}
           </button>
         )}
         {/* Waiting for a slot. It will go on its own, so the only thing worth
@@ -332,7 +336,7 @@ function Card({
             data-testid={`unqueue-${task.id}`}
             onClick={stop(() => onCancelQueued(task.id))}
           >
-            取消排隊
+            {t('board.cancelQueue')}
           </button>
         )}
         {/* Every attempt is in this state after a restart — the app kills its
@@ -345,7 +349,7 @@ function Card({
             data-testid={`resume-${task.id}`}
             onClick={stop(() => onResume(live.attempt.id))}
           >
-            繼續
+            {t('board.resume')}
           </button>
         )}
         {/* Answers "what did this one change, and what did it do" without
@@ -355,7 +359,7 @@ function Card({
             data-testid={`inspect-${task.id}`}
             onClick={stop(() => onInspect(live.attempt))}
           >
-            檢視
+            {t('board.inspect')}
           </button>
         )}
         {/* Another go at the same card, with a different agent. It leaves the
@@ -368,13 +372,13 @@ function Card({
             className={live.kind === 'finished' ? 'primary' : ''}
             data-testid={`retry-${task.id}`}
             onClick={stop(onStart)}
-            title="用另一個 agent 再開一個 attempt"
+            title={t('board.retryHint')}
           >
-            {live.kind === 'finished' ? '再試一次' : '換 agent'}
+            {live.kind === 'finished' ? t('board.retry') : t('board.switchAgent')}
           </button>
         )}
         <span className="spacer" />
-        <button className="icon" onClick={stop(onDelete)} title="刪除卡片" aria-label="刪除卡片">
+        <button className="icon" onClick={stop(onDelete)} title={t('board.deleteCard')} aria-label={t('board.deleteCard')}>
           ✕
         </button>
       </footer>

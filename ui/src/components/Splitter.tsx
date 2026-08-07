@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import type * as React from 'react';
+import { useT } from '../i18n';
 import { dragHandle, type Handle } from '../layout';
 
 /**
@@ -26,6 +27,7 @@ export function Splitter({
   onCommit: (path: number[], fr: number[]) => void;
   onReset: (path: number[]) => void;
 }) {
+  const t = useT();
   const drag = useRef<{ from: number; fr: number[] } | null>(null);
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -61,7 +63,7 @@ export function Splitter({
       role="separator"
       aria-orientation={handle.dir === 'row' ? 'vertical' : 'horizontal'}
       data-testid={`splitter-${handle.path.join('.') || 'root'}-${handle.index}`}
-      title="拖曳調整比例；雙擊還原等分"
+      title={t('splitter.hint')}
       style={{
         left: handle.rect.x,
         top: handle.rect.y,

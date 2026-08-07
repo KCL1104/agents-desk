@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
+import { useT } from '../i18n';
 
 interface Props {
   onCancel: () => void;
@@ -31,6 +32,7 @@ export function rememberRepo(path: string) {
  * attempt cannot sit on the board looking like work.
  */
 export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
+  const t = useT();
   const [title, setTitle] = useState('');
   const [prompt, setPrompt] = useState('');
   const [repo, setRepo] = useState(recents()[0] ?? '');
@@ -47,30 +49,27 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>新卡片</h2>
+        <h2>{t('newTask.title')}</h2>
 
-        <label>標題</label>
+        <label>{t('newTask.titleLabel')}</label>
         <input
           value={title}
-          placeholder="修好登入頁在 Safari 的白畫面"
+          placeholder={t('newTask.titlePlaceholder')}
           data-testid="task-title"
           onChange={(e) => setTitle(e.target.value)}
         />
 
-        <label>要 agent 做什麼</label>
+        <label>{t('newTask.promptLabel')}</label>
         <textarea
           rows={5}
           value={prompt}
           data-testid="task-prompt"
-          placeholder="登入後畫面全白，console 沒有錯誤。先重現再修。"
+          placeholder={t('newTask.promptPlaceholder')}
           onChange={(e) => setPrompt(e.target.value)}
         />
-        <p className="muted small">
-          不用寫 CLAUDE.md、skills 或 MCP 的事 —— worktree 裡會原生載入。開 attempt
-          時會補上分支與 base 的說明，而且送出前可以改。
-        </p>
+        <p className="muted small">{t('newTask.promptHint')}</p>
 
-        <label>Repo</label>
+        <label>{t('newTask.repo')}</label>
         <div className="row">
           <input
             className="mono"
@@ -79,7 +78,7 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
             placeholder="/Users/you/code/your-repo"
             onChange={(e) => setRepo(e.target.value)}
           />
-          <button onClick={pick}>選擇…</button>
+          <button onClick={pick}>{t('common.choose')}</button>
         </div>
 
         {list.length > 0 && (
@@ -92,16 +91,14 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
           </div>
         )}
 
-        <label>Base 分支</label>
+        <label>{t('newTask.base')}</label>
         <input
           className="mono"
           value={branch}
           data-testid="task-branch"
           onChange={(e) => setBranch(e.target.value)}
         />
-        <p className="muted small">
-          每個 attempt 從這裡開一個 worktree 與分支，diff 也以這裡為基準。
-        </p>
+        <p className="muted small">{t('newTask.baseHint')}</p>
 
         {error && (
           <p className="dialog-error" role="alert" data-testid="task-error">
@@ -110,14 +107,14 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
         )}
 
         <div className="modal-actions">
-          <button onClick={onCancel}>取消</button>
+          <button onClick={onCancel}>{t('common.cancel')}</button>
           <button
             className="primary"
             disabled={!ready}
             data-testid="task-create"
             onClick={() => onCreate(title.trim(), prompt.trim(), repo.trim(), branch.trim())}
           >
-            建立
+            {t('common.create')}
           </button>
         </div>
       </div>

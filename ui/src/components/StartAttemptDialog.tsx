@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { useT } from '../i18n';
 import type { Task } from '../types';
 
 interface Props {
@@ -21,6 +22,7 @@ const AGENTS = ['claude', 'codex', 'gemini', 'aider'];
  * rather than what the template would have produced.
  */
 export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
+  const t = useT();
   const [agent, setAgent] = useState('claude');
   const [prompt, setPrompt] = useState('');
   const [willSend, setWillSend] = useState(true);
@@ -47,12 +49,16 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
     };
   }, [task.id, agent, edited]);
 
+  // The agent's name is emphasised inside the sentence, so it is spliced back
+  // in rather than each language carrying markup.
+  const [warnBefore, warnAfter] = t('attempt.unmeasuredHint').split('{agent}');
+
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal wide" onClick={(e) => e.stopPropagation()}>
-        <h2>開始 attempt — {task.title}</h2>
+        <h2>{t('attempt.startTitle', { title: task.title })}</h2>
 
-        <label>Agent</label>
+        <label>{t('attempt.agent')}</label>
         <div className="row">
           <select
             value={agent}
@@ -67,7 +73,7 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
           </select>
         </div>
 
-        <label>首則 prompt</label>
+        <label>{t('attempt.firstPrompt')}</label>
         <textarea
           rows={14}
           className="mono"
@@ -80,15 +86,12 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
         />
 
         {willSend ? (
-          <p className="muted small">
-            送出後會開一個新的 worktree —— Claude Code 會先問你信不信任這個資料夾，
-            卡片會亮起「⚠ 等你確認資料夾」。答完之後這則 prompt 就會送出。
-          </p>
+          <p className="muted small">{t('attempt.trustHint')}</p>
         ) : (
           <p className="dialog-warn small" data-testid="attempt-manual">
-            <strong>{agent}</strong> 的參數慣例我們沒有實測過，所以不會自動送出 ——
-            在某個 CLI 代表「這是你的 prompt」的參數，在另一個可能代表「印出來然後結束」。
-            session 照樣會開，把下面這段複製貼進去即可。
+            {warnBefore}
+            <strong>{agent}</strong>
+            {warnAfter}
             <button
               className="chip"
               data-testid="attempt-copy"
@@ -97,7 +100,7 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
                 setCopied(true);
               }}
             >
-              {copied ? '已複製' : '複製 prompt'}
+              {copied ? t('attempt.copied') : t('attempt.copyPrompt')}
             </button>
           </p>
         )}
@@ -109,14 +112,14 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
         )}
 
         <div className="modal-actions">
-          <button onClick={onCancel}>取消</button>
+          <button onClick={onCancel}>{t('common.cancel')}</button>
           <button
             className="primary"
             disabled={prompt.trim() === ''}
             data-testid="attempt-start"
             onClick={() => onStart(agent, prompt)}
           >
-            {willSend ? '開始' : '開 session（不送 prompt）'}
+            {willSend ? t('common.start') : t('attempt.openNoPrompt')}
           </button>
         </div>
       </div>

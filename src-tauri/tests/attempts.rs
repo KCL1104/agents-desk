@@ -17,6 +17,8 @@ use std::time::{Duration, Instant};
 mod core;
 #[path = "../src/hooks.rs"]
 mod hooks;
+#[path = "../src/i18n.rs"]
+mod i18n;
 #[path = "../src/prompt.rs"]
 mod prompt;
 #[path = "../src/pty.rs"]

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useT } from '../i18n';
 import { needsYou, type SessionMeta, type Tab } from '../types';
 
 interface Props {
@@ -30,6 +31,7 @@ export function TabStrip({
   onRename,
   onClose,
 }: Props) {
+  const tr = useT();
   const [editing, setEditing] = useState<string | null>(null);
   const active = editing ?? renameId ?? null;
   const byId = new Map(sessions.map((s) => [s.id, s]));
@@ -52,7 +54,7 @@ export function TabStrip({
             className={`tab${t.id === activeId ? ' active' : ''}`}
             onClick={() => onSelect(t.id)}
             onDoubleClick={() => setEditing(t.id)}
-            title={`${t.name} — 雙擊改名`}
+            title={tr('tabs.rename', { name: t.name })}
             data-testid={`tab-${t.id}`}
           >
             {active === t.id ? (
@@ -74,18 +76,18 @@ export function TabStrip({
               <>
                 <span className="tab-name">{t.name}</span>
                 {waiting > 0 ? (
-                  <span className="tab-badge waiting" title="等你處理">
+                  <span className="tab-badge waiting" title={tr('tabs.waiting')}>
                     ⚠{waiting}
                   </span>
                 ) : busy ? (
-                  <span className="tab-badge busy" title="執行中">
+                  <span className="tab-badge busy" title={tr('tabs.busy')}>
                     ●
                   </span>
                 ) : null}
                 {tabs.length > 1 && (
                   <button
                     className="tab-close"
-                    title="關閉分頁（session 會留在側邊欄）"
+                    title={tr('tabs.close')}
                     onClick={(e) => {
                       e.stopPropagation();
                       onClose(t.id);
@@ -99,7 +101,7 @@ export function TabStrip({
           </div>
         );
       })}
-      <button className="tab-add" onClick={onCreate} title="新分頁">
+      <button className="tab-add" onClick={onCreate} title={tr('tabs.new')}>
         +
       </button>
     </div>

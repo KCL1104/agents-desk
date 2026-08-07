@@ -1,28 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
+import type { MessageKey } from './i18n';
 import type { SessionMeta, Status } from './types';
 
 export type Section = 'working' | 'waiting' | 'done';
 
-export const SECTION_LABEL: Record<Section, string> = {
-  working: '開發中',
-  waiting: '等待輸入',
-  done: '已完成',
+export const SECTION_KEY: Record<Section, MessageKey> = {
+  working: 'section.working',
+  waiting: 'section.waiting',
+  done: 'section.done',
 };
 
 /**
  * What each status is called on screen. One copy, because the sidebar, the
  * overview and the board all name the same thing and a status that reads
  * differently depending on where you are looking is a bug in itself.
+ *
+ * These are message keys rather than text: the same reasoning applies across
+ * languages, so the single copy has to live at the key level.
  */
-export const STATUS_LABEL: Record<Status, string> = {
-  starting: '啟動中',
-  awaiting_trust: '等你確認資料夾',
-  running: '執行中',
-  waiting_permission: '等你授權',
-  waiting_input: '等你回覆',
-  idle: '待命',
-  saved: '已關閉',
-  exited: '已結束',
+export const STATUS_KEY: Record<Status, MessageKey> = {
+  starting: 'status.starting',
+  awaiting_trust: 'status.awaiting_trust',
+  running: 'status.running',
+  waiting_permission: 'status.waiting_permission',
+  waiting_input: 'status.waiting_input',
+  idle: 'status.idle',
+  saved: 'status.saved',
+  exited: 'status.exited',
 };
 
 /**

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
+import { useT } from '../i18n';
 
 interface Props {
   onCancel: () => void;
@@ -32,6 +33,7 @@ function splitArgs(raw: string): string[] {
 }
 
 export function NewSessionDialog({ onCancel, onCreate }: Props) {
+  const t = useT();
   const [cwd, setCwd] = useState(recents()[0] ?? '');
   const [agent, setAgent] = useState('claude');
   const [args, setArgs] = useState('');
@@ -49,12 +51,16 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
     onCreate(dir, agent, splitArgs(args));
   };
 
+  // The hint reads better with `cd` set as code, so it is spliced back into
+  // the translated sentence rather than each language carrying markup.
+  const [hintBefore, hintAfter] = t('newSession.cwdHint').split('{cd}');
+
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>新 session</h2>
+        <h2>{t('newSession.title')}</h2>
 
-        <label>工作目錄</label>
+        <label>{t('newSession.cwd')}</label>
         <div className="row">
           <input
             className="mono"
@@ -62,11 +68,12 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
             placeholder="/Users/you/code/your-repo"
             onChange={(e) => setCwd(e.target.value)}
           />
-          <button onClick={pick}>選擇…</button>
+          <button onClick={pick}>{t('common.choose')}</button>
         </div>
         <p className="muted small">
-          等同於 <code className="mono">cd</code> 到這裡再開 agent —— 載入的 CLAUDE.md、
-          .claude/ skills 與 .mcp.json 跟你在終端機做完全一樣。
+          {hintBefore}
+          <code className="mono">cd</code>
+          {hintAfter}
         </p>
 
         {list.length > 0 && (
@@ -90,21 +97,19 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
           </select>
         </div>
 
-        <label>啟動參數（可留空）</label>
+        <label>{t('newSession.args')}</label>
         <input
           className="mono"
           value={args}
           placeholder="--continue     --model sonnet"
           onChange={(e) => setArgs(e.target.value)}
         />
-        <p className="muted small">
-          原封不動傳給 CLI，跟你自己在終端機打的一樣。
-        </p>
+        <p className="muted small">{t('newSession.argsHint')}</p>
 
         <div className="modal-actions">
-          <button onClick={onCancel}>取消</button>
+          <button onClick={onCancel}>{t('common.cancel')}</button>
           <button className="primary" disabled={!cwd.trim()} onClick={create}>
-            開啟終端機
+            {t('newSession.submit')}
           </button>
         </div>
       </div>

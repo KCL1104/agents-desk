@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { needsYou, type SessionMeta } from '../types';
-import { elapsed, SECTION_LABEL, STATUS_LABEL, useSections, type Section } from '../sections';
+import { elapsed, SECTION_KEY, STATUS_KEY, useSections, type Section } from '../sections';
+import { useT } from '../i18n';
 import { DRAG_MIME, encodeDrag } from '../layout';
 
 interface Props {
@@ -26,6 +27,7 @@ export function SessionList({
   onComplete,
   onShowEnv,
 }: Props) {
+  const t = useT();
   const display = useSections(sessions, activeId);
   const waiting = sessions.filter((s) => needsYou(s.status));
 
@@ -53,19 +55,19 @@ export function SessionList({
     <aside className="sidebar">
       <div className="sidebar-head">
         <span>SESSIONS</span>
-        <button className="icon" onClick={onNew} title="新 session">
+        <button className="icon" onClick={onNew} title={t('sidebar.newSession')}>
           +
         </button>
       </div>
 
       {waiting.length > 0 && (
         <button className="waiting-banner" onClick={() => onSelect(waiting[0].id)}>
-          ⚠ {waiting.length} 個等你
+          {t('sidebar.waitingCount', { count: waiting.length })}
         </button>
       )}
 
       <div className="session-groups">
-        {sessions.length === 0 && <p className="muted pad small">還沒有 session</p>}
+        {sessions.length === 0 && <p className="muted pad small">{t('sidebar.empty')}</p>}
 
         {ORDER.map((section) => {
           const rows = bySection.get(section) ?? [];
@@ -78,7 +80,7 @@ export function SessionList({
                 onClick={() => setCollapsed((c) => ({ ...c, [section]: !c[section] }))}
               >
                 <span className="section-caret">{isCollapsed ? '▸' : '▾'}</span>
-                <span>{SECTION_LABEL[section]}</span>
+                <span>{t(SECTION_KEY[section])}</span>
                 <span className="section-count">{rows.length}</span>
               </button>
 
@@ -101,7 +103,7 @@ export function SessionList({
       </div>
 
       <button className="sidebar-foot" onClick={onShowEnv}>
-        環境
+        {t('common.env')}
       </button>
     </aside>
   );
@@ -124,6 +126,7 @@ function Row({
   onArchive: (id: string) => void;
   onComplete: (id: string, completed: boolean) => void;
 }) {
+  const t = useT();
   const activity = s.activity;
   const since = elapsed(s.activity_since, now);
 
@@ -146,7 +149,7 @@ function Row({
         <span className="row-actions">
           <button
             className="row-action"
-            title={s.completed ? '取消完成標記' : '標記為完成'}
+            title={s.completed ? t('sidebar.unmarkDone') : t('sidebar.markDone')}
             onClick={(e) => {
               e.stopPropagation();
               onComplete(s.id, !s.completed);
@@ -156,7 +159,7 @@ function Row({
           </button>
           <button
             className="row-action"
-            title={s.live ? '關閉終端機' : '從清單移除'}
+            title={s.live ? t('sidebar.closeTerminal') : t('sidebar.removeFromList')}
             onClick={(e) => {
               e.stopPropagation();
               if (s.live) onClose(s.id);
@@ -176,7 +179,7 @@ function Row({
             {since && <span className="row-elapsed">{since}</span>}
           </>
         ) : (
-          <span className="muted">{STATUS_LABEL[s.status]}</span>
+          <span className="muted">{t(STATUS_KEY[s.status])}</span>
         )}
       </div>
     </div>

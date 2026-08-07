@@ -2,6 +2,7 @@
 
 mod core;
 mod hooks;
+mod i18n;
 mod pty;
 mod shell_env;
 mod prompt;
@@ -57,6 +58,16 @@ impl AppState {
 /* ------------------------------------------------------------------ */
 /* Commands                                                            */
 /* ------------------------------------------------------------------ */
+
+#[tauri::command]
+fn set_locale(state: State<'_, AppState>, locale: String) -> StdResult<(), String> {
+    // Best-effort: the language is a display preference, so a call that lands
+    // before the core is up is not worth surfacing as an error to the webview.
+    if let Ok(core) = state.core() {
+        core.locale.set(i18n::Locale::parse(&locale));
+    }
+    Ok(())
+}
 
 #[tauri::command]
 fn boot_status(state: State<'_, AppState>) -> serde_json::Value {
@@ -402,6 +413,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             boot_status,
+            set_locale,
             new_session,
             reopen_session,
             term_write,

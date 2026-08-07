@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Attempt, AttemptEvent } from '../types';
-import { STATUS_LABEL } from '../sections';
+import { useT } from '../i18n';
+import { STATUS_KEY } from '../sections';
 
 interface Props {
   attempt: Attempt;
@@ -25,6 +26,7 @@ type Pane = 'diff' | 'timeline';
  * this stops being a session manager and becomes a board.
  */
 export function AttemptInspector({ attempt, baseBranch, onClose, onDone }: Props) {
+  const t = useT();
   const [pane, setPane] = useState<Pane>('diff');
   const [diff, setDiff] = useState<string | null>(null);
   const [events, setEvents] = useState<AttemptEvent[]>([]);
@@ -60,7 +62,7 @@ export function AttemptInspector({ attempt, baseBranch, onClose, onDone }: Props
             data-testid="inspector-diff-tab"
             onClick={() => setPane('diff')}
           >
-            變更
+            {t('inspector.changes')}
           </button>
           <button
             role="tab"
@@ -69,14 +71,14 @@ export function AttemptInspector({ attempt, baseBranch, onClose, onDone }: Props
             data-testid="inspector-timeline-tab"
             onClick={() => setPane('timeline')}
           >
-            活動
+            {t('inspector.activity')}
           </button>
         </div>
         <span className="spacer" />
-        <button className="icon" onClick={refresh} title="重新讀取" aria-label="重新讀取">
+        <button className="icon" onClick={refresh} title={t('inspector.reload')} aria-label={t('inspector.reload')}>
           ↻
         </button>
-        <button className="icon" onClick={onClose} title="關閉" aria-label="關閉檢視">
+        <button className="icon" onClick={onClose} title={t('common.close')} aria-label={t('inspector.closeView')}>
           ✕
         </button>
       </header>
@@ -84,7 +86,7 @@ export function AttemptInspector({ attempt, baseBranch, onClose, onDone }: Props
       <div className="inspector-meta mono small muted">
         <span>{attempt.branch}</span>
         <span title={attempt.base_sha}>base {attempt.base_sha.slice(0, 8)}</span>
-        {attempt.outcome && <span className="inspector-frozen">已凍結</span>}
+        {attempt.outcome && <span className="inspector-frozen">{t('inspector.frozen')}</span>}
       </div>
 
       {error && (
@@ -122,6 +124,7 @@ function Finish({
   baseBranch: string;
   onDone: () => void;
 }) {
+  const t = useT();
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [prUrl, setPrUrl] = useState<string | null>(null);
@@ -160,24 +163,24 @@ function Finish({
           data-testid="merge-attempt"
           onClick={run('merge', () => api.mergeAttempt(attempt.id))}
         >
-          合併回 {baseBranch}
+          {t('inspector.mergeInto', { branch: baseBranch })}
         </button>
         <button
           disabled={busy !== null}
           data-testid="open-pr"
           onClick={run('pr', () => api.openPr(attempt.id))}
         >
-          push + 開 PR
+          {t('inspector.openPr')}
         </button>
         <span className="spacer" />
         <button
           className="danger"
           disabled={busy !== null}
           data-testid="discard-attempt"
-          title="關掉這個 attempt 並收回 worktree。變更會凍結保留。"
+          title={t('inspector.discardHint')}
           onClick={run('discard', () => api.finishAttempt(attempt.id, 'discarded'))}
         >
-          丟棄
+          {t('inspector.discard')}
         </button>
       </div>
     </footer>
@@ -185,11 +188,12 @@ function Finish({
 }
 
 function DiffPane({ diff }: { diff: string | null }) {
-  if (diff === null) return <p className="muted small pad">讀取中…</p>;
+  const t = useT();
+  if (diff === null) return <p className="muted small pad">{t('common.loading')}</p>;
   if (diff.trim() === '') {
     return (
       <p className="muted small pad" data-testid="diff-empty">
-        這個 attempt 還沒有改動任何檔案。
+        {t('inspector.noChanges')}
       </p>
     );
   }
@@ -222,10 +226,11 @@ function lineKind(line: string): string {
 }
 
 function Timeline({ events }: { events: AttemptEvent[] }) {
+  const t = useT();
   if (events.length === 0) {
     return (
       <p className="muted small pad" data-testid="timeline-empty">
-        還沒有活動。狀態回報只對 Claude Code 有效。
+        {t('inspector.noActivity')}
       </p>
     );
   }
@@ -240,7 +245,9 @@ function Timeline({ events }: { events: AttemptEvent[] }) {
               <span className="tl-detail mono small muted">{e.detail}</span>
             </>
           ) : e.kind === 'status' ? (
-            <span className="tl-status">{STATUS_LABEL[e.detail as never] ?? e.detail}</span>
+            <span className="tl-status">
+              {STATUS_KEY[e.detail as never] ? t(STATUS_KEY[e.detail as never]) : e.detail}
+            </span>
           ) : (
             <span className="tl-prompt">{e.detail}</span>
           )}

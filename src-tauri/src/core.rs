@@ -214,6 +214,9 @@ struct PendingEvent {
 /// Routes PTY output onto the UI bus and keeps session status in step.
 struct Router {
     sink: Arc<dyn UiSink>,
+    /// The same cell the core holds, so a notification never has to upgrade
+    /// the weak core reference just to know what language to speak.
+    locale: Arc<crate::i18n::LocaleCell>,
     sessions: Arc<Mutex<HashMap<String, SessionMeta>>>,
     /// Set once the core exists, so an exiting terminal can let the queue know
     /// a slot just came free. Weak, because the core owns this router.
@@ -350,10 +353,11 @@ impl HookHandler for Router {
         }
 
         if let Some((title, cwd)) = notify {
+            let locale = self.locale.get();
             let body = match status {
-                Status::WaitingPermission => "需要你授權才能繼續",
-                Status::AwaitingTrust => "在等你確認這個資料夾",
-                _ => "在等你回覆",
+                Status::WaitingPermission => crate::i18n::waiting_permission(locale),
+                Status::AwaitingTrust => crate::i18n::awaiting_trust(locale),
+                _ => crate::i18n::waiting_input(locale),
             };
             self.sink.emit(
                 "notify",
@@ -425,6 +429,9 @@ pub struct OpenedAttempt {
 
 pub struct Core {
     pub env: ShellEnv,
+    /// Language for the strings the OS renders, pushed down by the webview.
+    /// Shared with the router, which raises the notifications.
+    pub locale: Arc<crate::i18n::LocaleCell>,
     store: Arc<Store>,
     ptys: PtyRegistry,
     sessions: Arc<Mutex<HashMap<String, SessionMeta>>>,
@@ -484,7 +491,7 @@ impl Core {
         if tabs.is_empty() {
             let first = StoredTab {
                 id: uuid::Uuid::new_v4().to_string(),
-                name: "工作區".to_string(),
+                name: crate::i18n::default_tab_name(crate::i18n::Locale::default()).to_string(),
                 layout: DEFAULT_LAYOUT.to_string(),
                 slots: Vec::new(),
                 position: 0,
@@ -515,8 +522,11 @@ impl Core {
             }
         });
 
+        let locale = Arc::new(crate::i18n::LocaleCell::default());
+
         let router = Arc::new(Router {
             sink: Arc::clone(&sink),
+            locale: Arc::clone(&locale),
             sessions: Arc::clone(&sessions),
             core: OnceLock::new(),
             events: events_tx,
@@ -524,6 +534,7 @@ impl Core {
 
         let core = Arc::new(Self {
             env,
+            locale,
             store,
             ptys: PtyRegistry::new(),
             sessions,
@@ -843,7 +854,7 @@ impl Core {
                     self.sink.emit(
                         "notify",
                         serde_json::json!({
-                            "title": "排隊中的 task 起不來",
+                            "title": crate::i18n::queued_start_failed(self.locale.get()),
                             "body": format!("{e:#}"),
                             "sessionId": serde_json::Value::Null,
                         }),

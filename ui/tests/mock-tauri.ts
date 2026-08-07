@@ -113,6 +113,21 @@ declare global {
  * function so Playwright can pass it straight to `addInitScript`.
  */
 export function installMock(): void {
+  // Pin the language. Without this the suite would render in whatever locale
+  // the CI browser happens to report, and every assertion below that names a
+  // button would pass or fail by accident. The switcher itself is covered in
+  // i18n.spec.ts, which overrides this deliberately.
+  try {
+    // Only when nothing has been chosen: this script re-runs on every load,
+    // including reloads, so setting it unconditionally would overwrite a
+    // language the test just switched to and make persistence untestable.
+    if (localStorage.getItem('agentdesk.locale') === null) {
+      localStorage.setItem('agentdesk.locale', 'zh-TW');
+    }
+  } catch {
+    /* storage unavailable; detection falls back to the browser locale */
+  }
+
   const mock = {
     sessions: JSON.parse(
       sessionStorage.getItem('__mockSessions') ?? '[]',
@@ -374,6 +389,8 @@ export function installMock(): void {
       mock.pushSessions();
       return null;
     },
+
+    set_locale: () => null,
 
     term_snapshot: (args) => mock.snapshots.get(String(args.id)) ?? { data: '', seq: 0 },
     term_write: () => null,

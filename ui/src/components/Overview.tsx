@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { SessionMeta } from '../types';
-import { elapsed, SECTION_LABEL, sectionOf, STATUS_LABEL, type Section } from '../sections';
+import { elapsed, SECTION_KEY, sectionOf, STATUS_KEY, type Section } from '../sections';
+import { useT } from '../i18n';
 
 interface Props {
   sessions: SessionMeta[];
@@ -23,6 +24,7 @@ const ORDER: Section[] = ['working', 'waiting', 'done'];
  * same data never disagree.
  */
 export function Overview({ sessions, onOpen, onComplete, onClose }: Props) {
+  const t = useT();
   // One timer for every elapsed counter on the page.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -33,7 +35,7 @@ export function Overview({ sessions, onOpen, onComplete, onClose }: Props) {
   if (sessions.length === 0) {
     return (
       <div className="overview empty">
-        <p className="muted">還沒有 session。按左上角 + 開一個。</p>
+        <p className="muted">{t('overview.empty')}</p>
       </div>
     );
   }
@@ -49,7 +51,7 @@ export function Overview({ sessions, onOpen, onComplete, onClose }: Props) {
         return (
           <section className="ov-section" key={section} data-ov-section={section}>
             <h2 className="ov-section-head">
-              {SECTION_LABEL[section]}
+              {t(SECTION_KEY[section])}
               <span className="section-count">{rows.length}</span>
             </h2>
             <div className="ov-grid">
@@ -84,6 +86,7 @@ function Card({
   onComplete: (id: string, completed: boolean) => void;
   onClose: (id: string) => void;
 }) {
+  const t = useT();
   const since = elapsed(s.activity_since, now);
 
   return (
@@ -98,7 +101,7 @@ function Card({
         <span className="ov-agent mono">{s.agent}</span>
       </header>
 
-      <div className="ov-status">{STATUS_LABEL[s.status]}</div>
+      <div className="ov-status">{t(STATUS_KEY[s.status])}</div>
 
       {s.activity ? (
         <div className="ov-activity">
@@ -107,7 +110,7 @@ function Card({
         </div>
       ) : (
         <div className="ov-activity muted small">
-          {s.reports_status ? '沒有進行中的動作' : '這個 agent 不回報狀態'}
+          {s.reports_status ? t('overview.noAction') : t('overview.noStatus')}
         </div>
       )}
 
@@ -117,11 +120,11 @@ function Card({
         </span>
         <span className="ov-actions">
           <button onClick={() => onComplete(s.id, !s.completed)}>
-            {s.completed ? '取消完成' : '完成'}
+            {s.completed ? t('overview.unmarkDone') : t('overview.markDone')}
           </button>
-          {s.live && <button onClick={() => onClose(s.id)}>關閉</button>}
+          {s.live && <button onClick={() => onClose(s.id)}>{t('common.close')}</button>}
           <button className="primary" onClick={() => onOpen(s.id)}>
-            開啟
+            {t('common.open')}
           </button>
         </span>
       </footer>

@@ -1,6 +1,8 @@
+import { useT } from '../i18n';
 import type { BootStatus } from '../types';
 
 export function BootGate({ boot, onRetry }: { boot: BootStatus | null; onRetry: () => void }) {
+  const t = useT();
   return (
     <div className="boot">
       <h1>AgentDesk</h1>
@@ -8,18 +10,19 @@ export function BootGate({ boot, onRetry }: { boot: BootStatus | null; onRetry: 
         <>
           <p className="boot-error">{boot.error}</p>
           <ul className="muted">
-            <li>Node 20+ 必須在你的 login shell PATH 上</li>
+            <li>{t('boot.node')}</li>
             <li>
-              sidecar 要先建置：<code className="mono">npm --prefix sidecar run build</code>
+              {t('boot.sidecar')}
+              <code className="mono">npm --prefix sidecar run build</code>
             </li>
-            <li>Claude Code CLI 必須已安裝並登入</li>
+            <li>{t('boot.claude')}</li>
           </ul>
           <button className="primary" onClick={onRetry}>
-            重試
+            {t('boot.retry')}
           </button>
         </>
       ) : (
-        <p className="muted">正在解析 login shell 環境…</p>
+        <p className="muted">{t('boot.resolving')}</p>
       )}
     </div>
   );

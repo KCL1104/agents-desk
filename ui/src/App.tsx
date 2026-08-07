@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type * as React from 'react';
 import { api, subscribe } from './api';
+import { useT } from './i18n';
 import type { BootStatus, Lifecycle, SessionMeta, Tab, Task } from './types';
 import { BootGate } from './components/BootGate';
 import { SessionList } from './components/SessionList';
@@ -67,6 +68,7 @@ function swapIds(ids: readonly string[], movingId: string, targetId: string): st
 }
 
 export default function App() {
+  const t = useT();
   const [boot, setBoot] = useState<BootStatus | null>(null);
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -171,7 +173,7 @@ export default function App() {
           : nextLayout;
       void api
         .updateTab(activeTab.id, formatLayout(final), nextMembers)
-        .catch((e) => setError(`更新分頁失敗：${String(e)}`));
+        .catch((e) => setError(t('error.updateTab', { err: String(e) })));
     },
     [activeTab],
   );
@@ -248,7 +250,7 @@ export default function App() {
       } catch (e) {
         // Without this the dialog just closes and nothing happens, which reads
         // as a dead button rather than a failure.
-        setError(`開啟 session 失敗：${String(e)}`);
+        setError(t('error.openSession', { err: String(e) }));
       }
     },
     [commit, layout, members],
@@ -266,7 +268,7 @@ export default function App() {
         try {
           await api.reopenSession(id, INITIAL_COLS, INITIAL_ROWS);
         } catch (e) {
-          setError(`重新開啟失敗：${String(e)}`);
+          setError(t('error.reopen', { err: String(e) }));
         }
       }
     },
@@ -403,7 +405,7 @@ export default function App() {
         const sessionId = await api.reopenAttempt(attemptId, INITIAL_COLS, INITIAL_ROWS);
         await onOpen(sessionId);
       } catch (e) {
-        setError(`繼續 attempt 失敗：${String(e)}`);
+        setError(t('error.resumeAttempt', { err: String(e) }));
       }
     },
     [onOpen],
@@ -426,15 +428,15 @@ export default function App() {
   );
 
   const onMoveTask = useCallback((id: string, lifecycle: Lifecycle, position: number) => {
-    void api.moveTask(id, lifecycle, position).catch((e) => setError(`搬移卡片失敗：${String(e)}`));
+    void api.moveTask(id, lifecycle, position).catch((e) => setError(t('error.moveCard', { err: String(e) })));
   }, []);
 
   const onCancelQueued = useCallback((taskId: string) => {
-    void api.cancelQueued(taskId).catch((e) => setError(`取消排隊失敗：${String(e)}`));
+    void api.cancelQueued(taskId).catch((e) => setError(t('error.cancelQueue', { err: String(e) })));
   }, []);
 
   const onDeleteTask = useCallback((id: string) => {
-    void api.deleteTask(id).catch((e) => setError(`刪除卡片失敗：${String(e)}`));
+    void api.deleteTask(id).catch((e) => setError(t('error.deleteCard', { err: String(e) })));
   }, []);
 
   if (!boot?.ready) {
@@ -472,12 +474,12 @@ export default function App() {
           renameId={renameTabId}
           onCreate={() =>
             void api
-              .createTab(`工作 ${tabs.length + 1}`)
+              .createTab(t('tabs.defaultName', { n: tabs.length + 1 }))
               .then((id) => {
                 setActiveTabId(id);
                 setRenameTabId(id);
               })
-              .catch((e) => setError(`新增分頁失敗：${String(e)}`))
+              .catch((e) => setError(t('error.newTab', { err: String(e) })))
           }
           onRename={(id, name) => {
             setRenameTabId(null);
@@ -495,7 +497,11 @@ export default function App() {
             </>
           ) : (
             <strong>
-              {view === 'overview' ? '總覽' : view === 'board' ? '看板' : '尚無 session'}
+              {view === 'overview'
+                ? t('view.overview')
+                : view === 'board'
+                  ? t('view.board')
+                  : t('view.noSession')}
             </strong>
           )}
           <span className="spacer" />
@@ -506,7 +512,7 @@ export default function App() {
               aria-pressed={inspectId !== null}
               onClick={() => setInspectId(inspectId ? null : activeAttemptId)}
             >
-              變更／活動
+              {t('view.inspector')}
             </button>
           )}
           {view === 'terminal' && <ColumnPicker layout={layout} onPick={onPickCols} />}
@@ -517,7 +523,7 @@ export default function App() {
               className={view === 'terminal' ? 'active' : ''}
               onClick={() => setView('terminal')}
             >
-              終端機
+              {t('view.terminal')}
             </button>
             <button
               role="tab"
@@ -526,7 +532,7 @@ export default function App() {
               data-testid="view-board"
               onClick={() => setView('board')}
             >
-              看板
+              {t('view.board')}
             </button>
             <button
               role="tab"
@@ -534,7 +540,7 @@ export default function App() {
               className={view === 'overview' ? 'active' : ''}
               onClick={() => setView('overview')}
             >
-              總覽
+              {t('view.overview')}
             </button>
           </div>
         </header>
