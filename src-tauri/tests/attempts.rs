@@ -67,17 +67,20 @@ struct Harness {
 }
 
 /// A stand-in for an agent CLI. Records the working directory and every
-/// argument it was given, then stays alive so the session looks the way a
-/// real one does.
+/// argument it was given, then stays alive reading its terminal — so the
+/// session looks the way a real one does, and what a follow-up fed into the
+/// PTY can be read back out.
 ///
 /// NUL-separated, because the argument under test is a multi-line prompt and
 /// a line-per-argument log cannot tell one argument containing newlines from
 /// several arguments — which is exactly the distinction these tests exist to
 /// make. One file per launch, named by pid, so reopening a session leaves the
-/// first launch's record intact beside the second's.
+/// first launch's record intact beside the second's. The stdin capture is
+/// named `stdin.<session>.<pid>` so `launches` never mistakes it for a launch
+/// record.
 const STUB: &str = r#"#!/bin/bash
 printf '%s\0' "$PWD" "$@" > "$AGENTDESK_STUB_LOG/${AGENTDESK_SESSION_ID:-unknown}.$$"
-exec sleep 60
+exec cat > "$AGENTDESK_STUB_LOG/stdin.${AGENTDESK_SESSION_ID:-unknown}.$$"
 "#;
 
 impl Harness {
@@ -253,6 +256,37 @@ impl Harness {
 
     fn cwd_of(&self, session_id: &str) -> String {
         self.launches(session_id, 1).pop().unwrap().cwd
+    }
+
+    /// Everything the session's terminal has been fed, once anything has.
+    /// The stub's `cat` writes what it reads, so this is the input as the
+    /// agent would have received it.
+    fn stdin_of(&self, session_id: &str) -> String {
+        let dir = self.root.join("logs");
+        let prefix = format!("stdin.{session_id}.");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let mut all = String::new();
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                let mut files: Vec<_> = entries
+                    .flatten()
+                    .filter(|e| e.file_name().to_string_lossy().starts_with(&prefix))
+                    .collect();
+                files.sort_by_key(|e| e.file_name());
+                for f in files {
+                    if let Ok(s) = std::fs::read_to_string(f.path()) {
+                        all.push_str(&s);
+                    }
+                }
+            }
+            if !all.is_empty() {
+                return all;
+            }
+            if Instant::now() > deadline {
+                panic!("nothing arrived on session {session_id}'s stdin");
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 }
 
@@ -699,6 +733,46 @@ fn merging_refuses_when_the_checkout_is_somewhere_else() {
     assert!(Path::new(&a.worktree_path).exists());
 }
 
+/// Two agents on one card is a comparison; the merge is what decides it. The
+/// attempt that did not land is superseded — its worktree comes back, its
+/// diff freezes — rather than left holding a directory forever with nothing
+/// left to decide about it.
+#[test]
+fn merging_one_attempt_supersedes_the_other_still_open_one() {
+    let h = Harness::new("supersede");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.start(&task, "claude");
+    let b = h.start(&task, "codex");
+
+    // Both worked; only one gets merged.
+    std::fs::write(Path::new(&a.worktree_path).join("app.txt"), "a's fix\n").unwrap();
+    git(Path::new(&a.worktree_path), &["add", "-A"]);
+    git(Path::new(&a.worktree_path), &["commit", "-qm", "fix it"]);
+    std::fs::write(Path::new(&b.worktree_path).join("app.txt"), "b's fix\n").unwrap();
+
+    h.core.merge_attempt(&a.attempt_id).expect("merge");
+
+    let board = h.core.task_board();
+    let outcomes: Vec<_> = board[0]
+        .attempts
+        .iter()
+        .map(|x| (x.attempt.seq, x.attempt.outcome))
+        .collect();
+    assert_eq!(
+        outcomes,
+        vec![(1, Some(Outcome::Merged)), (2, Some(Outcome::Superseded))]
+    );
+
+    // The loser's worktree came back, and its evidence did not go with it.
+    assert!(!Path::new(&b.worktree_path).exists());
+    let frozen = h.core.attempt_diff(&b.attempt_id).unwrap();
+    assert!(frozen.contains("b's fix"), "the superseded diff was lost:\n{frozen}");
+
+    // Its branch keeps its number reserved, exactly like any finished attempt.
+    assert_eq!(h.core.running_attempts(), 0);
+}
+
 #[test]
 fn merging_says_so_when_the_attempt_did_nothing() {
     let h = Harness::new("nothing");
@@ -711,6 +785,70 @@ fn merging_says_so_when_the_attempt_did_nothing() {
         .merge_attempt(&a.attempt_id)
         .expect_err("an empty branch has nothing to merge");
     assert!(err.to_string().contains("沒有東西可以合併"), "unhelpful: {err}");
+}
+
+/* ------------------------------ follow-ups ----------------------------- */
+
+/// The review loop's delivery: feedback composed against the diff goes back
+/// into the session's own terminal as ONE pasted message, and onto the
+/// timeline as what was actually asked.
+#[test]
+fn a_followup_reaches_the_terminal_whole_and_lands_on_the_timeline() {
+    let h = Harness::new("followup");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.start(&task, "claude");
+    h.launches(&a.session_id, 1); // the terminal is up
+
+    let text = "[AgentDesk 檢視回饋]\n1. auth.py:12 還是回 None\n2. 缺一個測試";
+    h.core.send_followup(&a.session_id, text).expect("send");
+
+    // The record: the opening prompt, then this, verbatim.
+    let rows = h.timeline(&a.attempt_id, 2);
+    assert_eq!(rows[1].kind, "prompt");
+    assert_eq!(rows[1].detail.as_deref(), Some(text));
+
+    // The delivery: newlines ride inside the bracketed paste, so the message
+    // arrives as one message rather than one per line.
+    let stdin = h.stdin_of(&a.session_id);
+    assert!(stdin.contains("\u{1b}[200~"), "no paste start: {stdin:?}");
+    assert!(stdin.contains("\u{1b}[201~"), "no paste end: {stdin:?}");
+    assert!(
+        stdin.contains("還是回 None\n2. 缺一個測試"),
+        "the message's own newlines did not survive: {stdin:?}"
+    );
+}
+
+/// The same honesty the first prompt has: an unmeasured CLI's input
+/// conventions are not guessed at. The text is the person's to paste, and
+/// nothing lands on the timeline claiming it was sent.
+#[test]
+fn a_followup_to_an_unmeasured_cli_is_refused_rather_than_guessed() {
+    let h = Harness::new("fucodex");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.start(&task, "codex");
+    h.launches(&a.session_id, 1);
+
+    let err = h
+        .core
+        .send_followup(&a.session_id, "改一下")
+        .expect_err("codex's input conventions are not measured");
+    assert!(err.to_string().contains("codex"), "unhelpful: {err}");
+
+    std::thread::sleep(Duration::from_millis(200));
+    let rows = h.core.attempt_events(&a.attempt_id).unwrap();
+    assert_eq!(rows.len(), 1, "a refused send still reached the timeline: {rows:?}");
+}
+
+#[test]
+fn an_empty_followup_is_not_sent() {
+    let h = Harness::new("fuempty");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.start(&task, "claude");
+
+    assert!(h.core.send_followup(&a.session_id, "  \n").is_err());
 }
 
 /* ------------------------------ the timeline --------------------------- */

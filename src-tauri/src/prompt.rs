@@ -63,6 +63,25 @@ pub fn delivery_for(agent: &str) -> Delivery {
     }
 }
 
+/// Wrap a follow-up message for a TUI that is already running.
+///
+/// A later message has no command line to ride on, so it goes in through the
+/// terminal — the same way a person's paste does. Bracketed paste is what
+/// keeps a multi-line message one message: inside the markers a newline is a
+/// character, not a submit. The carriage return comes after the closing
+/// marker, where it means "send", exactly as if the person had pasted and
+/// pressed enter.
+///
+/// Only offered to CLIs whose conventions are measured (`delivery_for`),
+/// because a TUI that never enabled bracketed paste would see the markers as
+/// keystrokes and every newline as its own submission.
+pub fn bracketed_followup(text: &str) -> String {
+    // A trailing newline would sit invisibly inside the paste and turn into a
+    // blank line in the input box, not a submit — trim it rather than send it.
+    let trimmed = text.trim_end_matches(['\n', '\r']);
+    format!("\x1b[200~{trimmed}\x1b[201~\r")
+}
+
 pub fn template_path(data_dir: &Path) -> PathBuf {
     data_dir.join("prompt-template.md")
 }
@@ -237,6 +256,32 @@ mod tests {
         for other in ["codex", "gemini", "aider", "something-new"] {
             assert_eq!(delivery_for(other), Delivery::Manual, "{other}");
         }
+    }
+
+    /// The property the whole review loop stands on: a multi-line follow-up
+    /// arrives as one message. Newlines stay inside the paste markers, and
+    /// the one carriage return — the submit — comes after they close.
+    #[test]
+    fn a_followup_keeps_its_newlines_inside_the_paste_and_submits_once() {
+        let wrapped = bracketed_followup("第一點：修 auth.py\n第二點：補測試\n");
+        assert!(wrapped.starts_with("\x1b[200~"));
+        assert!(wrapped.ends_with("\x1b[201~\r"));
+        // The message's own newlines are all inside the markers.
+        let inside = wrapped
+            .strip_prefix("\x1b[200~")
+            .and_then(|s| s.strip_suffix("\x1b[201~\r"))
+            .unwrap();
+        assert_eq!(inside, "第一點：修 auth.py\n第二點：補測試");
+        // And the only carriage return is the submit at the very end.
+        assert_eq!(wrapped.matches('\r').count(), 1);
+    }
+
+    /// A trailing newline inside the paste would render as a blank line in
+    /// the input box rather than submitting — trimmed, not trusted.
+    #[test]
+    fn a_followups_trailing_newlines_do_not_ride_inside_the_paste() {
+        let wrapped = bracketed_followup("one line\n\n");
+        assert!(wrapped.contains("one line\x1b[201~\r"), "{wrapped:?}");
     }
 
     #[test]

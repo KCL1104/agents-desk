@@ -1205,10 +1205,60 @@ impl Core {
         )?;
 
         self.close_attempt(&attempt, Outcome::Merged)?;
+
+        // The merge is the moment the card's question is answered. Any other
+        // attempt still open on it was a candidate for the same work, and the
+        // candidate that did not land is superseded — not discarded, because
+        // nobody threw it away; it lost. Its diff freezes like any close, so
+        // comparing what the losing agent did remains possible afterwards.
+        for other in self.store.list_attempts(&attempt.task_id)? {
+            if other.id != attempt.id && other.outcome.is_none() {
+                if let Err(e) = self.close_attempt(&other, Outcome::Superseded) {
+                    // The merge itself succeeded; a sibling whose worktree
+                    // would not come back is a mess to report, not to undo.
+                    eprintln!("[core] superseding attempt {} failed: {e:#}", other.id);
+                }
+            }
+        }
+
         self.emit_tasks();
         self.broadcast();
         self.drain_queue();
         Ok(sha)
+    }
+
+    /// Send a later message into an attempt's live terminal.
+    ///
+    /// This is how the review drawer answers "what is still wrong" without a
+    /// navigation: the composed feedback goes in through the PTY the same way
+    /// a person's paste would, and lands on the timeline as what was actually
+    /// asked. Only for CLIs whose conventions are measured — for the rest the
+    /// text is the person's to paste, exactly like the first prompt.
+    pub fn send_followup(&self, session_id: &str, text: &str) -> Result<()> {
+        if text.trim().is_empty() {
+            return Err(anyhow!("nothing to send"));
+        }
+        let (agent, attempt_id) = {
+            let sessions = self.sessions.lock().unwrap();
+            let s = sessions
+                .get(session_id)
+                .ok_or_else(|| anyhow!("no such session: {session_id}"))?;
+            (s.agent.clone(), s.attempt_id.clone())
+        };
+        if prompt::delivery_for(&agent) != Delivery::Positional {
+            return Err(anyhow!(
+                "`{agent}`'s input conventions have not been measured; copy the text in instead"
+            ));
+        }
+
+        self.write(session_id, &prompt::bracketed_followup(text))?;
+
+        // Recorded as sent, like the first prompt: the timeline is the record
+        // of what the agent was asked, follow-ups included.
+        if let Some(id) = attempt_id {
+            let _ = self.store.append_event(&id, now_ms(), "prompt", None, Some(text));
+        }
+        Ok(())
     }
 
     /// Push the branch and open a pull request.

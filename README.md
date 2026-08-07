@@ -41,6 +41,14 @@ terminal's** (see below).
 - **Finishing and concurrency** (M4): `merge into base`, `push + open PR` and
   `discard`. There is a limit on how many run at once (3 by default); cards over
   the limit queue up and start themselves when a slot frees
+- **The review loop** (M5): click a line in the Changes drawer, attach
+  feedback, and send the batch back into the still-open session — through the
+  session's own terminal (bracketed paste), so a multi-line review arrives as
+  **one** message, and the timeline records what was actually asked. A CLI
+  whose input conventions have not been measured gets a copy button instead of
+  a send button, the same honesty the first prompt has. Merging one attempt
+  now marks the card's other open attempts superseded, with their diffs frozen
+  so the two agents' work can still be compared afterwards
 - **English and 繁體中文**, following your system language and switchable from
   the environment panel. Native notifications follow the same setting
 

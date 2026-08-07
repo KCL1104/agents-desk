@@ -557,6 +557,30 @@ textarea { resize: vertical; }
 .diff-line.hunk { color: var(--accent); }
 .diff-line.meta { color: var(--fg-dim); }
 
+/* Feedback attaches to code lines; the pointer says which ones will take it. */
+.diff-line.commentable { cursor: pointer; }
+.diff-line.commentable:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.diff-line.noted {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-left: 2px solid var(--accent); margin-left: -2px;
+}
+
+.review {
+  flex: none; max-height: 40%; overflow: auto;
+  border-top: 1px solid var(--line); padding: 8px 11px;
+  display: flex; flex-direction: column; gap: 7px;
+}
+.review textarea { width: 100%; box-sizing: border-box; }
+.review .row { display: flex; align-items: center; gap: 6px; }
+.review button { padding: 4px 10px; font-size: 12px; }
+.review-target { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-excerpt { color: var(--fg-dim); }
+.review-pending { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+.review-pending li { display: flex; align-items: baseline; gap: 8px; }
+.review-pending .review-note-text {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 .timeline { flex: 1; overflow: auto; margin: 0; padding: 6px 0; list-style: none; }
 .tl-row {
   display: flex; gap: 8px; align-items: baseline;

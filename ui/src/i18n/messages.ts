@@ -167,6 +167,16 @@ export const en = {
   'inspector.noChanges': 'This attempt has not changed any files yet.',
   'inspector.noActivity': 'No activity yet. Status reporting only works with Claude Code.',
 
+  /* ----------------------------- review ------------------------------- */
+  'review.hint': 'Click to attach feedback to this line',
+  'review.placeholder': 'What should change here?',
+  'review.add': 'Add feedback',
+  'review.remove': 'Remove this feedback',
+  'review.send': 'Send {count} back to the agent',
+  'review.copy': 'Copy feedback',
+  'review.header': '[AgentDesk review] Feedback on the current diff:',
+  'review.footer': 'Please address each point above, then commit on this branch.',
+
   /* ------------------------------ env --------------------------------- */
   'env.shell': 'shell',
   'env.source': 'environment source',
@@ -353,6 +363,16 @@ export const zhTW: Record<MessageKey, string> = {
   'inspector.discardHint': '關掉這個 attempt 並收回 worktree。變更會凍結保留。',
   'inspector.noChanges': '這個 attempt 還沒有改動任何檔案。',
   'inspector.noActivity': '還沒有活動。狀態回報只對 Claude Code 有效。',
+
+  /* ----------------------------- review ------------------------------- */
+  'review.hint': '點一下，對這行附上意見',
+  'review.placeholder': '這裡該怎麼改？',
+  'review.add': '加入意見',
+  'review.remove': '移除這則意見',
+  'review.send': '把 {count} 則意見送回給 agent',
+  'review.copy': '複製意見',
+  'review.header': '[AgentDesk 檢視回饋] 以下是對目前 diff 的意見：',
+  'review.footer': '請逐點修改，改完後 commit 在這個分支上。',
 
   /* ------------------------------ env --------------------------------- */
   'env.shell': 'shell',

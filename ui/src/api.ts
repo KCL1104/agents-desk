@@ -94,6 +94,10 @@ export const api = {
   attemptDiff: (attemptId: string) => invoke<string>('attempt_diff', { attemptId }),
   attemptEvents: (attemptId: string) =>
     invoke<AttemptEvent[]>('attempt_events', { attemptId }),
+  /** Send a later message into an attempt's live terminal, as one pasted
+      message. Only for CLIs whose input conventions are measured. */
+  sendFollowup: (id: string, text: string) =>
+    invoke<void>('send_followup', { id, text }),
 
   /** Replay buffer for a pane mounting after its PTY already started. */
   termSnapshot: (id: string) => invoke<{ data: string; seq: number }>('term_snapshot', { id }),

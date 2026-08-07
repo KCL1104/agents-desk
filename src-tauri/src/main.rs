@@ -358,6 +358,16 @@ fn finish_attempt(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// Send a later message into an attempt's live terminal — the review drawer's
+/// way of saying what is still wrong without leaving the diff.
+#[tauri::command]
+fn send_followup(state: State<'_, AppState>, id: String, text: String) -> StdResult<(), String> {
+    state
+        .core()?
+        .send_followup(&id, &text)
+        .map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 fn attempt_diff(state: State<'_, AppState>, attempt_id: String) -> StdResult<String, String> {
     state
@@ -438,6 +448,7 @@ fn main() {
             finish_attempt,
             attempt_diff,
             attempt_events,
+            send_followup,
             cancel_queued,
             concurrency,
             set_concurrency,

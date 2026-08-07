@@ -628,6 +628,19 @@ export function installMock(): void {
 
     attempt_events: (args) => mock.events.get(String(args.attemptId)) ?? [],
 
+    send_followup: (args) => {
+      const s = mock.sessions.find((x) => x.id === args.id);
+      if (!s) throw new Error(`no such session: ${String(args.id)}`);
+      // The core only sends into CLIs whose input conventions are measured,
+      // and only through a live terminal — the mock must refuse the same way.
+      if (s.agent !== 'claude') {
+        throw new Error(`\`${s.agent}\`'s input conventions have not been measured`);
+      }
+      if (!s.live) throw new Error(`no terminal for session ${s.id}`);
+      if (s.attempt_id) mock.record(s.attempt_id, 'prompt', null, String(args.text));
+      return null;
+    },
+
     'plugin:event|listen': (args) => {
       const event = String(args.event);
       const handler = Number(args.handler);

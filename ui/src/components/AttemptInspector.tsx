@@ -1,8 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import type { Attempt, AttemptEvent } from '../types';
 import { useT } from '../i18n';
 import { STATUS_KEY } from '../sections';
+import {
+  commentable,
+  composeReview,
+  followupSendable,
+  parseDiff,
+  type DiffLine,
+  type ReviewComment,
+} from '../review';
 
 interface Props {
   attempt: Attempt;
@@ -15,6 +23,13 @@ interface Props {
 
 type Pane = 'diff' | 'timeline';
 
+/** The line a comment is being written against. */
+interface Picked {
+  file: string | null;
+  line: number | null;
+  excerpt: string;
+}
+
 /**
  * What an attempt changed, and what it did, without reading its terminal.
  *
@@ -24,6 +39,11 @@ type Pane = 'diff' | 'timeline';
  * right there to type into. A review screen that replaced the terminal would
  * turn a follow-up into a navigation problem, which is the point at which
  * this stops being a session manager and becomes a board.
+ *
+ * Saying what is still wrong has a short path of its own: click a diff line,
+ * attach feedback, and send the batch back into the session as one message.
+ * The terminal is still the place for conversation; this is for the review
+ * that reads the diff line by line.
  */
 export function AttemptInspector({ attempt, baseBranch, onClose, onDone }: Props) {
   const t = useT();
@@ -31,6 +51,8 @@ export function AttemptInspector({ attempt, baseBranch, onClose, onDone }: Props
   const [diff, setDiff] = useState<string | null>(null);
   const [events, setEvents] = useState<AttemptEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [comments, setComments] = useState<ReviewComment[]>([]);
+  const [picked, setPicked] = useState<Picked | null>(null);
 
   const refresh = useCallback(() => {
     setError(null);
@@ -50,6 +72,13 @@ export function AttemptInspector({ attempt, baseBranch, onClose, onDone }: Props
   // that reflows under you while you are reading it is worse than one you
   // asked to refresh.
   useEffect(refresh, [refresh]);
+
+  // Feedback is written against one attempt's diff; carrying it across to
+  // another attempt would send it somewhere it was never about.
+  useEffect(() => {
+    setComments([]);
+    setPicked(null);
+  }, [attempt.id]);
 
   return (
     <aside className="inspector" data-testid="inspector">
@@ -95,12 +124,182 @@ export function AttemptInspector({ attempt, baseBranch, onClose, onDone }: Props
         </p>
       )}
 
-      {pane === 'diff' ? <DiffPane diff={diff} /> : <Timeline events={events} />}
+      {pane === 'diff' ? (
+        <DiffPane diff={diff} comments={comments} onPick={setPicked} />
+      ) : (
+        <Timeline events={events} />
+      )}
+
+      {pane === 'diff' && (picked !== null || comments.length > 0) && (
+        <Review
+          attempt={attempt}
+          picked={picked}
+          comments={comments}
+          onPick={setPicked}
+          onChange={setComments}
+          onSent={refresh}
+          onProblem={setError}
+        />
+      )}
 
       {attempt.outcome === null && (
         <Finish attempt={attempt} baseBranch={baseBranch} onDone={onDone} />
       )}
     </aside>
+  );
+}
+
+/**
+ * The feedback being gathered, and the one way it leaves.
+ *
+ * The batch goes back as a single message — each send is a turn, and five
+ * turns would have the agent acting on the first point before it has read
+ * the fifth. Sending goes through the session's own terminal, so it lands
+ * exactly as if it had been pasted there; for a CLI whose input conventions
+ * are not measured the composed text is offered to copy instead, the same
+ * honesty the first prompt has.
+ */
+function Review({
+  attempt,
+  picked,
+  comments,
+  onPick,
+  onChange,
+  onSent,
+  onProblem,
+}: {
+  attempt: Attempt;
+  picked: Picked | null;
+  comments: ReviewComment[];
+  onPick: (p: Picked | null) => void;
+  onChange: (c: ReviewComment[]) => void;
+  onSent: () => void;
+  onProblem: (e: string | null) => void;
+}) {
+  const t = useT();
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const canSend =
+    attempt.outcome === null &&
+    attempt.session_id !== null &&
+    followupSendable(attempt.agent);
+
+  const add = () => {
+    if (!picked || note.trim() === '') return;
+    onChange([...comments, { ...picked, note: note.trim() }]);
+    setNote('');
+    onPick(null);
+  };
+
+  const send = () => {
+    if (!attempt.session_id) return;
+    setBusy(true);
+    onProblem(null);
+    void api
+      .sendFollowup(attempt.session_id, composeReview(comments, t))
+      .then(() => {
+        onChange([]);
+        onPick(null);
+        // The timeline now carries what was just asked.
+        onSent();
+      })
+      .catch((e) => onProblem(String(e)))
+      .finally(() => setBusy(false));
+  };
+
+  const copy = () => {
+    void navigator.clipboard?.writeText(composeReview(comments, t));
+    setCopied(true);
+  };
+
+  return (
+    <div className="review" data-testid="review">
+      {picked && (
+        <div className="review-compose">
+          <div className="mono small muted review-target">
+            {picked.file === null
+              ? ''
+              : picked.line === null
+                ? picked.file
+                : `${picked.file}:${picked.line}`}
+            <span className="review-excerpt"> {picked.excerpt}</span>
+          </div>
+          <textarea
+            rows={2}
+            autoFocus
+            value={note}
+            placeholder={t('review.placeholder')}
+            data-testid="review-note"
+            onChange={(e) => {
+              setNote(e.target.value);
+              setCopied(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) add();
+            }}
+          />
+          <div className="row">
+            <button
+              className="primary"
+              disabled={note.trim() === ''}
+              data-testid="review-add"
+              onClick={add}
+            >
+              {t('review.add')}
+            </button>
+            <button
+              onClick={() => {
+                onPick(null);
+                setNote('');
+              }}
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {comments.length > 0 && (
+        <>
+          <ul className="review-pending" data-testid="review-pending">
+            {comments.map((c, i) => (
+              <li key={i}>
+                <span className="mono small muted">
+                  {c.file === null ? '' : c.line === null ? c.file : `${c.file}:${c.line}`}
+                </span>
+                <span className="review-note-text small">{c.note}</span>
+                <button
+                  className="icon"
+                  aria-label={t('review.remove')}
+                  title={t('review.remove')}
+                  onClick={() => onChange(comments.filter((_, j) => j !== i))}
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="row review-actions">
+            {canSend ? (
+              <button
+                className="primary"
+                disabled={busy}
+                data-testid="review-send"
+                onClick={send}
+              >
+                {t('review.send', { count: comments.length })}
+              </button>
+            ) : (
+              <button data-testid="review-copy" onClick={copy}>
+                {copied ? t('attempt.copied') : t('review.copy')}
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -187,8 +386,18 @@ function Finish({
   );
 }
 
-function DiffPane({ diff }: { diff: string | null }) {
+function DiffPane({
+  diff,
+  comments,
+  onPick,
+}: {
+  diff: string | null;
+  comments: readonly ReviewComment[];
+  onPick: (p: Picked) => void;
+}) {
   const t = useT();
+  const lines = useMemo(() => (diff === null ? [] : parseDiff(diff)), [diff]);
+
   if (diff === null) return <p className="muted small pad">{t('common.loading')}</p>;
   if (diff.trim() === '') {
     return (
@@ -197,11 +406,31 @@ function DiffPane({ diff }: { diff: string | null }) {
       </p>
     );
   }
+
+  const noted = (l: DiffLine) =>
+    comments.some((c) => c.file === l.file && c.line === l.line && c.excerpt === l.text);
+
   return (
     <pre className="diff mono" data-testid="diff-body">
-      {diff.split('\n').map((line, i) => (
-        <span key={i} className={`diff-line ${lineKind(line)}`}>
-          {line}
+      {lines.map((l, i) => (
+        <span
+          key={i}
+          className={[
+            'diff-line',
+            classOf(l),
+            commentable(l) ? 'commentable' : '',
+            noted(l) ? 'noted' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          title={commentable(l) ? t('review.hint') : undefined}
+          onClick={
+            commentable(l)
+              ? () => onPick({ file: l.file, line: l.line, excerpt: l.text })
+              : undefined
+          }
+        >
+          {l.text}
           {'\n'}
         </span>
       ))}
@@ -210,19 +439,23 @@ function DiffPane({ diff }: { diff: string | null }) {
 }
 
 /**
- * Which colour a diff line takes.
- *
- * `+++`/`---` are checked before `+`/`-` — they are file headers, not an
- * added and a removed line, and colouring them as changes makes every file in
- * the diff look like it both gained and lost a line.
+ * Which colour a diff line takes. The parser has already told the file
+ * headers apart from added and removed lines — colouring `+++` as an addition
+ * is exactly the mistake it exists to prevent.
  */
-function lineKind(line: string): string {
-  if (line.startsWith('+++') || line.startsWith('---')) return 'meta';
-  if (line.startsWith('@@')) return 'hunk';
-  if (line.startsWith('diff ') || line.startsWith('index ')) return 'meta';
-  if (line.startsWith('+')) return 'add';
-  if (line.startsWith('-')) return 'del';
-  return '';
+function classOf(l: DiffLine): string {
+  switch (l.kind) {
+    case 'add':
+      return 'add';
+    case 'del':
+      return 'del';
+    case 'hunk':
+      return 'hunk';
+    case 'meta':
+      return 'meta';
+    default:
+      return '';
+  }
 }
 
 function Timeline({ events }: { events: AttemptEvent[] }) {
