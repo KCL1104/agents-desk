@@ -95,6 +95,89 @@ session 的流程，以及 xterm 對**真實 PTY bytes** 的解碼與渲染。
 
 ---
 
+## 發佈
+
+三個平台的安裝檔由 GitHub Actions 產生（`.github/workflows/release.yml`）。
+
+版本號的真相在 `src-tauri/tauri.conf.json` —— bundler 用它命名所有產物，跟 git tag
+無關。所以 workflow 第一件事就是比對 tag 與它一不一致，不一致直接失敗，免得
+`v0.2.0` 的 release 裡掛著一堆 `AgentDesk_0.1.0_*`。
+
+```bash
+# src-tauri/tauri.conf.json、src-tauri/Cargo.toml、package.json 的 version 一起改
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+接著：建 draft release → 四個平台平行 build → **全綠才把 release 轉正**。
+有平台掛掉就停在 draft，不會出半套。
+
+只想拿執行檔、不想發版：到 Actions 頁面手動跑 Release，產物會掛在該次 run 的
+artifacts 底下，不碰任何 release。
+
+| 平台 | runner | 產物 |
+| --- | --- | --- |
+| Linux x86_64 | `ubuntu-22.04` | `.deb`、`.rpm`、`.AppImage` |
+| macOS Apple Silicon | `macos-15` | `.dmg`、`.app` |
+| macOS Intel | `macos-15-intel` | `.dmg`、`.app` |
+| Windows x86_64 | `windows-latest` | `.msi`、NSIS `.exe` |
+
+Linux 建在 22.04 而不是 24.04：glibc 與 WebKit 只往前相容，24.04 建出來的東西在
+22.04 上跑不起來。`macos-15-intel` 是 Actions 最後一版 x86_64 的 macOS image，
+2027 年 8 月退役 —— 到那時候 Intel 那一列就得拿掉。
+
+`.deb` / `.rpm` 的相依只有一半會自己長出來：bundler 會去讀執行檔實際連到的 so，
+把 `libwebkit2gtk-4.1-0`、`libgtk-3-0` 補進去。**但 `git` 不會** —— 它是用
+`Command::new("git")` 在執行期叫的，不是連進去的函式庫，掃不到。所以那一條寫在
+`tauri.conf.json` 的 `bundle.linux.deb.depends` 裡，漏了的話裝得起來、開下去
+worktree 就爛掉。`gh` 放在 `recommends`（只有開 PR 那條路徑會用到）。
+
+### 沒有簽章
+
+repo 裡沒有任何簽章金鑰，所以三個平台的產物都是未簽章的。使用者第一次開會被系統擋：
+
+- **macOS** —— Gatekeeper 會說「已損毀，無法打開」。不是真的壞掉，是 quarantine
+  屬性：
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/AgentDesk.app
+  ```
+
+- **Windows** —— SmartScreen 藍色視窗，「更多資訊」→「仍要執行」
+- **Linux** —— 不擋
+
+要正式簽章的話 workflow 的 env 已經接好了，把對應的 secrets 加進 repo 就會生效：
+`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、
+`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`。沒設的時候它們是空字串，Tauri 會
+直接跳過簽章，build 不會因此失敗。
+
+### icon
+
+`src-tauri/icons/` 底下的 `.ico`、`.icns` 與各尺寸 PNG 都是 commit 進來的，不是 CI
+現產。Windows 要 `.ico`、macOS 要 `.icns`，少一個那個平台就打不出安裝檔。要換圖時：
+
+```bash
+npm run tauri -- icon path/to/new-icon.png
+```
+
+它的輸出目錄預設就是 `src-tauri/icons/`，而且**會連來源的 `icon.png` 一起覆寫**。
+想留著原圖就先 `-o` 到別的地方，再把需要的檔案搬回來。
+
+---
+
+## CI
+
+`.github/workflows/ci.yml`。push 到 main 與所有 PR 都會跑：Rust `cargo test`、
+前端 typecheck + build + Playwright、sidecar typecheck + build。push 到 main 時
+另外跑一輪三平台 bundle，確保打包本身沒壞（PR 不跑，太貴）。
+
+`cargo fmt` 與 `clippy` **不擋 CI**，只把結果印出來 —— 現在這棵樹還不是
+rustfmt-clean，把整棵樹重排是另一件事，不該跟接 CI 綁在一起。
+
+`npm run smoke` 沒有進 CI：它會真的開一個 Claude Code session，需要憑證。
+
+---
+
 ## 狀態偵測
 
 多開 session 時你唯一真正需要的資訊是「哪一個在等我」。取得方式是請 Claude Code

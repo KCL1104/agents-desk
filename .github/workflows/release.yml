@@ -1,0 +1,200 @@
+name: Release
+
+# Builds AgentDesk installers for Linux, macOS (Apple Silicon + Intel) and Windows.
+#
+# Two ways to run it:
+#   1. Push a tag like `v0.1.0`  -> builds every platform, uploads the artifacts to a
+#      GitHub Release, then publishes that release once all four builds are green.
+#   2. Run it manually (workflow_dispatch) -> builds every platform and attaches the
+#      installers as workflow artifacts. No release is created or touched.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# Needed so the workflow can create the GitHub Release and upload assets to it.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Only runs for tag pushes. Creates the draft release that the build matrix
+  # uploads into, so the four platform jobs don't race to create it themselves.
+  # ---------------------------------------------------------------------------
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # The bundler names every artifact after the version in tauri.conf.json, not
+      # after the git tag. Without this guard, tagging v0.2.0 while the config still
+      # says 0.1.0 silently ships files called AgentDesk_0.1.0_*.
+      - name: Check the tag matches tauri.conf.json
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          config_version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          echo "tag=${tag_version}  tauri.conf.json=${config_version}"
+          if [ "$tag_version" != "$config_version" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match version ${config_version} in src-tauri/tauri.conf.json."
+            echo "::error::Bump the version in src-tauri/tauri.conf.json (and Cargo.toml / package.json) or retag."
+            exit 1
+          fi
+
+      - name: Create draft release
+        id: create
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Re-running a tag should reuse its release rather than fail.
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --draft \
+              --title "AgentDesk $GITHUB_REF_NAME" \
+              --generate-notes
+          fi
+          release_id="$(gh release view "$GITHUB_REF_NAME" --json databaseId --jq .databaseId)"
+          echo "release_id=${release_id}" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # The actual cross-platform build.
+  # ---------------------------------------------------------------------------
+  build:
+    needs: create-release
+    # `needs` alone would skip this job on workflow_dispatch, because create-release
+    # is skipped there. `always()` keeps it running, and we only bail if the release
+    # job genuinely failed.
+    if: ${{ always() && needs.create-release.result != 'failure' && needs.create-release.result != 'cancelled' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Built on 22.04 on purpose: glibc/WebKit are forward-compatible only, so
+          # a 24.04 build would refuse to run on 22.04 machines.
+          - name: linux-x86_64
+            runner: ubuntu-22.04
+            args: ""
+            rust_targets: ""
+          - name: macos-aarch64
+            runner: macos-15
+            args: "--target aarch64-apple-darwin"
+            rust_targets: "aarch64-apple-darwin"
+          - name: macos-x86_64
+            runner: macos-15-intel
+            args: "--target x86_64-apple-darwin"
+            rust_targets: "x86_64-apple-darwin"
+          - name: windows-x86_64
+            runner: windows-latest
+            args: ""
+            rust_targets: ""
+
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        # Windows runners default to pwsh; force bash so one script works everywhere.
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ui/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.name }}
+
+      # libwebkit2gtk-4.1 is the engine Tauri v2 renders with. xdg-utils is required
+      # by the AppImage bundler (it shells out to xdg-mime/xdg-open), and patchelf +
+      # librsvg2 are what actually assemble the AppImage.
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            xdg-utils
+
+      # Provides the Tauri CLI that tauri-action drives via `npm run tauri`.
+      - name: Install Tauri CLI
+        run: npm ci
+
+      # tauri.conf.json's beforeBuildCommand runs `npm --prefix ../ui run build`,
+      # so the UI's node_modules must exist before the bundler starts. The bundler
+      # builds the frontend itself; don't build it here or it happens twice.
+      - name: Install frontend dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Build and bundle
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Everything below is optional. Unset secrets arrive as empty strings and
+          # Tauri simply skips signing, producing unsigned (but working) installers.
+          # See the release section of README.md for what to add when you want signed
+          # builds.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          # Empty on workflow_dispatch, which makes the action build without
+          # touching any release.
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          tauriScript: npm run tauri
+          args: ${{ matrix.args }}
+          # This project has no tauri-plugin-updater, so there is nothing to sign
+          # an update manifest for.
+          uploadUpdaterJson: false
+          uploadUpdaterSignatures: false
+          # Always keep a downloadable copy on the run itself, which is the only
+          # output when the workflow is dispatched manually.
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: agentdesk-${{ matrix.name }}
+          retryAttempts: 2
+
+  # ---------------------------------------------------------------------------
+  # Flip the draft release to published, but only once every platform succeeded.
+  # A partial failure leaves the release in draft so nothing half-built ships.
+  # ---------------------------------------------------------------------------
+  publish-release:
+    needs: [create-release, build]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest

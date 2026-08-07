@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../ui/dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "npm --prefix ../ui run dev",
-    "beforeBuildCommand": "npm --prefix ../ui run build"
+    "beforeDevCommand": "npm --prefix ui run dev",
+    "beforeBuildCommand": "npm --prefix ui run build"
   },
   "app": {
     "windows": [
@@ -23,7 +23,33 @@
   },
   "bundle": {
     "active": true,
-    "targets": "app",
-    "icon": ["icons/icon.png"]
+    "targets": ["deb", "rpm", "appimage", "app", "dmg", "nsis", "msi"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "publisher": "AgentDesk",
+    "homepage": "https://github.com/kcl1104/agents-desk",
+    "copyright": "Copyright (c) 2026 AgentDesk contributors",
+    "shortDescription": "Desktop cockpit for multiple coding agent sessions",
+    "longDescription": "AgentDesk is a local-first desktop console for running and supervising multiple coding agent sessions, with git worktree isolation, lifecycle hooks and native notifications.",
+    "linux": {
+      "deb": {
+        "depends": ["git"],
+        "recommends": ["gh"],
+        "section": "devel"
+      },
+      "rpm": {
+        "depends": ["git"],
+        "recommends": ["gh"]
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
   }
 }

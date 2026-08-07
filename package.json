@@ -7,6 +7,11 @@
     "build:sidecar": "npm --prefix sidecar run build",
     "dev": "npm run build:sidecar && cargo tauri dev --config src-tauri/tauri.conf.json",
     "smoke": "npm --prefix sidecar run build && node sidecar/smoke.mjs",
-    "test:rust": "cd src-tauri && cargo test"
+    "test:rust": "cd src-tauri && cargo test",
+    "tauri": "tauri",
+    "build:app": "npm --prefix ui ci && npm run tauri -- build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
   }
 }
