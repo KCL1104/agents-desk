@@ -13,9 +13,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::hooks::{self, Activity, HookHandler, HookReport, HookServer, HookState};
+use crate::prompt::{self, Delivery};
 use crate::pty::{PtyRegistry, PtySink};
 use crate::shell_env::{self, ShellEnv};
-use crate::store::{Store, StoredSession, StoredTab};
+use crate::store::{Lifecycle, Outcome, Store, StoredAttempt, StoredSession, StoredTab, StoredTask};
+use crate::worktree::{self, Worktrees};
 
 pub trait UiSink: Send + Sync + 'static {
     fn emit(&self, event: &str, payload: serde_json::Value);
@@ -36,6 +38,19 @@ pub enum Status {
     Saved,
     /// Terminal is up; the agent has not reported anything yet.
     Starting,
+    /// Sitting on Claude Code's folder-trust prompt.
+    ///
+    /// Every attempt opens a worktree Claude Code has never seen, so every
+    /// attempt starts here. No hook can report it: nothing runs until the
+    /// prompt is answered, `SessionStart` included. Measured — see
+    /// `tests/prompt_injection.rs`.
+    ///
+    /// So the core sets it directly, which it can do honestly because it
+    /// created the directory a moment earlier and knows this is its first
+    /// launch. Without it the badge would miss the one state every new
+    /// attempt begins in, and an auto-started queued attempt would look like
+    /// it was running while it sat waiting for a keystroke.
+    AwaitingTrust,
     /// The agent is working.
     Running,
     /// Blocked on a permission decision — it cannot continue without you.
@@ -50,7 +65,10 @@ pub enum Status {
 impl Status {
     /// Whether this state means a human is being waited on.
     pub fn needs_you(self) -> bool {
-        matches!(self, Status::WaitingPermission | Status::WaitingInput)
+        matches!(
+            self,
+            Status::WaitingPermission | Status::WaitingInput | Status::AwaitingTrust
+        )
     }
 
     fn from_hook(state: HookState) -> Self {
@@ -87,6 +105,9 @@ pub struct SessionMeta {
     /// session never reports it, because `Stop` means "this turn ended", not
     /// "the work is finished".
     pub completed: bool,
+    /// The attempt this session is running, or `None` for an ad-hoc session
+    /// that lives outside the board.
+    pub attempt_id: Option<String>,
 }
 
 impl SessionMeta {
@@ -100,6 +121,7 @@ impl SessionMeta {
             last_active_at: self.last_active_at,
             archived: false,
             completed: self.completed,
+            attempt_id: self.attempt_id.clone(),
         }
     }
 
@@ -117,8 +139,35 @@ impl SessionMeta {
             activity: None,
             activity_since: 0,
             completed: s.completed,
+            attempt_id: s.attempt_id,
         }
     }
+}
+
+/// Assemble a command line: options first, the prompt last.
+///
+/// Kept apart from spawning because the ordering is the whole point and it is
+/// easy to undo by accident. A positional argument sitting in front of an
+/// option leaves the parse to whatever the CLI happens to do with it, and the
+/// symptom — a session that starts and then does nothing — looks like a dozen
+/// other problems.
+fn build_args(
+    agent: &str,
+    opts: Vec<String>,
+    plugin_dir: Option<&str>,
+    positional: Option<String>,
+) -> Vec<String> {
+    let mut args = opts;
+    // Only Claude Code understands `--plugin-dir`; other CLIs run without
+    // status reporting rather than failing to start.
+    if let (Some(dir), "claude") = (plugin_dir, agent) {
+        args.push("--plugin-dir".to_string());
+        args.push(dir.to_string());
+    }
+    if let Some(p) = positional {
+        args.push(p);
+    }
+    args
 }
 
 fn now_ms() -> u64 {
@@ -204,6 +253,7 @@ impl HookHandler for Router {
         if let Some((title, cwd)) = notify {
             let body = match status {
                 Status::WaitingPermission => "需要你授權才能繼續",
+                Status::AwaitingTrust => "在等你確認這個資料夾",
                 _ => "在等你回覆",
             };
             self.sink.emit(
@@ -220,6 +270,39 @@ impl HookHandler for Router {
     }
 }
 
+/// A card as the board needs it: the row, its attempts, and which session
+/// each attempt is running in right now.
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskView {
+    #[serde(flatten)]
+    pub task: StoredTask,
+    pub attempts: Vec<AttemptView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AttemptView {
+    #[serde(flatten)]
+    pub attempt: StoredAttempt,
+    /// `None` once the attempt's session has been archived out from under it.
+    pub session_id: Option<String>,
+}
+
+/// What opening an attempt produced.
+#[derive(Debug, Clone, Serialize)]
+pub struct OpenedAttempt {
+    pub attempt_id: String,
+    pub session_id: String,
+    pub branch: String,
+    pub worktree_path: String,
+    /// The prompt as it was sent — or as it was built, when the agent's
+    /// conventions are unknown and it is waiting to be pasted in.
+    pub prompt: String,
+    /// False when this CLI is one whose argument conventions have not been
+    /// measured. The session is real either way; only the first message is
+    /// the person's to deliver.
+    pub prompt_sent: bool,
+}
+
 pub struct Core {
     pub env: ShellEnv,
     store: Store,
@@ -229,6 +312,8 @@ pub struct Core {
     sink: Arc<dyn UiSink>,
     router: Arc<Router>,
     hooks: OnceLock<HookServer>,
+    data_dir: std::path::PathBuf,
+    worktrees: Worktrees,
 }
 
 impl Core {
@@ -238,6 +323,21 @@ impl Core {
         data_dir: std::path::PathBuf,
     ) -> Result<Arc<Self>> {
         let env = shell_env::resolve().await;
+        Self::start_with(env, sink, db_path, data_dir, Worktrees::default_root()).await
+    }
+
+    /// Start against a given environment and worktree root.
+    ///
+    /// The seam exists so the whole core can be driven without touching the
+    /// person's home directory or their real agent — and so the worktree root
+    /// can become a setting later without moving anything.
+    pub async fn start_with(
+        env: ShellEnv,
+        sink: Arc<dyn UiSink>,
+        db_path: std::path::PathBuf,
+        data_dir: std::path::PathBuf,
+        worktree_root: std::path::PathBuf,
+    ) -> Result<Arc<Self>> {
         let store = Store::open(&db_path)?;
 
         let restored: HashMap<String, SessionMeta> = store
@@ -288,6 +388,8 @@ impl Core {
             sink: Arc::clone(&sink),
             router: Arc::clone(&router),
             hooks: OnceLock::new(),
+            data_dir: data_dir.clone(),
+            worktrees: Worktrees::new(worktree_root),
         });
 
         // Status reporting is a nicety: if the listener cannot bind, sessions
@@ -301,7 +403,478 @@ impl Core {
 
         core.broadcast();
         core.emit_tabs();
+        core.emit_tasks();
         Ok(core)
+    }
+
+    /* ---------------------------- tasks ---------------------------- */
+
+    /// Make a card.
+    ///
+    /// The repository is checked here rather than when someone first tries to
+    /// run the card, so a card that can never produce an attempt cannot be
+    /// created in the first place. Ad-hoc sessions are subject to none of
+    /// this — they are just a directory.
+    pub fn create_task(
+        &self,
+        title: String,
+        prompt: String,
+        repo_path: String,
+        base_branch: String,
+    ) -> Result<String> {
+        self.worktrees
+            .check_repo(&self.env, std::path::Path::new(&repo_path), &base_branch)?;
+
+        let id = uuid::Uuid::new_v4().to_string();
+        let position = self
+            .store
+            .list_tasks()
+            .unwrap_or_default()
+            .iter()
+            .filter(|t| t.lifecycle == Lifecycle::Backlog)
+            .count() as i64;
+
+        self.store.upsert_task(&StoredTask {
+            id: id.clone(),
+            title,
+            prompt,
+            repo_path,
+            base_branch,
+            lifecycle: Lifecycle::Backlog,
+            position,
+            created_at: now_ms(),
+        })?;
+        self.emit_tasks();
+        Ok(id)
+    }
+
+    /// Move a card, or reorder it within its column.
+    ///
+    /// Only ever called from a drag. Nothing the agent reports reaches this:
+    /// a `Stop` hook means "this turn ended", not "the work is finished", and
+    /// the distance between those two is the entire reason the board and the
+    /// session lights are separate axes.
+    pub fn move_task(&self, id: &str, lifecycle: Lifecycle, position: i64) -> Result<()> {
+        let mut tasks = self.store.list_tasks()?;
+        let Some(idx) = tasks.iter().position(|t| t.id == id) else {
+            return Err(anyhow!("no such task: {id}"));
+        };
+
+        let mut moved = tasks.remove(idx);
+        let was = moved.lifecycle;
+        moved.lifecycle = lifecycle;
+
+        // Renumber both affected columns from scratch. Positions are only
+        // meaningful relative to their neighbours, and rewriting them is far
+        // cheaper than reasoning about which of them shifted.
+        let mut column: Vec<StoredTask> =
+            tasks.iter().filter(|t| t.lifecycle == lifecycle).cloned().collect();
+        let at = (position.max(0) as usize).min(column.len());
+        column.insert(at, moved);
+
+        for (i, t) in column.iter_mut().enumerate() {
+            t.position = i as i64;
+            self.store.upsert_task(t)?;
+        }
+        if was != lifecycle {
+            for (i, t) in tasks
+                .iter_mut()
+                .filter(|t| t.lifecycle == was)
+                .enumerate()
+            {
+                t.position = i as i64;
+                self.store.upsert_task(t)?;
+            }
+        }
+        self.emit_tasks();
+        Ok(())
+    }
+
+    pub fn delete_task(&self, id: &str) -> Result<()> {
+        // Attempts still holding a worktree have to give it back first, or
+        // the directories outlive every record that they exist.
+        for attempt in self.store.list_attempts(id)? {
+            if attempt.outcome.is_none() {
+                let _ = self.close_attempt(&attempt, Outcome::Discarded);
+            }
+        }
+        self.store.delete_task(id)?;
+        self.emit_tasks();
+        Ok(())
+    }
+
+    /// Every card, with its attempts and their live sessions.
+    pub fn task_board(&self) -> Vec<TaskView> {
+        let by_attempt: HashMap<String, String> = self
+            .sessions
+            .lock()
+            .unwrap()
+            .values()
+            .filter_map(|s| s.attempt_id.clone().map(|a| (a, s.id.clone())))
+            .collect();
+
+        self.store
+            .list_tasks()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|task| {
+                let attempts = self
+                    .store
+                    .list_attempts(&task.id)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|attempt| AttemptView {
+                        session_id: by_attempt.get(&attempt.id).cloned(),
+                        attempt,
+                    })
+                    .collect();
+                TaskView { task, attempts }
+            })
+            .collect()
+    }
+
+    /* --------------------------- attempts -------------------------- */
+
+    /// The first message, as it would be sent, for the dialog to show and let
+    /// the person edit before anything is spawned.
+    ///
+    /// The branch and base here are the best guess available before the
+    /// worktree exists. `open_attempt` renders again against what git
+    /// actually handed back, so an edited prompt is used verbatim and an
+    /// unedited one is never left quoting a number it did not get.
+    pub fn preview_prompt(&self, task_id: &str, agent: &str) -> Result<serde_json::Value> {
+        let task = self.task(task_id)?;
+        let seq = self.store.next_attempt_seq(task_id)?;
+        let slug = worktree::slug(&task.title, &task.id);
+        let base_sha = self
+            .worktrees
+            .head_of(&self.env, std::path::Path::new(&task.repo_path), &task.base_branch)
+            .unwrap_or_default();
+        let template = prompt::load_or_create(&self.data_dir)?;
+        let text = prompt::render(
+            &template,
+            &prompt::Vars {
+                title: &task.title,
+                branch: &format!("agentdesk/{slug}-{seq}"),
+                base_branch: &task.base_branch,
+                base_sha: &base_sha,
+                prompt: &task.prompt,
+            },
+        );
+        Ok(serde_json::json!({
+            "prompt": text,
+            // So the dialog can say plainly that this one will not be sent
+            // for you, rather than letting you press a button that quietly
+            // does nothing.
+            "willSend": prompt::delivery_for(agent) == Delivery::Positional,
+        }))
+    }
+
+    /// Open a worktree for this card and start an agent in it.
+    ///
+    /// `first_prompt` is what the dialog showed, after any edits. It is sent
+    /// as written and recorded on the timeline as written, so what the agent
+    /// was actually asked is never inferred after the fact.
+    pub fn open_attempt(
+        &self,
+        task_id: &str,
+        agent: String,
+        first_prompt: Option<String>,
+        cols: u16,
+        rows: u16,
+    ) -> Result<OpenedAttempt> {
+        let task = self.task(task_id)?;
+        let repo = std::path::PathBuf::from(&task.repo_path);
+        let seq = self.store.next_attempt_seq(task_id)?;
+        let slug = worktree::slug(&task.title, &task.id);
+
+        let wt = self
+            .worktrees
+            .create(&self.env, &repo, &task.base_branch, &slug, seq)?;
+
+        // From here on a failure has a worktree to give back.
+        let opened = self.finish_opening(&task, agent, first_prompt, &wt, cols, rows);
+        if opened.is_err() {
+            let _ = self.worktrees.remove(&self.env, &repo, &wt.path);
+        }
+        let opened = opened?;
+
+        self.move_task(task_id, Lifecycle::Running, 0)?;
+        self.emit_tasks();
+        self.broadcast();
+        Ok(opened)
+    }
+
+    fn finish_opening(
+        &self,
+        task: &StoredTask,
+        agent: String,
+        first_prompt: Option<String>,
+        wt: &worktree::OpenedWorktree,
+        cols: u16,
+        rows: u16,
+    ) -> Result<OpenedAttempt> {
+        let attempt_id = uuid::Uuid::new_v4().to_string();
+        let cwd = wt.path.to_string_lossy().to_string();
+
+        let text = match first_prompt {
+            Some(edited) => edited,
+            None => {
+                let template = prompt::load_or_create(&self.data_dir)?;
+                prompt::render(
+                    &template,
+                    &prompt::Vars {
+                        title: &task.title,
+                        branch: &wt.branch,
+                        base_branch: &task.base_branch,
+                        base_sha: &wt.base_sha,
+                        prompt: &task.prompt,
+                    },
+                )
+            }
+        };
+
+        let delivery = prompt::delivery_for(&agent);
+        let positional = match delivery {
+            Delivery::Positional => Some(text.clone()),
+            Delivery::Manual => None,
+        };
+
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let at = now_ms();
+        // A brand-new worktree always opens on the folder-trust prompt, and
+        // no hook can report that. See `Status::AwaitingTrust`.
+        let status = if delivery == Delivery::Positional {
+            Status::AwaitingTrust
+        } else {
+            Status::Starting
+        };
+
+        let meta = SessionMeta {
+            id: session_id.clone(),
+            cwd: cwd.clone(),
+            title: format!("{} #{}", task.title, wt.seq),
+            agent: agent.clone(),
+            status,
+            created_at: at,
+            last_active_at: at,
+            live: true,
+            reports_status: false,
+            activity: None,
+            activity_since: 0,
+            completed: false,
+            attempt_id: Some(attempt_id.clone()),
+        };
+
+        // `--continue` is deliberately absent: this worktree has no history
+        // for it to continue, and the prompt is what starts the work.
+        self.launch(&session_id, &agent, Vec::new(), positional, &cwd, cols, rows)?;
+
+        self.store.insert_attempt(&StoredAttempt {
+            id: attempt_id.clone(),
+            task_id: task.id.clone(),
+            seq: wt.seq,
+            agent,
+            worktree_path: cwd.clone(),
+            branch: wt.branch.clone(),
+            base_sha: wt.base_sha.clone(),
+            outcome: None,
+            frozen_diff: None,
+            created_at: at,
+        })?;
+
+        self.persist(&meta);
+        self.sessions
+            .lock()
+            .unwrap()
+            .insert(session_id.clone(), meta);
+
+        // Recorded as sent, not as templated: the dialog is editable, and the
+        // timeline has to show what the agent was actually asked.
+        let _ = self
+            .store
+            .append_event(&attempt_id, at, "prompt", None, Some(&text));
+
+        Ok(OpenedAttempt {
+            attempt_id,
+            session_id,
+            branch: wt.branch.clone(),
+            worktree_path: cwd,
+            prompt: text,
+            prompt_sent: delivery == Delivery::Positional,
+        })
+    }
+
+    /// Put a terminal back on an attempt that is not running.
+    ///
+    /// After a restart this is the state every attempt is in — the app kills
+    /// its PTYs on the way out and the agent's own history on disk is what
+    /// survives. `--continue` reads that history; the prompt is deliberately
+    /// not sent again, because a second copy would set the agent off doing the
+    /// whole card from the beginning.
+    pub fn reopen_attempt(&self, attempt_id: &str, cols: u16, rows: u16) -> Result<String> {
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        if attempt.outcome.is_some() {
+            return Err(anyhow!(
+                "attempt {attempt_id} is finished; its worktree has been removed"
+            ));
+        }
+        if !std::path::Path::new(&attempt.worktree_path).is_dir() {
+            return Err(anyhow!(
+                "the worktree at {} is gone",
+                attempt.worktree_path
+            ));
+        }
+
+        let existing = self
+            .sessions
+            .lock()
+            .unwrap()
+            .values()
+            .find(|s| s.attempt_id.as_deref() == Some(attempt_id))
+            .map(|s| s.id.clone());
+
+        if let Some(id) = existing {
+            if self.ptys.is_live(&id) {
+                return Err(anyhow!("attempt {attempt_id} already has a terminal"));
+            }
+            self.reopen_session(&id, cols, rows)?;
+            return Ok(id);
+        }
+
+        // The session row was archived out from under the attempt. Give it a
+        // new terminal on the same worktree; the agent's history is in the
+        // directory, not in our row.
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let at = now_ms();
+        let opts = if attempt.agent == "claude" {
+            vec!["--continue".to_string()]
+        } else {
+            Vec::new()
+        };
+        let meta = SessionMeta {
+            id: session_id.clone(),
+            cwd: attempt.worktree_path.clone(),
+            title: format!("attempt #{}", attempt.seq),
+            agent: attempt.agent.clone(),
+            status: Status::Starting,
+            created_at: at,
+            last_active_at: at,
+            live: true,
+            reports_status: false,
+            activity: None,
+            activity_since: 0,
+            completed: false,
+            attempt_id: Some(attempt_id.to_string()),
+        };
+        self.launch(
+            &session_id,
+            &attempt.agent,
+            opts,
+            None,
+            &attempt.worktree_path,
+            cols,
+            rows,
+        )?;
+        self.persist(&meta);
+        self.sessions
+            .lock()
+            .unwrap()
+            .insert(session_id.clone(), meta);
+        self.broadcast();
+        Ok(session_id)
+    }
+
+    /// End an attempt: freeze what it did, then give the worktree back.
+    ///
+    /// The order matters. Removing the worktree first would take the diff
+    /// with it, and an attempt whose evidence is gone cannot be reviewed —
+    /// which is the whole reason a superseded attempt is kept at all.
+    pub fn finish_attempt(&self, attempt_id: &str, outcome: Outcome) -> Result<()> {
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        self.close_attempt(&attempt, outcome)?;
+        self.emit_tasks();
+        self.broadcast();
+        Ok(())
+    }
+
+    fn close_attempt(&self, attempt: &StoredAttempt, outcome: Outcome) -> Result<()> {
+        let task = self.task(&attempt.task_id).ok();
+        let worktree = std::path::PathBuf::from(&attempt.worktree_path);
+
+        // Best effort: a worktree that has already been deleted by hand must
+        // not stop the attempt from being closed out.
+        let diff = self
+            .worktrees
+            .diff(&self.env, &worktree, &attempt.base_sha)
+            .ok();
+
+        self.store
+            .finish_attempt(&attempt.id, outcome, diff.as_deref())?;
+
+        // The session goes with the directory it was running in.
+        let session = self
+            .sessions
+            .lock()
+            .unwrap()
+            .values()
+            .find(|s| s.attempt_id.as_deref() == Some(&attempt.id))
+            .map(|s| s.id.clone());
+        if let Some(id) = session {
+            self.ptys.kill(&id);
+            let _ = self.store.archive_session(&id);
+            self.sessions.lock().unwrap().remove(&id);
+        }
+
+        if let Some(task) = task {
+            self.worktrees.remove(
+                &self.env,
+                std::path::Path::new(&task.repo_path),
+                &worktree,
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn attempt_events(&self, attempt_id: &str) -> Result<Vec<crate::store::AttemptEvent>> {
+        self.store.list_events(attempt_id)
+    }
+
+    /// The attempt's diff: live from the worktree while it still exists, and
+    /// the frozen copy once it does not.
+    pub fn attempt_diff(&self, attempt_id: &str) -> Result<String> {
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        if let Some(frozen) = attempt.frozen_diff {
+            return Ok(frozen);
+        }
+        self.worktrees.diff(
+            &self.env,
+            std::path::Path::new(&attempt.worktree_path),
+            &attempt.base_sha,
+        )
+    }
+
+    fn task(&self, id: &str) -> Result<StoredTask> {
+        self.store
+            .list_tasks()?
+            .into_iter()
+            .find(|t| t.id == id)
+            .ok_or_else(|| anyhow!("no such task: {id}"))
+    }
+
+    fn emit_tasks(&self) {
+        if let Ok(v) = serde_json::to_value(self.task_board()) {
+            self.sink.emit("tasks:changed", v);
+        }
     }
 
     /* --------------------------- commands -------------------------- */
@@ -338,9 +911,10 @@ impl Core {
             activity: None,
             activity_since: 0,
             completed: false,
+            attempt_id: None,
         };
 
-        self.launch(&id, &agent, extra_args, &cwd, cols, rows)?;
+        self.launch(&id, &agent, extra_args, None, &cwd, cols, rows)?;
 
         self.persist(&meta);
         self.sessions.lock().unwrap().insert(id.clone(), meta);
@@ -371,7 +945,7 @@ impl Core {
             Vec::new()
         };
 
-        self.launch(id, &meta.agent, args, &meta.cwd, cols, rows)?;
+        self.launch(id, &meta.agent, args, None, &meta.cwd, cols, rows)?;
 
         if let Some(s) = self.sessions.lock().unwrap().get_mut(id) {
             s.status = Status::Starting;
@@ -383,29 +957,31 @@ impl Core {
     }
 
     /// Spawn the PTY, adding the status plugin and its identifying env.
+    ///
+    /// `opts` and `positional` are kept apart so the command line can be
+    /// assembled in the only order that is safe: every option, then the
+    /// prompt. Appending `--plugin-dir` to a vector that already ended with
+    /// the prompt would put a positional argument in front of an option and
+    /// leave the parse to the CLI's goodwill.
     fn launch(
         &self,
         id: &str,
         agent: &str,
-        mut args: Vec<String>,
+        opts: Vec<String>,
+        positional: Option<String>,
         cwd: &str,
         cols: u16,
         rows: u16,
     ) -> Result<()> {
         let mut extra_env = Vec::new();
-
-        if let Some(server) = self.hooks.get() {
+        let plugin_dir = self.hooks.get().map(|server| {
             // Identity only: the listener URL is baked into the plugin at
             // startup, because the port changes every run.
             extra_env.push(("AGENTDESK_SESSION_ID".to_string(), id.to_string()));
+            server.plugin_dir.to_string_lossy().to_string()
+        });
 
-            // Only Claude Code understands `--plugin-dir`; other CLIs run
-            // without status reporting rather than failing to start.
-            if agent == "claude" {
-                args.push("--plugin-dir".to_string());
-                args.push(server.plugin_dir.to_string_lossy().to_string());
-            }
-        }
+        let args = build_args(agent, opts, plugin_dir.as_deref(), positional);
 
         self.ptys.spawn(
             id,
@@ -686,6 +1262,44 @@ mod tests {
         assert!(!Status::Running.needs_you());
         assert!(!Status::Saved.needs_you());
         assert!(!Status::Exited.needs_you());
+    }
+
+    /// The prompt goes last, after every option. `--plugin-dir` is appended
+    /// by us, so building the vector in the obvious order — user args, then
+    /// prompt, then ours — would put a positional argument in front of an
+    /// option.
+    #[test]
+    fn the_prompt_is_the_last_argument_on_the_command_line() {
+        let args = build_args(
+            "claude",
+            Vec::new(),
+            Some("/data/plugin"),
+            Some("[AgentDesk 任務] 修好登入\n\n多行的 prompt".into()),
+        );
+        assert_eq!(args[0], "--plugin-dir");
+        assert_eq!(args[1], "/data/plugin");
+        assert!(args[2].starts_with("[AgentDesk"));
+        assert_eq!(args.len(), 3);
+    }
+
+    #[test]
+    fn reopening_passes_continue_as_an_option_and_sends_no_prompt() {
+        let args = build_args(
+            "claude",
+            vec!["--continue".to_string()],
+            Some("/data/plugin"),
+            None,
+        );
+        assert_eq!(args, vec!["--continue", "--plugin-dir", "/data/plugin"]);
+    }
+
+    /// A CLI that does not understand `--plugin-dir` must not be handed it:
+    /// it would refuse to start, and status reporting is a nicety while the
+    /// session itself is not.
+    #[test]
+    fn another_agent_is_not_handed_claude_codes_flags() {
+        let args = build_args("codex", vec!["--model".into(), "o3".into()], Some("/p"), None);
+        assert_eq!(args, vec!["--model", "o3"]);
     }
 
     #[test]

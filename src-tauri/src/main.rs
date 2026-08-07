@@ -4,7 +4,9 @@ mod core;
 mod hooks;
 mod pty;
 mod shell_env;
+mod prompt;
 mod store;
+mod worktree;
 
 use ::core::result::Result as StdResult;
 use std::sync::{Arc, Mutex};
@@ -196,6 +198,135 @@ fn list_sessions(state: State<'_, AppState>) -> StdResult<Vec<SessionMeta>, Stri
     Ok(state.core()?.sessions())
 }
 
+/* ----------------------------- board ------------------------------- */
+
+#[tauri::command]
+fn list_tasks(state: State<'_, AppState>) -> StdResult<Vec<crate::core::TaskView>, String> {
+    Ok(state.core()?.task_board())
+}
+
+#[tauri::command]
+fn create_task(
+    state: State<'_, AppState>,
+    title: String,
+    prompt: String,
+    repo_path: String,
+    base_branch: String,
+) -> StdResult<String, String> {
+    state
+        .core()?
+        .create_task(title, prompt, repo_path, base_branch)
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// Move a card between columns, or reorder it within one. Only a drag calls
+/// this — see `Core::move_task`.
+#[tauri::command]
+fn move_task(
+    state: State<'_, AppState>,
+    id: String,
+    lifecycle: String,
+    position: i64,
+) -> StdResult<(), String> {
+    let lifecycle = store::Lifecycle::parse(&lifecycle)
+        .ok_or_else(|| format!("unknown lifecycle: {lifecycle}"))?;
+    state
+        .core()?
+        .move_task(&id, lifecycle, position)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_task(state: State<'_, AppState>, id: String) -> StdResult<(), String> {
+    state.core()?.delete_task(&id).map_err(|e| format!("{e:#}"))
+}
+
+/* ---------------------------- attempts ----------------------------- */
+
+/// The first message as it would be sent, for the dialog to show and let the
+/// person edit before any worktree is created.
+#[tauri::command]
+fn preview_prompt(
+    state: State<'_, AppState>,
+    task_id: String,
+    agent: String,
+) -> StdResult<serde_json::Value, String> {
+    state
+        .core()?
+        .preview_prompt(&task_id, &agent)
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn open_attempt(
+    state: State<'_, AppState>,
+    task_id: String,
+    agent: Option<String>,
+    prompt: Option<String>,
+    cols: u16,
+    rows: u16,
+) -> StdResult<crate::core::OpenedAttempt, String> {
+    state
+        .core()?
+        .open_attempt(
+            &task_id,
+            agent.unwrap_or_else(|| "claude".into()),
+            prompt,
+            cols,
+            rows,
+        )
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// Put a terminal back on an attempt that is not running — the state every
+/// attempt is in after a restart.
+#[tauri::command]
+fn reopen_attempt(
+    state: State<'_, AppState>,
+    attempt_id: String,
+    cols: u16,
+    rows: u16,
+) -> StdResult<String, String> {
+    state
+        .core()?
+        .reopen_attempt(&attempt_id, cols, rows)
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// End an attempt: freeze its diff, then give the worktree back.
+#[tauri::command]
+fn finish_attempt(
+    state: State<'_, AppState>,
+    attempt_id: String,
+    outcome: String,
+) -> StdResult<(), String> {
+    let outcome =
+        store::Outcome::parse(&outcome).ok_or_else(|| format!("unknown outcome: {outcome}"))?;
+    state
+        .core()?
+        .finish_attempt(&attempt_id, outcome)
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn attempt_diff(state: State<'_, AppState>, attempt_id: String) -> StdResult<String, String> {
+    state
+        .core()?
+        .attempt_diff(&attempt_id)
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn attempt_events(
+    state: State<'_, AppState>,
+    attempt_id: String,
+) -> StdResult<Vec<store::AttemptEvent>, String> {
+    state
+        .core()?
+        .attempt_events(&attempt_id)
+        .map_err(|e| e.to_string())
+}
+
 /* ------------------------------------------------------------------ */
 /* Main                                                                */
 /* ------------------------------------------------------------------ */
@@ -246,6 +377,16 @@ fn main() {
             rename_tab,
             close_tab,
             update_tab,
+            list_tasks,
+            create_task,
+            move_task,
+            delete_task,
+            preview_prompt,
+            open_attempt,
+            reopen_attempt,
+            finish_attempt,
+            attempt_diff,
+            attempt_events,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentDesk")
