@@ -49,10 +49,43 @@ terminal's** (see below).
   a send button, the same honesty the first prompt has. Merging one attempt
   now marks the card's other open attempts superseded, with their diffs frozen
   so the two agents' work can still be compared afterwards
+- **Workspace scripts** (M6): a fresh worktree is a checkout, not a workspace.
+  `.agentdesk/config.json` in the repository says how it becomes one: `setup`
+  runs before the agent starts, in the same terminal, so its output and its
+  failures are exactly where you are already looking; `run` entries become ▶
+  buttons in the drawer that start a dev server or test watcher in that
+  attempt's own worktree, with a free port in `$AGENTDESK_PORT`; `archive`
+  runs just before the worktree is taken back. Every script sees
+  `$AGENTDESK_ROOT_PATH` — the repository the worktree was opened from, where
+  untracked files worth copying (`.env`) live. And since one board carries
+  cards from many repositories, every card now names its repo and base branch
 - **English and 繁體中文**, following your system language and switchable from
   the environment panel. Native notifications follow the same setting
 
 Not done yet: system tray.
+
+---
+
+## Making worktrees runnable
+
+Put `.agentdesk/config.json` in a repository and every attempt's worktree
+sets itself up:
+
+```json
+{
+  "setup": "npm install && cp \"$AGENTDESK_ROOT_PATH/.env\" .env",
+  "run": [
+    { "name": "dev", "command": "npm run dev -- --port $AGENTDESK_PORT" },
+    { "name": "test", "command": "npm test -- --watch" }
+  ],
+  "archive": "docker compose down"
+}
+```
+
+Scripts run through `sh -c`, written exactly like a line in a terminal. A
+malformed file fails the attempt start in the dialog rather than silently
+doing nothing — a config that quietly did nothing would be indistinguishable
+from a broken worktree. (POSIX platforms only for now.)
 
 ---
 

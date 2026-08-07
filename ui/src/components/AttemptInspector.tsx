@@ -19,6 +19,8 @@ interface Props {
   onClose: () => void;
   /** The attempt ended: nothing is left to inspect here. */
   onDone: () => void;
+  /** Start one of the repo's run scripts in this attempt's worktree. */
+  onRunScript: (name: string) => void;
 }
 
 type Pane = 'diff' | 'timeline';
@@ -45,7 +47,7 @@ interface Picked {
  * The terminal is still the place for conversation; this is for the review
  * that reads the diff line by line.
  */
-export function AttemptInspector({ attempt, baseBranch, onClose, onDone }: Props) {
+export function AttemptInspector({ attempt, baseBranch, onClose, onDone, onRunScript }: Props) {
   const t = useT();
   const [pane, setPane] = useState<Pane>('diff');
   const [diff, setDiff] = useState<string | null>(null);
@@ -53,6 +55,21 @@ export function AttemptInspector({ attempt, baseBranch, onClose, onDone }: Props
   const [error, setError] = useState<string | null>(null);
   const [comments, setComments] = useState<ReviewComment[]>([]);
   const [picked, setPicked] = useState<Picked | null>(null);
+  const [runScripts, setRunScripts] = useState<string[]>([]);
+
+  // The repo's run scripts, for the ▶ buttons. Read once per attempt: the
+  // config is a file in the repository, and it does not move underneath an
+  // open drawer any more than the base branch does.
+  useEffect(() => {
+    setRunScripts([]);
+    if (attempt.outcome !== null) return;
+    void api
+      .listRunScripts(attempt.id)
+      .then(setRunScripts)
+      .catch(() => {
+        /* a malformed config already fails the start, loudly */
+      });
+  }, [attempt.id, attempt.outcome]);
 
   const refresh = useCallback(() => {
     setError(null);
@@ -117,6 +134,24 @@ export function AttemptInspector({ attempt, baseBranch, onClose, onDone }: Props
         <span title={attempt.base_sha}>base {attempt.base_sha.slice(0, 8)}</span>
         {attempt.outcome && <span className="inspector-frozen">{t('inspector.frozen')}</span>}
       </div>
+
+      {/* The repo's run scripts: a dev server or test watcher, one click,
+          in this attempt's own worktree with its own port. */}
+      {runScripts.length > 0 && attempt.outcome === null && (
+        <div className="inspector-run" data-testid="run-scripts">
+          {runScripts.map((name) => (
+            <button
+              key={name}
+              className="chip mono"
+              data-testid={`run-${name}`}
+              title={t('inspector.runHint', { name })}
+              onClick={() => onRunScript(name)}
+            >
+              ▶ {name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && (
         <p className="dialog-error" role="alert" data-testid="inspector-error">

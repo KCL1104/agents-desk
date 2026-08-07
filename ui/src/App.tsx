@@ -427,6 +427,19 @@ export default function App() {
     [onOpen],
   );
 
+  /** Start a repo run script in an attempt's worktree, and go watch it. */
+  const onRunScript = useCallback(
+    async (attemptId: string, name: string) => {
+      try {
+        const id = await api.runScript(attemptId, name, INITIAL_COLS, INITIAL_ROWS);
+        await onOpen(id);
+      } catch (e) {
+        setError(t('error.runScript', { err: String(e) }));
+      }
+    },
+    [onOpen],
+  );
+
   const onMoveTask = useCallback((id: string, lifecycle: Lifecycle, position: number) => {
     void api.moveTask(id, lifecycle, position).catch((e) => setError(t('error.moveCard', { err: String(e) })));
   }, []);
@@ -648,6 +661,7 @@ export default function App() {
             }
             onClose={() => setInspectId(null)}
             onDone={() => setInspectId(null)}
+            onRunScript={(name) => void onRunScript(inspected.id, name)}
           />
         )}
         </div>

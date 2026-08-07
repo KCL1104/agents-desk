@@ -166,6 +166,7 @@ export const en = {
     'Close this attempt and take the worktree back. Changes are frozen and kept.',
   'inspector.noChanges': 'This attempt has not changed any files yet.',
   'inspector.noActivity': 'No activity yet. Status reporting only works with Claude Code.',
+  'inspector.runHint': 'Run `{name}` in this attempt’s worktree, in its own terminal',
 
   /* ----------------------------- review ------------------------------- */
   'review.hint': 'Click to attach feedback to this line',
@@ -206,6 +207,7 @@ export const en = {
   'error.cancelQueue': 'Could not leave the queue: {err}',
   'error.deleteCard': 'Could not delete the card: {err}',
   'error.newTab': 'Could not add the tab: {err}',
+  'error.runScript': 'Could not start the run script: {err}',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -363,6 +365,7 @@ export const zhTW: Record<MessageKey, string> = {
   'inspector.discardHint': '關掉這個 attempt 並收回 worktree。變更會凍結保留。',
   'inspector.noChanges': '這個 attempt 還沒有改動任何檔案。',
   'inspector.noActivity': '還沒有活動。狀態回報只對 Claude Code 有效。',
+  'inspector.runHint': '在這個 attempt 的 worktree 裡執行 `{name}`，開自己的終端機',
 
   /* ----------------------------- review ------------------------------- */
   'review.hint': '點一下，對這行附上意見',
@@ -403,6 +406,7 @@ export const zhTW: Record<MessageKey, string> = {
   'error.cancelQueue': '取消排隊失敗：{err}',
   'error.deleteCard': '刪除卡片失敗：{err}',
   'error.newTab': '新增分頁失敗：{err}',
+  'error.runScript': '啟動 run script 失敗：{err}',
 };
 
 export type Locale = 'en' | 'zh-TW';

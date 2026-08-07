@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+#[path = "../src/config.rs"]
+mod config;
 #[path = "../src/core.rs"]
 mod core;
 #[path = "../src/hooks.rs"]
@@ -256,6 +258,26 @@ impl Harness {
 
     fn cwd_of(&self, session_id: &str) -> String {
         self.launches(session_id, 1).pop().unwrap().cwd
+    }
+
+    /// Give the harness repository an `.agentdesk/config.json`.
+    fn config(&self, json: &str) {
+        let dir = self.repo.join(".agentdesk");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.json"), json).unwrap();
+    }
+
+    /// Whether any launch record exists for this session, without waiting.
+    fn launched(&self, session_id: &str) -> bool {
+        std::fs::read_dir(self.root.join("logs"))
+            .map(|entries| {
+                entries.flatten().any(|e| {
+                    e.file_name()
+                        .to_string_lossy()
+                        .starts_with(&format!("{session_id}."))
+                })
+            })
+            .unwrap_or(false)
     }
 
     /// Everything the session's terminal has been fed, once anything has.
@@ -849,6 +871,150 @@ fn an_empty_followup_is_not_sent() {
     let a = h.start(&task, "claude");
 
     assert!(h.core.send_followup(&a.session_id, "  \n").is_err());
+}
+
+/* --------------------------- workspace scripts ------------------------- */
+
+/// M6's core promise: a fresh worktree is made runnable before the agent
+/// starts, in the same terminal, and the agent still gets its argv untouched.
+#[test]
+fn setup_runs_in_the_worktree_before_the_agent_starts() {
+    let h = Harness::new("setup");
+    let _guard = h.rt.enter();
+    h.config(r#"{ "setup": "echo tools-ready > setup-ran.txt" }"#);
+    let task = h.card("Fix login", "make it work");
+
+    let a = h.start(&task, "claude");
+
+    // The setup left its mark in the worktree…
+    let marker = std::path::PathBuf::from(&a.worktree_path).join("setup-ran.txt");
+    assert!(
+        wait_for(Duration::from_secs(10), || marker.exists()),
+        "setup never ran in the worktree"
+    );
+
+    // …and the agent still launched with the prompt as its last argument,
+    // exactly as it would have without the wrap. This is the property the
+    // `exec "$0" "$@"` construction exists to keep.
+    let args = h.args_of(&a.session_id);
+    assert_eq!(args.last(), Some(&a.prompt));
+    assert_eq!(
+        std::fs::canonicalize(h.cwd_of(&a.session_id)).unwrap(),
+        std::fs::canonicalize(&a.worktree_path).unwrap()
+    );
+}
+
+/// `set -e`: a setup that fails stops in front of the person instead of
+/// starting an agent in a half-made workspace.
+#[test]
+fn a_failed_setup_stops_before_the_agent_ever_starts() {
+    let h = Harness::new("setupfail");
+    let _guard = h.rt.enter();
+    h.config(r#"{ "setup": "echo broken deps >&2; exit 7" }"#);
+    let task = h.card("Fix login", "make it work");
+
+    let a = h.start(&task, "claude");
+
+    let exited = wait_for(Duration::from_secs(10), || {
+        h.core
+            .sessions()
+            .iter()
+            .any(|s| s.id == a.session_id && s.status == Status::Exited)
+    });
+    assert!(exited, "the failed setup did not end the session");
+    assert!(
+        !h.launched(&a.session_id),
+        "the agent was started despite setup failing"
+    );
+}
+
+/// A run script gets a terminal of its own in the attempt's worktree, a free
+/// port, and the way back to the root repository — and it takes no slot,
+/// because the quota rations agents, not dev servers.
+#[test]
+fn a_run_script_gets_its_own_terminal_a_port_and_the_root_path() {
+    let h = Harness::new("runscript");
+    let _guard = h.rt.enter();
+    h.config(
+        r#"{ "run": [{ "name": "srv",
+             "command": "echo $AGENTDESK_PORT > port.txt; echo \"$AGENTDESK_ROOT_PATH\" > root.txt; exec cat" }] }"#,
+    );
+    let task = h.card("Fix login", "make it work");
+    let a = h.start(&task, "claude");
+
+    assert_eq!(h.core.list_run_scripts(&a.attempt_id).unwrap(), vec!["srv"]);
+    let session_id = h.core.run_script(&a.attempt_id, "srv", 100, 30).expect("run");
+
+    let wt = std::path::PathBuf::from(&a.worktree_path);
+    assert!(
+        wait_for(Duration::from_secs(10), || wt.join("port.txt").exists()
+            && wt.join("root.txt").exists()),
+        "the run script never wrote its files"
+    );
+    let port: u16 = std::fs::read_to_string(wt.join("port.txt"))
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("AGENTDESK_PORT was not a port number");
+    assert!(port > 0);
+    assert_eq!(
+        std::fs::read_to_string(wt.join("root.txt")).unwrap().trim(),
+        h.repo.to_string_lossy()
+    );
+
+    // Ad-hoc: on nobody's card, against nobody's quota.
+    let session = h
+        .core
+        .sessions()
+        .into_iter()
+        .find(|s| s.id == session_id)
+        .expect("the run session is in the list");
+    assert_eq!(session.attempt_id, None);
+    assert_eq!(h.core.running_attempts(), 1, "the dev server took an agent's slot");
+
+    // Closing the attempt takes the squatter with the directory it lived in.
+    h.core.finish_attempt(&a.attempt_id, Outcome::Discarded).unwrap();
+    assert!(
+        !h.core.sessions().iter().any(|s| s.id == session_id),
+        "a terminal survived the deletion of its own directory"
+    );
+}
+
+/// The archive script runs while the worktree still exists, and the worktree
+/// still comes back afterwards.
+#[test]
+fn the_archive_script_runs_before_the_worktree_goes_back() {
+    let h = Harness::new("archive");
+    let _guard = h.rt.enter();
+    h.config(r#"{ "archive": "echo closed > \"$AGENTDESK_ROOT_PATH/archive-ran.txt\"" }"#);
+    let task = h.card("Fix login", "make it work");
+    let a = h.start(&task, "claude");
+
+    h.core.finish_attempt(&a.attempt_id, Outcome::Discarded).unwrap();
+
+    assert!(
+        h.repo.join("archive-ran.txt").exists(),
+        "the archive script never ran"
+    );
+    assert!(!std::path::Path::new(&a.worktree_path).exists());
+}
+
+/// A typo in the config fails the start in the dialog, not silently at the
+/// first moment someone wonders why the worktree is broken.
+#[test]
+fn a_malformed_config_fails_the_start_where_the_person_can_see_it() {
+    let h = Harness::new("badcfg");
+    let _guard = h.rt.enter();
+    h.config(r#"{ "setup": ["not", "a", "string"] }"#);
+    let task = h.card("Fix login", "make it work");
+
+    let err = h
+        .core
+        .start_attempt(&task, "claude".into(), None, 100, 30)
+        .expect_err("a config typo must be an error someone sees");
+    assert!(err.to_string().contains("config.json"), "unhelpful: {err}");
+    // And the worktree it would have used was given back.
+    assert_eq!(h.core.running_attempts(), 0);
 }
 
 /* ------------------------------ the timeline --------------------------- */

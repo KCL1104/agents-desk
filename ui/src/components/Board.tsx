@@ -11,6 +11,7 @@ import {
   liveLabel,
   liveStateOf,
   liveTone,
+  repoName,
   STATUS_KEY,
   TASK_MIME,
   type Live,
@@ -310,6 +311,17 @@ function Card({
         <span className="board-card-title">{task.title}</span>
         {agent && <span className="ov-agent mono">{agent}</span>}
       </header>
+
+      {/* Which codebase this card is about. Cards from different repos share
+          one board, and a title alone cannot say whose login page it means. */}
+      <div
+        className="board-card-repo mono small muted"
+        data-testid={`repo-${task.id}`}
+        title={task.repo_path}
+      >
+        {repoName(task.repo_path)}
+        <span className="board-card-branch"> ⎇ {task.base_branch}</span>
+      </div>
 
       <div className="board-card-state" data-testid={`state-${task.id}`}>
         {waiting && <span aria-hidden="true">⚠ </span>}

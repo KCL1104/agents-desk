@@ -131,6 +131,17 @@ export function dropIndex(
   return at < 0 ? without.length : at;
 }
 
+/**
+ * The name a card wears for its repository.
+ *
+ * Cards from different repositories share one board — that is the point of a
+ * desk — so each has to say which codebase it is about. The basename is
+ * enough to tell repos apart; the full path is a tooltip away.
+ */
+export function repoName(path: string): string {
+  return path.split('/').filter(Boolean).pop() ?? path;
+}
+
 /** Cards of one column, in their stored order. */
 export function columnOf(tasks: readonly Task[], lifecycle: Lifecycle): Task[] {
   return tasks

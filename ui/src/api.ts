@@ -99,6 +99,14 @@ export const api = {
   sendFollowup: (id: string, text: string) =>
     invoke<void>('send_followup', { id, text }),
 
+  /** The repository's run scripts (`.agentdesk/config.json`), by name. */
+  listRunScripts: (attemptId: string) =>
+    invoke<string[]>('list_run_scripts', { attemptId }),
+  /** Start a run script in the attempt's worktree, in a terminal of its own.
+      Returns the new session's id. */
+  runScript: (attemptId: string, name: string, cols: number, rows: number) =>
+    invoke<string>('run_script', { attemptId, name, cols, rows }),
+
   /** Replay buffer for a pane mounting after its PTY already started. */
   termSnapshot: (id: string) => invoke<{ data: string; seq: number }>('term_snapshot', { id }),
 

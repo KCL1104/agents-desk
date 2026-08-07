@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod config;
 mod core;
 mod hooks;
 mod i18n;
@@ -387,6 +388,33 @@ fn attempt_events(
         .map_err(|e| e.to_string())
 }
 
+/// The repository's run scripts, for the drawer's buttons.
+#[tauri::command]
+fn list_run_scripts(
+    state: State<'_, AppState>,
+    attempt_id: String,
+) -> StdResult<Vec<String>, String> {
+    state
+        .core()?
+        .list_run_scripts(&attempt_id)
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// Start a run script in the attempt's worktree, in a terminal of its own.
+#[tauri::command]
+fn run_script(
+    state: State<'_, AppState>,
+    attempt_id: String,
+    name: String,
+    cols: u16,
+    rows: u16,
+) -> StdResult<String, String> {
+    state
+        .core()?
+        .run_script(&attempt_id, &name, cols, rows)
+        .map_err(|e| format!("{e:#}"))
+}
+
 /* ------------------------------------------------------------------ */
 /* Main                                                                */
 /* ------------------------------------------------------------------ */
@@ -449,6 +477,8 @@ fn main() {
             attempt_diff,
             attempt_events,
             send_followup,
+            list_run_scripts,
+            run_script,
             cancel_queued,
             concurrency,
             set_concurrency,

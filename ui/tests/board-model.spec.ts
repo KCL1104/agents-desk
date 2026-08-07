@@ -6,6 +6,7 @@ import {
   liveLabel,
   liveStateOf,
   liveTone,
+  repoName,
 } from '../src/board';
 import { translator } from '../src/i18n/messages';
 import type { Attempt, Lifecycle, SessionMeta, Status, Task } from '../src/types';
@@ -204,4 +205,12 @@ test('a column is ordered by position, not by arrival', () => {
     task({ id: 'mid', lifecycle: 'running', position: 1 }),
   ];
   expect(columnOf(tasks, 'running').map((t) => t.id)).toEqual(['first', 'mid', 'late']);
+});
+
+/** Cards from different repositories share one board, so each must be able
+    to say which codebase it is about. */
+test('a card names its repository by basename', () => {
+  expect(repoName('/Users/me/code/agents-desk')).toBe('agents-desk');
+  expect(repoName('/Users/me/code/agents-desk/')).toBe('agents-desk');
+  expect(repoName('weird')).toBe('weird');
 });

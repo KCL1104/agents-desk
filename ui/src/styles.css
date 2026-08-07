@@ -557,6 +557,13 @@ textarea { resize: vertical; }
 .diff-line.hunk { color: var(--accent); }
 .diff-line.meta { color: var(--fg-dim); }
 
+/* The repo's run scripts: one chip per script, under the branch line. */
+.inspector-run {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 6px 11px; border-bottom: 1px solid var(--line);
+}
+.inspector-run .chip { padding: 2px 9px; font-size: 12px; }
+
 /* Feedback attaches to code lines; the pointer says which ones will take it. */
 .diff-line.commentable { cursor: pointer; }
 .diff-line.commentable:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
@@ -608,6 +615,14 @@ textarea { resize: vertical; }
 .board-limit .icon { padding: 0 6px; }
 
 .board-card[data-live='queued'] { border-left-color: var(--warn); opacity: 0.85; }
+
+/* Which codebase the card is about — cards from different repos share the
+   board, so each names its repo and base branch. */
+.board-card-repo {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-top: 2px;
+}
+.board-card-branch { color: var(--fg-dim); }
 
 .inspector-foot {
   border-top: 1px solid var(--line); padding: 9px 11px;

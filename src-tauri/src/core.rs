@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::config;
 use crate::hooks::{self, Activity, HookHandler, HookReport, HookServer, HookState};
 use crate::prompt::{self, Delivery};
 use crate::pty::{PtyRegistry, PtySink};
@@ -199,6 +200,81 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// A setup script waiting to wrap a launch. See `Core::launch`.
+struct SetupWrap {
+    script: String,
+    /// The repository the worktree was opened from — where untracked files
+    /// worth copying (`.env`) live. Exposed as `AGENTDESK_ROOT_PATH`.
+    root_path: String,
+}
+
+/// A port nothing is listening on right now, for `AGENTDESK_PORT`.
+///
+/// Asked of the kernel rather than counted up from a base, so two attempts'
+/// dev servers never fight over 3000. The listener is dropped before the
+/// script starts — the standard small race, accepted everywhere.
+fn free_port() -> Result<u16> {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))?;
+    Ok(listener.local_addr()?.port())
+}
+
+/// Run the repository's archive script, bounded.
+///
+/// Best effort by design: the worktree is being taken back either way, and a
+/// script that hangs must not hold the attempt open forever — thirty seconds
+/// is long enough to stop a container and short enough to still feel like
+/// "closing", and what happened is logged rather than swallowed.
+#[cfg(unix)]
+fn run_archive(env: &ShellEnv, script: &str, worktree: &std::path::Path, root: &str) {
+    use std::process::{Command, Stdio};
+    let sh = env
+        .which("sh")
+        .unwrap_or_else(|| std::path::PathBuf::from("/bin/sh"));
+    let child = Command::new(sh)
+        .args(["-c", script])
+        .current_dir(worktree)
+        .envs(&env.vars)
+        .env("AGENTDESK_ROOT_PATH", root)
+        .stdin(Stdio::null())
+        .spawn();
+    let mut child = match child {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[core] archive script failed to start: {e}");
+            return;
+        }
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    eprintln!("[core] archive script exited with {status}");
+                }
+                return;
+            }
+            Ok(None) if std::time::Instant::now() > deadline => {
+                eprintln!(
+                    "[core] archive script still running after 30s; killed so the worktree can go back"
+                );
+                let _ = child.kill();
+                let _ = child.wait();
+                return;
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            Err(e) => {
+                eprintln!("[core] archive script: {e}");
+                return;
+            }
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn run_archive(_env: &ShellEnv, _script: &str, _worktree: &std::path::Path, _root: &str) {
+    eprintln!("[core] archive scripts need a POSIX shell; skipped on this platform");
 }
 
 /// One row on its way to an attempt's timeline.
@@ -915,6 +991,17 @@ impl Core {
             None => self.render_prompt(task, Some(wt))?,
         };
 
+        // The repository's own word on how a worktree becomes runnable. A
+        // malformed file fails the start here, in the dialog, rather than
+        // producing a worktree that is mysteriously not set up.
+        let setup = config::load(std::path::Path::new(&task.repo_path))?
+            .unwrap_or_default()
+            .setup
+            .map(|script| SetupWrap {
+                script,
+                root_path: task.repo_path.clone(),
+            });
+
         let delivery = prompt::delivery_for(&agent);
         let positional = match delivery {
             Delivery::Positional => Some(text.clone()),
@@ -925,7 +1012,14 @@ impl Core {
         let at = now_ms();
         // A brand-new worktree always opens on the folder-trust prompt, and
         // no hook can report that. See `Status::AwaitingTrust`.
-        let status = if delivery == Delivery::Positional {
+        //
+        // With a setup script in front, the trust prompt arrives whenever the
+        // script finishes — which the core cannot see. `Starting` is the
+        // honest label for "watch the terminal", and the setup's own output
+        // is right there explaining what the wait is.
+        let status = if setup.is_some() {
+            Status::Starting
+        } else if delivery == Delivery::Positional {
             Status::AwaitingTrust
         } else {
             Status::Starting
@@ -947,9 +1041,32 @@ impl Core {
             attempt_id: Some(attempt_id.clone()),
         };
 
+        // Visible before it can speak. The PTY reports its exit against the
+        // sessions map, and a setup script that fails in milliseconds beats
+        // the rest of this function to that report — so the session goes on
+        // the record first and launches second, or an instant death would
+        // land on a map that had never heard of it and the session would sit
+        // at "starting" forever.
+        self.sessions
+            .lock()
+            .unwrap()
+            .insert(session_id.clone(), meta.clone());
+
         // `--continue` is deliberately absent: this worktree has no history
         // for it to continue, and the prompt is what starts the work.
-        self.launch(&session_id, &agent, Vec::new(), positional, &cwd, cols, rows)?;
+        if let Err(e) = self.launch(
+            &session_id,
+            &agent,
+            Vec::new(),
+            positional,
+            &cwd,
+            cols,
+            rows,
+            setup.as_ref(),
+        ) {
+            self.sessions.lock().unwrap().remove(&session_id);
+            return Err(e);
+        }
 
         self.store.insert_attempt(&StoredAttempt {
             id: attempt_id.clone(),
@@ -965,10 +1082,6 @@ impl Core {
         })?;
 
         self.persist(&meta);
-        self.sessions
-            .lock()
-            .unwrap()
-            .insert(session_id.clone(), meta);
 
         // Recorded as sent, not as templated: the dialog is editable, and the
         // timeline has to show what the agent was actually asked.
@@ -1051,7 +1164,12 @@ impl Core {
             completed: false,
             attempt_id: Some(attempt_id.to_string()),
         };
-        self.launch(
+        // On the record before it can exit — see `finish_opening`.
+        self.sessions
+            .lock()
+            .unwrap()
+            .insert(session_id.clone(), meta.clone());
+        if let Err(e) = self.launch(
             &session_id,
             &attempt.agent,
             opts,
@@ -1059,12 +1177,13 @@ impl Core {
             &attempt.worktree_path,
             cols,
             rows,
-        )?;
+            // Setup ran when the worktree was made; reopening continues.
+            None,
+        ) {
+            self.sessions.lock().unwrap().remove(&session_id);
+            return Err(e);
+        }
         self.persist(&meta);
-        self.sessions
-            .lock()
-            .unwrap()
-            .insert(session_id.clone(), meta);
         self.broadcast();
         Ok(session_id)
     }
@@ -1100,21 +1219,45 @@ impl Core {
         self.store
             .finish_attempt(&attempt.id, outcome, diff.as_deref())?;
 
-        // The session goes with the directory it was running in.
-        let session = self
+        // The session goes with the directory it was running in — and so does
+        // anything else living there. A dev server started from the Run
+        // button is an ad-hoc session whose cwd is this worktree, and a
+        // terminal whose directory has been deleted is a trap that looks
+        // alive.
+        let doomed: Vec<String> = self
             .sessions
             .lock()
             .unwrap()
             .values()
-            .find(|s| s.attempt_id.as_deref() == Some(&attempt.id))
-            .map(|s| s.id.clone());
-        if let Some(id) = session {
+            .filter(|s| {
+                s.attempt_id.as_deref() == Some(&attempt.id)
+                    || std::path::Path::new(&s.cwd).starts_with(&worktree)
+            })
+            .map(|s| s.id.clone())
+            .collect();
+        for id in doomed {
             self.ptys.kill(&id);
             let _ = self.store.archive_session(&id);
             self.sessions.lock().unwrap().remove(&id);
         }
 
         if let Some(task) = task {
+            // The archive script gets its chance while the directory still
+            // exists — the place to stop containers or give back whatever
+            // setup borrowed.
+            if worktree.is_dir() {
+                match config::load(std::path::Path::new(&task.repo_path)) {
+                    Ok(Some(cfg)) => {
+                        if let Some(script) = cfg.archive {
+                            run_archive(&self.env, &script, &worktree, &task.repo_path);
+                        }
+                    }
+                    Ok(None) => {}
+                    // Closing must not be stopped by a config typo; the
+                    // person is taking the worktree back either way.
+                    Err(e) => eprintln!("[core] archive script skipped: {e:#}"),
+                }
+            }
             self.worktrees.remove(
                 &self.env,
                 std::path::Path::new(&task.repo_path),
@@ -1126,6 +1269,102 @@ impl Core {
 
     pub fn attempt_events(&self, attempt_id: &str) -> Result<Vec<crate::store::AttemptEvent>> {
         self.store.list_events(attempt_id)
+    }
+
+    /// The names of the repository's run scripts, for the drawer's buttons.
+    pub fn list_run_scripts(&self, attempt_id: &str) -> Result<Vec<String>> {
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        let task = self.task(&attempt.task_id)?;
+        Ok(config::load(std::path::Path::new(&task.repo_path))?
+            .unwrap_or_default()
+            .run
+            .into_iter()
+            .map(|r| r.name)
+            .collect())
+    }
+
+    /// Start one of the repository's run scripts in the attempt's worktree.
+    ///
+    /// The script gets a terminal of its own — a dev server's output is a
+    /// thing to watch, and watching is what this app does. The session is
+    /// ad-hoc on purpose: it has no lifecycle and takes no slot, because the
+    /// quota rations agents (attention), and a dev server asks for none.
+    /// `AGENTDESK_PORT` carries a port nothing else is on, so two attempts'
+    /// servers never fight over 3000.
+    pub fn run_script(
+        &self,
+        attempt_id: &str,
+        name: &str,
+        cols: u16,
+        rows: u16,
+    ) -> Result<String> {
+        if !cfg!(unix) {
+            return Err(anyhow!("run scripts need a POSIX shell"));
+        }
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        if attempt.outcome.is_some() {
+            return Err(anyhow!("attempt {attempt_id} is finished; its worktree has been removed"));
+        }
+        let task = self.task(&attempt.task_id)?;
+        let config = config::load(std::path::Path::new(&task.repo_path))?
+            .ok_or_else(|| anyhow!("{} has no {}", task.repo_path, config::FILE))?;
+        let script = config
+            .run
+            .into_iter()
+            .find(|r| r.name == name)
+            .ok_or_else(|| anyhow!("no run script named `{name}` in {}", config::FILE))?;
+
+        let port = free_port()?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let at = now_ms();
+        let meta = SessionMeta {
+            id: id.clone(),
+            cwd: attempt.worktree_path.clone(),
+            title: format!("▶ {name}"),
+            agent: "sh".to_string(),
+            status: Status::Starting,
+            created_at: at,
+            last_active_at: at,
+            live: true,
+            reports_status: false,
+            activity: None,
+            activity_since: 0,
+            completed: false,
+            // Ad-hoc: no lifecycle, no slot. The attempt link would also put
+            // it on the card, and the card is about the agent.
+            attempt_id: None,
+        };
+
+        // On the record before it can exit — see `finish_opening`. A script
+        // that dies at once (`command not found`) must die visibly.
+        self.sessions.lock().unwrap().insert(id.clone(), meta.clone());
+        if let Err(e) = self.ptys.spawn(
+            &id,
+            "sh",
+            &["-c".to_string(), script.command],
+            &attempt.worktree_path,
+            &self.env,
+            &[
+                ("AGENTDESK_PORT".to_string(), port.to_string()),
+                ("AGENTDESK_ROOT_PATH".to_string(), task.repo_path.clone()),
+            ],
+            cols.max(20),
+            rows.max(5),
+            Arc::clone(&self.router) as Arc<dyn PtySink>,
+        ) {
+            self.sessions.lock().unwrap().remove(&id);
+            return Err(e);
+        }
+
+        self.persist(&meta);
+        self.broadcast();
+        Ok(id)
     }
 
     /// The attempt's diff: live from the worktree while it still exists, and
@@ -1343,10 +1582,14 @@ impl Core {
             attempt_id: None,
         };
 
-        self.launch(&id, &agent, extra_args, None, &cwd, cols, rows)?;
+        // On the record before it can exit — see `finish_opening`.
+        self.sessions.lock().unwrap().insert(id.clone(), meta.clone());
+        if let Err(e) = self.launch(&id, &agent, extra_args, None, &cwd, cols, rows, None) {
+            self.sessions.lock().unwrap().remove(&id);
+            return Err(e);
+        }
 
         self.persist(&meta);
-        self.sessions.lock().unwrap().insert(id.clone(), meta);
         self.broadcast();
         Ok(id)
     }
@@ -1374,12 +1617,20 @@ impl Core {
             Vec::new()
         };
 
-        self.launch(id, &meta.agent, args, None, &meta.cwd, cols, rows)?;
-
+        // Marked live before the launch, not after: a child that exits at
+        // once reports Exited in between, and writing "starting, live" over
+        // that report would leave a zombie row nothing can ever update.
         if let Some(s) = self.sessions.lock().unwrap().get_mut(id) {
             s.status = Status::Starting;
             s.live = true;
             s.last_active_at = now_ms();
+        }
+        if let Err(e) = self.launch(id, &meta.agent, args, None, &meta.cwd, cols, rows, None) {
+            if let Some(s) = self.sessions.lock().unwrap().get_mut(id) {
+                s.status = Status::Saved;
+                s.live = false;
+            }
+            return Err(e);
         }
         self.broadcast();
         Ok(())
@@ -1392,6 +1643,13 @@ impl Core {
     /// prompt. Appending `--plugin-dir` to a vector that already ended with
     /// the prompt would put a positional argument in front of an option and
     /// leave the parse to the CLI's goodwill.
+    ///
+    /// With a `setup` wrap, the launch becomes `sh -c 'set -e; <setup>;
+    /// exec "$0" "$@"' <agent> <args…>` — the script runs first, in the same
+    /// terminal, and then *becomes* the agent. The arguments ride as real
+    /// argv entries, untouched by the shell, so the multi-line prompt needs
+    /// no quoting and arrives exactly as it would have without the wrap.
+    #[allow(clippy::too_many_arguments)]
     fn launch(
         &self,
         id: &str,
@@ -1401,6 +1659,7 @@ impl Core {
         cwd: &str,
         cols: u16,
         rows: u16,
+        setup: Option<&SetupWrap>,
     ) -> Result<()> {
         let mut extra_env = Vec::new();
         let plugin_dir = self.hooks.get().map(|server| {
@@ -1412,9 +1671,29 @@ impl Core {
 
         let args = build_args(agent, opts, plugin_dir.as_deref(), positional);
 
+        let (program, args) = match setup {
+            Some(wrap) if cfg!(unix) => {
+                extra_env.push(("AGENTDESK_ROOT_PATH".to_string(), wrap.root_path.clone()));
+                // `set -e` so a failed setup stops in front of the person,
+                // in the terminal, instead of starting an agent in a
+                // half-made workspace.
+                let script = format!("set -e\n{}\nexec \"$0\" \"$@\"", wrap.script);
+                let mut wrapped = vec!["-c".to_string(), script, agent.to_string()];
+                wrapped.extend(args);
+                ("sh".to_string(), wrapped)
+            }
+            Some(_) => {
+                eprintln!(
+                    "[core] setup scripts need a POSIX shell; launching {agent} directly"
+                );
+                (agent.to_string(), args)
+            }
+            None => (agent.to_string(), args),
+        };
+
         self.ptys.spawn(
             id,
-            agent,
+            &program,
             &args,
             cwd,
             &self.env,

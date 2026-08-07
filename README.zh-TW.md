@@ -37,9 +37,40 @@ App 提供的是終端機分頁給不了的：多 session 管理、跨重啟的�
   的 CLI 拿到的是「複製」而不是「送出」，跟首則 prompt 同一套誠實。
   另外：合併某個 attempt 時，同卡其他還開著的 attempt 自動標為「已被取代」，
   diff 凍結保留，方便事後比較兩個 agent 的做法
+- **Workspace scripts**（M6）：新開的 worktree 只是個 checkout，不是能跑的
+  工作區。repo 裡放 `.agentdesk/config.json` 就能讓它自己長成一個：`setup`
+  在 agent 起跑前執行、跑在同一個終端機裡，輸出跟失敗都在你正在看的地方；
+  `run` 的每一項變成抽屜裡的 ▶ 按鈕，在該 attempt 自己的 worktree 裡開
+  dev server 或 test watcher，`$AGENTDESK_PORT` 帶一個沒人占用的埠；
+  `archive` 在 worktree 被收回之前執行。每個 script 都看得到
+  `$AGENTDESK_ROOT_PATH` —— worktree 是從哪個 repo 開出來的，`.env` 這類
+  沒進版控但值得複製的檔案就在那。另外，一個看板本來就可以放多個 repo 的
+  卡片，現在每張卡會標出自己的 repo 與 base 分支
 - **中英雙語**：跟隨系統語言，也可以在環境面板手動切換。系統原生通知會跟著一起換
 
 尚未做：系統匣。
+
+---
+
+## 讓 worktree 開箱能跑
+
+在 repo 放一個 `.agentdesk/config.json`，每個 attempt 的 worktree 就會自己
+準備好：
+
+```json
+{
+  "setup": "npm install && cp \"$AGENTDESK_ROOT_PATH/.env\" .env",
+  "run": [
+    { "name": "dev", "command": "npm run dev -- --port $AGENTDESK_PORT" },
+    { "name": "test", "command": "npm test -- --watch" }
+  ],
+  "archive": "docker compose down"
+}
+```
+
+Script 都走 `sh -c`，寫法跟在終端機打一行一樣。檔案格式錯誤會讓 attempt
+在對話框裡就開不起來，而不是安靜地什麼都不做 —— 一個安靜失效的設定檔，
+跟一個壞掉的 worktree 從外面看是分不出來的。（目前僅支援 POSIX 平台。）
 
 ---
 

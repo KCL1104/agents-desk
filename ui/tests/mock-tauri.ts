@@ -85,6 +85,8 @@ declare global {
       pendingStarts: Map<string, { agent: string; prompt: string }>;
       /** Attempts whose worktree has uncommitted work, so merge must refuse. */
       dirtyWorktrees: Set<string>;
+      /** The repo's `.agentdesk/config.json` run script names. */
+      runScripts: string[];
       maxConcurrent: number;
       /** How many attempts hold a terminal right now. */
       running(): number;
@@ -144,6 +146,7 @@ export function installMock(): void {
     maxConcurrent: 3,
     pendingStarts: new Map<string, { agent: string; prompt: string }>(),
     dirtyWorktrees: new Set<string>(),
+    runScripts: [] as string[],
     calls: [] as Array<{ cmd: string; args: unknown }>,
     listeners: new Map<string, number[]>(),
     cbSeq: 0,
@@ -627,6 +630,26 @@ export function installMock(): void {
     },
 
     attempt_events: (args) => mock.events.get(String(args.attemptId)) ?? [],
+
+    list_run_scripts: () => mock.runScripts,
+
+    run_script: (args) => {
+      const attempt = mock.tasks
+        .flatMap((t) => t.attempts)
+        .find((a) => a.id === args.attemptId);
+      if (!attempt) throw new Error(`no such attempt: ${String(args.attemptId)}`);
+      if (attempt.outcome !== null) throw new Error('attempt is finished');
+      const name = String(args.name);
+      if (!mock.runScripts.includes(name)) throw new Error(`no run script named \`${name}\``);
+      // An ad-hoc session in the attempt's worktree, exactly as the core
+      // makes it: no card, no slot.
+      const s = makeSession(attempt.worktree_path, 'sh');
+      s.title = `▶ ${name}`;
+      mock.sessions.push(s);
+      mock.snapshots.set(s.id, { data: '', seq: 0 });
+      mock.pushSessions();
+      return s.id;
+    },
 
     send_followup: (args) => {
       const s = mock.sessions.find((x) => x.id === args.id);
