@@ -144,6 +144,30 @@ impl SessionMeta {
     }
 }
 
+/// Whether a status change is worth a line on the timeline.
+///
+/// `running` and `starting` are not: a run of tool calls already says the
+/// agent was working, and a status line between each of them would bury them.
+fn timeline_worthy(s: Status) -> bool {
+    matches!(
+        s,
+        Status::WaitingPermission | Status::WaitingInput | Status::Idle | Status::Exited
+    )
+}
+
+fn status_name(s: Status) -> &'static str {
+    match s {
+        Status::Saved => "saved",
+        Status::Starting => "starting",
+        Status::AwaitingTrust => "awaiting_trust",
+        Status::Running => "running",
+        Status::WaitingPermission => "waiting_permission",
+        Status::WaitingInput => "waiting_input",
+        Status::Idle => "idle",
+        Status::Exited => "exited",
+    }
+}
+
 /// Assemble a command line: options first, the prompt last.
 ///
 /// Kept apart from spawning because the ordering is the whole point and it is
@@ -177,10 +201,27 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// One row on its way to an attempt's timeline.
+#[derive(Debug)]
+struct PendingEvent {
+    attempt_id: String,
+    at: u64,
+    kind: &'static str,
+    tool: Option<String>,
+    detail: Option<String>,
+}
+
 /// Routes PTY output onto the UI bus and keeps session status in step.
 struct Router {
     sink: Arc<dyn UiSink>,
     sessions: Arc<Mutex<HashMap<String, SessionMeta>>>,
+    /// Timeline rows leave through here rather than being written inline.
+    ///
+    /// `on_hook` runs on the path that must never make an agent wait: a hook
+    /// that hangs is a tool call that hangs. Writing to SQLite there would put
+    /// a lock shared with every broadcast in the middle of it, on every single
+    /// tool call. Handing the row to a writer thread costs a channel send.
+    events: std::sync::mpsc::Sender<PendingEvent>,
 }
 
 impl Router {
@@ -223,6 +264,9 @@ impl HookHandler for Router {
             activity,
         } = report;
         let status = Status::from_hook(state);
+        let at = now_ms();
+        let mut timeline: Vec<PendingEvent> = Vec::new();
+
         let notify = {
             let mut sessions = self.sessions.lock().unwrap();
             let Some(s) = sessions.get_mut(&session_id) else {
@@ -232,15 +276,44 @@ impl HookHandler for Router {
                 return;
             };
             s.reports_status = true;
-            s.last_active_at = now_ms();
+            s.last_active_at = at;
+            let attempt_id = s.attempt_id.clone();
 
             // Only a tool call carries activity. A Stop or Notification report
             // has none, and must not blank out what the agent last did.
             if let Some(next) = activity {
                 if s.activity.as_ref() != Some(&next) {
-                    s.activity_since = now_ms();
+                    s.activity_since = at;
+                }
+                // Every tool call is its own moment on the timeline, including
+                // a repeat of the one before it. The card shows the latest;
+                // the timeline is the record.
+                if let Some(id) = attempt_id.clone() {
+                    timeline.push(PendingEvent {
+                        attempt_id: id,
+                        at,
+                        kind: "tool",
+                        tool: Some(next.tool.clone()),
+                        detail: Some(next.detail.clone()),
+                    });
                 }
                 s.activity = Some(next);
+            }
+
+            // Status goes on the timeline only when it actually changes, and
+            // only for the states worth reading back later. `running` is
+            // already implied by the tool call that carried it.
+            let changed = s.status != status;
+            if changed {
+                if let (Some(id), true) = (attempt_id, timeline_worthy(status)) {
+                    timeline.push(PendingEvent {
+                        attempt_id: id,
+                        at,
+                        kind: "status",
+                        tool: None,
+                        detail: Some(status_name(status).to_string()),
+                    });
+                }
             }
 
             // Only announce a transition *into* needing a human, so a session
@@ -249,6 +322,13 @@ impl HookHandler for Router {
             s.status = status;
             entering.then(|| (s.title.clone(), s.cwd.clone()))
         };
+
+        for e in timeline {
+            // A full or closed channel must not stall the agent. Losing a
+            // timeline row is a gap in a record; blocking here is a stuck
+            // tool call.
+            let _ = self.events.send(e);
+        }
 
         if let Some((title, cwd)) = notify {
             let body = match status {
@@ -305,7 +385,7 @@ pub struct OpenedAttempt {
 
 pub struct Core {
     pub env: ShellEnv,
-    store: Store,
+    store: Arc<Store>,
     ptys: PtyRegistry,
     sessions: Arc<Mutex<HashMap<String, SessionMeta>>>,
     tabs: Mutex<Vec<StoredTab>>,
@@ -338,7 +418,7 @@ impl Core {
         data_dir: std::path::PathBuf,
         worktree_root: std::path::PathBuf,
     ) -> Result<Arc<Self>> {
-        let store = Store::open(&db_path)?;
+        let store = Arc::new(Store::open(&db_path)?);
 
         let restored: HashMap<String, SessionMeta> = store
             .list_sessions()
@@ -374,9 +454,31 @@ impl Core {
         }
 
         let sessions = Arc::new(Mutex::new(restored));
+
+        // Timeline writes leave the hook path here. A plain thread rather than
+        // a task: the work is a blocking SQLite insert, and the point of the
+        // hand-off is to keep that off the path an agent is waiting on.
+        let (events_tx, events_rx) = std::sync::mpsc::channel::<PendingEvent>();
+        let writer_store = Arc::clone(&store);
+        std::thread::spawn(move || {
+            // Ends when the last sender drops, which is when the core goes.
+            for e in events_rx {
+                if let Err(err) = writer_store.append_event(
+                    &e.attempt_id,
+                    e.at,
+                    e.kind,
+                    e.tool.as_deref(),
+                    e.detail.as_deref(),
+                ) {
+                    eprintln!("[core] timeline write failed: {err}");
+                }
+            }
+        });
+
         let router = Arc::new(Router {
             sink: Arc::clone(&sink),
             sessions: Arc::clone(&sessions),
+            events: events_tx,
         });
 
         let core = Arc::new(Self {

@@ -1,6 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { BootStatus, Lifecycle, Outcome, SessionMeta, Tab, Task } from './types';
+import type {
+  AttemptEvent,
+  BootStatus,
+  Lifecycle,
+  Outcome,
+  SessionMeta,
+  Tab,
+  Task,
+} from './types';
 
 /** What opening an attempt produced. Mirrors core.rs OpenedAttempt. */
 export interface OpenedAttempt {
@@ -63,6 +71,8 @@ export const api = {
   finishAttempt: (attemptId: string, outcome: Outcome) =>
     invoke<void>('finish_attempt', { attemptId, outcome }),
   attemptDiff: (attemptId: string) => invoke<string>('attempt_diff', { attemptId }),
+  attemptEvents: (attemptId: string) =>
+    invoke<AttemptEvent[]>('attempt_events', { attemptId }),
 
   /** Replay buffer for a pane mounting after its PTY already started. */
   termSnapshot: (id: string) => invoke<{ data: string; seq: number }>('term_snapshot', { id }),

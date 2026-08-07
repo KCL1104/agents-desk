@@ -24,8 +24,11 @@ App 提供的是終端機分頁給不了的：多 session 管理、跨重啟的�
 - **看板**（M2）：四欄、卡片可拖曳。卡片會自己呼吸 —— 待在「進行中」欄位裡
   亮起「⚠ 等你授權」，點下去直接進那個 session 的 TUI 且游標已在裡面。
   另有臨時 session 區（看板之外，沒有 worktree 也沒有生命週期）
+- **變更與活動**（M3）：TUI **旁邊**的抽屜，不進終端機就能說出這個 attempt
+  改了什麼（含未 commit 與新建檔）、做了什麼（工具名 + 參數的時間軸）。
+  hook 事件從「算完徽章就丟掉」改成落進 `attempt_events`
 
-尚未做：diff 分頁與活動時間軸、merge / PR 按鈕、併發佇列、系統匣。
+尚未做：merge / PR 按鈕、併發佇列、系統匣。
 
 ---
 
@@ -48,8 +51,8 @@ export PATH="$HOME/.cargo/bin:$PATH"
 ## 測試
 
 ```bash
-cd src-tauri && cargo test      # 88 個：PTY、hooks、worktree、attempt、migration、規則、儲存
-npm --prefix ui run test:e2e    # 103 個：Playwright，前端 + 看板 + xterm 渲染
+cd src-tauri && cargo test      # 92 個：PTY、hooks、worktree、attempt、timeline、migration、規則、儲存
+npm --prefix ui run test:e2e    # 112 個：Playwright，前端 + 看板 + 檢視抽屜 + xterm 渲染
 ```
 
 macOS 的 WKWebView 沒有 WebDriver，所以 Playwright 是在 Chromium 裡跑同一份 React
@@ -74,6 +77,9 @@ session 的流程，以及 xterm 對**真實 PTY bytes** 的解碼與渲染。
   AgentDesk 做了什麼（開哪個 worktree、命令列長什麼樣、記了什麼、還了什麼），
   這些都不需要模型回答。替身的 log 是 NUL 分隔的 —— 用一行一個參數會分不出
   「一個含換行的參數」和「好幾個參數」，而那正是這裡要驗的東西
+- `tests/attempts.rs` 的時間軸段 —— 完整鏈路：hook listener → router → channel →
+  writer thread → SQLite。同時釘住「不該記的不要記」：連續三次 `running` 只留
+  工具呼叫，不留三行狀態
 - `ui/tests/board.spec.ts` —— 兩軸真的成立：卡片留在原欄位不動，燈號自己從
   「等你確認資料夾」→「執行中」→「⚠ 等你授權」變化；點下去之後 **`document.
   activeElement` 真的落在那個 pane 裡面**，不只是 pane 有 focused class。

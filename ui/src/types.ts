@@ -52,6 +52,18 @@ export interface Attempt {
   session_id: string | null;
 }
 
+/** One moment on an attempt's timeline. Mirrors store.rs AttemptEvent. */
+export interface AttemptEvent {
+  id: number;
+  attempt_id: string;
+  at: number;
+  /** `prompt` — what it was asked. `tool` — what it reached for.
+      `status` — when it started waiting on you, or stopped. */
+  kind: 'prompt' | 'tool' | 'status' | string;
+  tool: string | null;
+  detail: string | null;
+}
+
 /** Mirrors core.rs TaskView. */
 export interface Task {
   id: string;

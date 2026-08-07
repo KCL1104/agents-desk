@@ -38,6 +38,15 @@ export interface MockAttempt {
   session_id: string | null;
 }
 
+export interface MockEvent {
+  id: number;
+  attempt_id: string;
+  at: number;
+  kind: string;
+  tool: string | null;
+  detail: string | null;
+}
+
 export interface MockTask {
   id: string;
   title: string;
@@ -67,6 +76,11 @@ declare global {
       /** Which repositories exist, and what branches they have. The core
           refuses a card it cannot open a worktree for, so the mock must too. */
       repos: Record<string, string[]>;
+      /** What each attempt's worktree currently shows as changed. */
+      diffs: Map<string, string>;
+      events: Map<string, MockEvent[]>;
+      /** Stand in for a hook landing on an attempt's timeline. */
+      record(attemptId: string, kind: string, tool: string | null, detail: string | null): void;
       persist(): void;
       pushSessions(): void;
       pushTasks(): void;
@@ -99,6 +113,8 @@ export function installMock(): void {
     ) as MockTab[],
     tasks: JSON.parse(sessionStorage.getItem('__mockTasks') ?? '[]') as MockTask[],
     repos: { '/Users/test/picked-repo': ['main', 'develop'] } as Record<string, string[]>,
+    diffs: new Map<string, string>(),
+    events: new Map<string, MockEvent[]>(),
     calls: [] as Array<{ cmd: string; args: unknown }>,
     listeners: new Map<string, number[]>(),
     cbSeq: 0,
@@ -161,6 +177,19 @@ export function installMock(): void {
         s.activity_since = Date.now();
       }
       mock.emit('sessions:changed', mock.sorted());
+    },
+
+    record(attemptId: string, kind: string, tool: string | null, detail: string | null) {
+      const rows = mock.events.get(attemptId) ?? [];
+      rows.push({
+        id: rows.length + 1,
+        attempt_id: attemptId,
+        at: Date.now(),
+        kind,
+        tool,
+        detail,
+      });
+      mock.events.set(attemptId, rows);
     },
 
     /** The core renumbers both affected columns on every move. */
@@ -416,6 +445,8 @@ export function installMock(): void {
         session_id: session.id,
       });
       t.lifecycle = 'running';
+      // The core writes the prompt as sent onto the timeline.
+      mock.record(attemptId, 'prompt', null, String(args.prompt ?? ''));
       mock.renumber();
       mock.pushSessions();
       mock.pushTasks();
@@ -464,8 +495,12 @@ export function installMock(): void {
       const attempt = mock.tasks
         .flatMap((t) => t.attempts)
         .find((a) => a.id === args.attemptId);
-      return attempt?.frozen_diff ?? 'diff --git a/app.txt b/app.txt\n+work in progress\n';
+      // A finished attempt reads the copy frozen before its worktree went.
+      if (attempt?.frozen_diff) return attempt.frozen_diff;
+      return mock.diffs.get(String(args.attemptId)) ?? '';
     },
+
+    attempt_events: (args) => mock.events.get(String(args.attemptId)) ?? [],
 
     'plugin:event|listen': (args) => {
       const event = String(args.event);

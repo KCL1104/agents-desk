@@ -287,6 +287,38 @@ test.describe('board', () => {
     expect(sent).toBe('我自己寫的 prompt');
   });
 
+  /**
+   * Switching agent means another attempt, not a restart of this one. The
+   * first is left alone: two agents on one card, each in its own worktree, is
+   * a thing worth being able to do, and comparing their diffs is the point.
+   */
+  test('換 agent opens a second attempt and leaves the first running', async ({ page }) => {
+    await boot(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await page.getByTestId('view-board').click();
+    await page.evaluate(() => window.__mock.report('s1', 'running'));
+
+    await page.getByTestId('retry-k1').click();
+    await page.getByTestId('attempt-agent').selectOption('codex');
+    await page.getByTestId('attempt-start').click();
+    await page.getByTestId('view-board').click();
+
+    // Still one card, now with two live sessions behind it.
+    await expect(page.locator('.board-card')).toHaveCount(1);
+    await expect(page.locator('.session-row')).toHaveCount(2);
+    // The card follows the newest attempt.
+    await expect(page.getByTestId('task-k1')).toContainText('codex');
+    await expect(page.getByTestId('state-k1')).toContainText('#2');
+
+    // And the first attempt is untouched — nothing was superseded behind
+    // your back.
+    const first = await page.evaluate(
+      () => window.__mock.tasks[0].attempts[0].outcome,
+    );
+    expect(first).toBeNull();
+  });
+
   test('deleting a card takes its attempt session with it', async ({ page }) => {
     await boot(page);
     await newCard(page, '修好登入');

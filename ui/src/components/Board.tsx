@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Lifecycle, SessionMeta, Task } from '../types';
+import type { Attempt, Lifecycle, SessionMeta, Task } from '../types';
 import { needsYou } from '../types';
 import {
   columnOf,
@@ -22,6 +22,8 @@ interface Props {
   onMove: (id: string, lifecycle: Lifecycle, position: number) => void;
   onStart: (task: Task) => void;
   onResume: (attemptId: string) => void;
+  /** Open the diff and timeline for this attempt, beside its terminal. */
+  onInspect: (attempt: Attempt) => void;
   onNewTask: () => void;
   onDeleteTask: (id: string) => void;
 }
@@ -45,6 +47,7 @@ export function Board({
   onMove,
   onStart,
   onResume,
+  onInspect,
   onNewTask,
   onDeleteTask,
 }: Props) {
@@ -139,6 +142,7 @@ export function Board({
                     onOpenSession={onOpenSession}
                     onStart={() => onStart(task)}
                     onResume={onResume}
+                    onInspect={onInspect}
                     onDelete={() => onDeleteTask(task.id)}
                   />
                 ))}
@@ -188,6 +192,7 @@ function Card({
   onOpenSession,
   onStart,
   onResume,
+  onInspect,
   onDelete,
 }: {
   task: Task;
@@ -201,6 +206,7 @@ function Card({
   onOpenSession: (id: string) => void;
   onStart: () => void;
   onResume: (attemptId: string) => void;
+  onInspect: (attempt: Attempt) => void;
   onDelete: () => void;
 }) {
   const waiting = live.kind === 'session' && needsYou(live.status);
@@ -271,9 +277,29 @@ function Card({
             繼續
           </button>
         )}
-        {live.kind === 'finished' && (
-          <button onClick={stop(onStart)} title="用另一個 agent 再試一次">
-            再試一次
+        {/* Answers "what did this one change, and what did it do" without
+            reading the TUI — which is the whole job of the 待驗收 column. */}
+        {live.kind !== 'none' && (
+          <button
+            data-testid={`inspect-${task.id}`}
+            onClick={stop(() => onInspect(live.attempt))}
+          >
+            檢視
+          </button>
+        )}
+        {/* Another go at the same card, with a different agent. It leaves the
+            attempt that is already there alone: two agents on one card, each
+            in its own worktree, is a thing worth being able to do — comparing
+            their diffs is the point. Deciding which one won is a separate,
+            deliberate act, not a side effect of starting the second. */}
+        {live.kind !== 'none' && (
+          <button
+            className={live.kind === 'finished' ? 'primary' : ''}
+            data-testid={`retry-${task.id}`}
+            onClick={stop(onStart)}
+            title="用另一個 agent 再開一個 attempt"
+          >
+            {live.kind === 'finished' ? '再試一次' : '換 agent'}
           </button>
         )}
         <span className="spacer" />

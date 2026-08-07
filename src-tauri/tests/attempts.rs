@@ -203,6 +203,42 @@ impl Harness {
         self.launches(session_id, 1).pop().unwrap().args
     }
 
+    /// Post a hook report the way Claude Code's own hook runner would.
+    fn hook(&self, session_id: &str, state: &str, body: serde_json::Value) {
+        use std::io::{Read as _, Write as _};
+        let url = self.core.hook_url().expect("hook listener");
+        // http://127.0.0.1:PORT/h/TOKEN
+        let rest = url.trim_start_matches("http://");
+        let (addr, path) = rest.split_once('/').expect("url has a path");
+        let body = if body.is_null() { String::new() } else { body.to_string() };
+        let mut sock = std::net::TcpStream::connect(addr).expect("connect to the hook listener");
+        let req = format!(
+            "POST /{path}?state={state} HTTP/1.1\r\nHost: localhost\r\n\
+             X-AgentDesk-Session: {session_id}\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        sock.write_all(req.as_bytes()).unwrap();
+        let mut resp = String::new();
+        let _ = sock.read_to_string(&mut resp);
+        assert!(resp.starts_with("HTTP/1.1 200"), "hook was not answered: {resp}");
+    }
+
+    /// The timeline, once it has at least `at_least` rows. The writer runs on
+    /// its own thread, so this is the honest way to read it.
+    fn timeline(&self, attempt_id: &str, at_least: usize) -> Vec<crate::store::AttemptEvent> {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let rows = self.core.attempt_events(attempt_id).unwrap_or_default();
+            if rows.len() >= at_least {
+                return rows;
+            }
+            if Instant::now() > deadline {
+                panic!("expected {at_least} timeline rows, saw {}: {rows:?}", rows.len());
+            }
+            std::thread::sleep(Duration::from_millis(30));
+        }
+    }
+
     fn cwd_of(&self, session_id: &str) -> String {
         self.launches(session_id, 1).pop().unwrap().cwd
     }
@@ -429,6 +465,141 @@ fn an_edited_prompt_is_what_gets_sent_and_what_gets_recorded() {
         !events[0].detail.as_deref().unwrap().contains("the original request"),
         "the timeline shows the template, not what was actually sent"
     );
+}
+
+/* ------------------------------ the timeline --------------------------- */
+
+/// The acceptance for M3's second half: enough of a record to say what this
+/// attempt did without opening its terminal.
+///
+/// Hooks were only ever used to compute a badge and then dropped. This drives
+/// the whole chain — listener, router, channel, writer thread, database.
+#[test]
+fn the_timeline_records_what_the_agent_reached_for() {
+    let h = Harness::new("timeline");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+
+    let tool = |name: &str, input: serde_json::Value| {
+        serde_json::json!({ "hook_event_name": "PreToolUse", "tool_name": name, "tool_input": input })
+    };
+    h.hook(&a.session_id, "running", tool("Bash", serde_json::json!({ "command": "pytest -v" })));
+    h.hook(
+        &a.session_id,
+        "running",
+        tool("Edit", serde_json::json!({ "file_path": "/repo/auth.py" })),
+    );
+    // A repeat of the tool before it is still its own moment.
+    h.hook(
+        &a.session_id,
+        "running",
+        tool("Edit", serde_json::json!({ "file_path": "/repo/auth.py" })),
+    );
+    h.hook(&a.session_id, "waiting_permission", serde_json::Value::Null);
+    h.hook(&a.session_id, "idle", serde_json::Value::Null);
+
+    // The opening prompt, three tool calls, and two status changes.
+    let rows = h.timeline(&a.attempt_id, 6);
+
+    let kinds: Vec<&str> = rows.iter().map(|r| r.kind.as_str()).collect();
+    assert_eq!(kinds, vec!["prompt", "tool", "tool", "tool", "status", "status"]);
+
+    let tools: Vec<Option<&str>> = rows.iter().map(|r| r.tool.as_deref()).collect();
+    assert_eq!(
+        tools,
+        vec![None, Some("Bash"), Some("Edit"), Some("Edit"), None, None]
+    );
+    assert_eq!(rows[1].detail.as_deref(), Some("pytest -v"));
+    assert_eq!(rows[2].detail.as_deref(), Some("/repo/auth.py"));
+    assert_eq!(rows[4].detail.as_deref(), Some("waiting_permission"));
+    assert_eq!(rows[5].detail.as_deref(), Some("idle"));
+}
+
+/// `running` is already implied by the tool call that carried it, and a
+/// status line between every pair of tool calls would bury them.
+#[test]
+fn the_timeline_does_not_narrate_every_status_report() {
+    let h = Harness::new("quiet");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+
+    for _ in 0..3 {
+        h.hook(
+            &a.session_id,
+            "running",
+            serde_json::json!({ "hook_event_name": "UserPromptSubmit" }),
+        );
+    }
+    h.hook(&a.session_id, "idle", serde_json::Value::Null);
+    // Reported twice; it only changed once.
+    h.hook(&a.session_id, "idle", serde_json::Value::Null);
+
+    // Wait for the two we do expect, then give any extras time to show up
+    // before asserting that there are none.
+    h.timeline(&a.attempt_id, 2);
+    std::thread::sleep(Duration::from_millis(300));
+    let rows = h.core.attempt_events(&a.attempt_id).unwrap();
+    assert_eq!(
+        rows.len(),
+        2,
+        "expected the prompt and one idle, got {rows:?}"
+    );
+    assert_eq!(rows[1].detail.as_deref(), Some("idle"));
+}
+
+/// Hooks from an ad-hoc session have no attempt to file against. They still
+/// have to drive the badge without inventing a timeline.
+#[test]
+fn an_ad_hoc_sessions_hooks_do_not_land_on_anybodys_timeline() {
+    let h = Harness::new("adhoc");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+    let scratch = h
+        .core
+        .new_session(h.repo.to_string_lossy().into(), "claude".into(), vec![], 100, 30)
+        .unwrap();
+
+    h.hook(
+        &scratch,
+        "running",
+        serde_json::json!({ "hook_event_name": "PreToolUse", "tool_name": "Bash",
+                            "tool_input": { "command": "ls" } }),
+    );
+    h.hook(&scratch, "waiting_permission", serde_json::Value::Null);
+    std::thread::sleep(Duration::from_millis(300));
+
+    // Only the opening prompt, from the attempt itself.
+    assert_eq!(h.core.attempt_events(&a.attempt_id).unwrap().len(), 1);
+    // But the ad-hoc session is still blocking a person, so it still counts.
+    let waiting = h.core.sessions().iter().filter(|s| s.status.needs_you()).count();
+    assert_eq!(waiting, 2);
+}
+
+/// The diff has to answer "what changed" while the attempt is still running,
+/// not only once it has been closed out.
+#[test]
+fn a_running_attempts_diff_is_read_live_from_its_worktree() {
+    let h = Harness::new("livediff");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+
+    assert_eq!(
+        h.core.attempt_diff(&a.attempt_id).unwrap(),
+        "",
+        "an attempt that has changed nothing has an empty diff"
+    );
+
+    std::fs::write(Path::new(&a.worktree_path).join("app.txt"), "half done\n").unwrap();
+    std::fs::write(Path::new(&a.worktree_path).join("scratch.rs"), "fn new() {}\n").unwrap();
+
+    let diff = h.core.attempt_diff(&a.attempt_id).unwrap();
+    assert!(diff.contains("half done"), "the edit is missing:\n{diff}");
+    assert!(diff.contains("scratch.rs"), "the new file is missing:\n{diff}");
+    assert!(diff.contains("fn new() {}"), "its contents are missing:\n{diff}");
 }
 
 /* ------------------------------ the board ------------------------------ */

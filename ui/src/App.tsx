@@ -12,6 +12,7 @@ import { TabStrip } from './components/TabStrip';
 import { NewSessionDialog } from './components/NewSessionDialog';
 import { NewTaskDialog, rememberRepo } from './components/NewTaskDialog';
 import { StartAttemptDialog } from './components/StartAttemptDialog';
+import { AttemptInspector } from './components/AttemptInspector';
 import {
   addMember,
   autoCols,
@@ -97,6 +98,12 @@ export default function App() {
   /** Kept beside the dialog rather than in the toast: a rejected repository
    *  is something to correct in the form, not to be told about elsewhere. */
   const [dialogError, setDialogError] = useState<string | null>(null);
+  /** Which attempt the diff/timeline drawer is showing, or null when it is
+   *  closed. It sits *beside* the terminal, so answering what you just read is
+   *  one keystroke rather than a navigation. Held as an id rather than
+   *  derived from the focused session, because a finished attempt has no
+   *  session left and is exactly the thing you most want to read. */
+  const [inspectId, setInspectId] = useState<string | null>(null);
 
   const [gridRef, size] = useSize<HTMLDivElement>();
 
@@ -204,6 +211,24 @@ export default function App() {
     () => sessions.find((s) => s.id === focusedId) ?? null,
     [sessions, focusedId],
   );
+
+  const attempts = useMemo(() => tasks.flatMap((t) => t.attempts), [tasks]);
+
+  /** The attempt behind the focused session, if it has one. */
+  const activeAttemptId = active?.attempt_id ?? null;
+
+  const inspected = useMemo(
+    () => attempts.find((a) => a.id === inspectId) ?? null,
+    [attempts, inspectId],
+  );
+
+  // With the drawer open, moving to another session's pane moves the drawer
+  // with it. Reading one attempt's diff while looking at another's terminal
+  // is the one arrangement that could actively mislead.
+  useEffect(() => {
+    if (!inspectId || !activeAttemptId) return;
+    if (activeAttemptId !== inspectId) setInspectId(activeAttemptId);
+  }, [activeAttemptId, inspectId]);
 
   // Every live session keeps a mounted terminal, whichever tab or view is
   // showing, so switching never costs a repaint or loses scrollback.
@@ -381,6 +406,22 @@ export default function App() {
     [onOpen],
   );
 
+  /**
+   * Review an attempt: open the drawer, and put its terminal up beside it.
+   *
+   * Both, not either. The diff answers what changed; the terminal is where
+   * you say what is still wrong. A finished attempt has no session left, so
+   * that half is simply absent rather than broken.
+   */
+  const onInspectAttempt = useCallback(
+    async (attempt: { id: string; session_id: string | null }) => {
+      setInspectId(attempt.id);
+      if (attempt.session_id) await onOpen(attempt.session_id);
+      else setView('terminal');
+    },
+    [onOpen],
+  );
+
   const onMoveTask = useCallback((id: string, lifecycle: Lifecycle, position: number) => {
     void api.moveTask(id, lifecycle, position).catch((e) => setError(`搬移卡片失敗：${String(e)}`));
   }, []);
@@ -451,6 +492,16 @@ export default function App() {
             </strong>
           )}
           <span className="spacer" />
+          {view === 'terminal' && (activeAttemptId || inspected) && (
+            <button
+              className={inspectId ? 'active' : ''}
+              data-testid="toggle-inspector"
+              aria-pressed={inspectId !== null}
+              onClick={() => setInspectId(inspectId ? null : activeAttemptId)}
+            >
+              變更／活動
+            </button>
+          )}
           {view === 'terminal' && <ColumnPicker layout={layout} onPick={onPickCols} />}
           <div className="view-toggle" role="tablist">
             <button
@@ -483,12 +534,12 @@ export default function App() {
 
         {/* Both views stay mounted: unmounting the terminals would dispose
             their scrollback and force every TUI to repaint on return. */}
+        <div className="term-area" style={{ display: view === 'terminal' ? 'flex' : 'none' }}>
         <div
           className="term-stack"
           ref={gridRef}
           data-mode={manual ? 'manual' : 'auto'}
           data-cols={manual ? undefined : cols}
-          style={{ display: view === 'terminal' ? 'block' : 'none' }}
         >
           <div
             className={`term-grid${manual ? ' manual' : ''}`}
@@ -573,6 +624,14 @@ export default function App() {
           </div>
         </div>
 
+        {/* Beside the terminal, never instead of it: the terminal stays
+            mounted and one click away, so a follow-up after reading the diff
+            is typing rather than navigating. */}
+        {inspected && (
+          <AttemptInspector attempt={inspected} onClose={() => setInspectId(null)} />
+        )}
+        </div>
+
         {view === 'board' && (
           <Board
             tasks={tasks}
@@ -584,6 +643,7 @@ export default function App() {
               setStarting(task);
             }}
             onResume={onResumeAttempt}
+            onInspect={onInspectAttempt}
             onNewTask={() => {
               setDialogError(null);
               setShowNewTask(true);

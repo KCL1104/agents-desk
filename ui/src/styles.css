@@ -522,3 +522,55 @@ textarea { resize: vertical; }
   color: var(--warn); margin: 8px 0 0; line-height: 1.6;
   display: flex; flex-direction: column; align-items: flex-start; gap: 7px;
 }
+
+/* ---------- attempt inspector ---------- */
+
+/* A row, so opening the drawer narrows the terminals rather than covering
+   them. They stay mounted and stay usable — the follow-up you type after
+   reading a diff has to be typing, not navigation. */
+.term-area { flex: 1; min-height: 0; }
+.term-area > .term-stack { flex: 1; min-width: 0; }
+
+.inspector {
+  width: 460px; max-width: 46vw; flex: none;
+  display: flex; flex-direction: column; min-height: 0;
+  border-left: 1px solid var(--line); background: var(--bg-2);
+}
+
+.inspector-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 9px; border-bottom: 1px solid var(--line);
+}
+.inspector-meta {
+  display: flex; gap: 10px; padding: 6px 11px;
+  border-bottom: 1px solid var(--line);
+}
+.inspector-frozen { color: var(--warn); }
+
+.diff {
+  flex: 1; margin: 0; overflow: auto; padding: 8px 10px;
+  font-size: 12px; line-height: 1.5; white-space: pre;
+}
+.diff-line { display: block; }
+.diff-line.add { color: var(--ok); }
+.diff-line.del { color: var(--err); }
+.diff-line.hunk { color: var(--accent); }
+.diff-line.meta { color: var(--fg-dim); }
+
+.timeline { flex: 1; overflow: auto; margin: 0; padding: 6px 0; list-style: none; }
+.tl-row {
+  display: flex; gap: 8px; align-items: baseline;
+  padding: 3px 11px; border-left: 2px solid transparent;
+}
+.tl-row.tl-tool { border-left-color: var(--accent); }
+.tl-row.tl-status { border-left-color: var(--warn); }
+.tl-row.tl-prompt { border-left-color: var(--ok); }
+.tl-time { flex: none; }
+.tl-tool { flex: none; font-weight: 600; }
+.tl-detail, .tl-prompt {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The opening prompt is the one entry worth reading in full. */
+.tl-row.tl-prompt .tl-prompt {
+  white-space: pre-wrap; word-break: break-word; font-size: 12px;
+}
