@@ -27,8 +27,10 @@ App 提供的是終端機分頁給不了的：多 session 管理、跨重啟的�
 - **變更與活動**（M3）：TUI **旁邊**的抽屜，不進終端機就能說出這個 attempt
   改了什麼（含未 commit 與新建檔）、做了什麼（工具名 + 參數的時間軸）。
   hook 事件從「算完徽章就丟掉」改成落進 `attempt_events`
+- **收尾與併發**（M4）：`合併回 base`、`push + 開 PR`、`丟棄` 三顆按鈕。
+  同時執行數有上限（預設 3），超過的卡片排隊，額度一放出來自己起跑
 
-尚未做：merge / PR 按鈕、併發佇列、系統匣。
+尚未做：系統匣。
 
 ---
 
@@ -51,8 +53,8 @@ export PATH="$HOME/.cargo/bin:$PATH"
 ## 測試
 
 ```bash
-cd src-tauri && cargo test      # 92 個：PTY、hooks、worktree、attempt、timeline、migration、規則、儲存
-npm --prefix ui run test:e2e    # 112 個：Playwright，前端 + 看板 + 檢視抽屜 + xterm 渲染
+cd src-tauri && cargo test      # 107 個：PTY、hooks、worktree、attempt、timeline、queue、migration、規則、儲存
+npm --prefix ui run test:e2e    # 125 個：Playwright，前端 + 看板 + 檢視抽屜 + 佇列 + xterm 渲染
 ```
 
 macOS 的 WKWebView 沒有 WebDriver，所以 Playwright 是在 Chromium 裡跑同一份 React
@@ -80,6 +82,11 @@ session 的流程，以及 xterm 對**真實 PTY bytes** 的解碼與渲染。
 - `tests/attempts.rs` 的時間軸段 —— 完整鏈路：hook listener → router → channel →
   writer thread → SQLite。同時釘住「不該記的不要記」：連續三次 `running` 只留
   工具呼叫，不留三行狀態
+- `store.rs` 的 migration 段 —— 三條升級路徑各一個測試：**沒有版本號但已經有
+  `completed` 的舊 DB**（這條沒處理好會讓每個既有安裝都開不起來）、更舊的沒有
+  `completed`、以及從上一版正常升級且資料不掉
+- `ui/tests/queue.spec.ts` —— 排隊的卡片會自己起跑（沒有人按任何東西），
+  以及會弄丟工作的合併必須被擋下來並把原因講完
 - `ui/tests/board.spec.ts` —— 兩軸真的成立：卡片留在原欄位不動，燈號自己從
   「等你確認資料夾」→「執行中」→「⚠ 等你授權」變化；點下去之後 **`document.
   activeElement` 真的落在那個 pane 裡面**，不只是 pane 有 focused class。
@@ -224,6 +231,9 @@ SDK 版本的程式碼收在 `src-tauri/parked/`（Node 那半在 `sidecar/`）�
 ---
 
 ## 已知限制
+
+- 收尾就到「合併」與「開 PR」為止。PR 的 review、留言、CI 紅綠、合併按鈕都不做 ——
+  那是另一個大得多的工具，硬做只會把這裡最深的東西稀釋掉
 
 - 狀態偵測只對 Claude Code 有效。其他 CLI 沒有等價的 hook 機制，會顯示為
   「執行中 / 已關閉」而已。首則 prompt 也只對 Claude Code 自動送出，其他 agent

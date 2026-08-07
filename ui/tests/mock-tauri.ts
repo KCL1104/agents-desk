@@ -57,6 +57,7 @@ export interface MockTask {
   position: number;
   created_at: number;
   attempts: MockAttempt[];
+  queued_at: number | null;
 }
 
 export interface MockTab {
@@ -79,6 +80,15 @@ declare global {
       /** What each attempt's worktree currently shows as changed. */
       diffs: Map<string, string>;
       events: Map<string, MockEvent[]>;
+      /** Cards waiting for a slot, in order. */
+      queue: string[];
+      pendingStarts: Map<string, { agent: string; prompt: string }>;
+      /** Attempts whose worktree has uncommitted work, so merge must refuse. */
+      dirtyWorktrees: Set<string>;
+      maxConcurrent: number;
+      /** How many attempts hold a terminal right now. */
+      running(): number;
+      drainQueue(): void;
       /** Stand in for a hook landing on an attempt's timeline. */
       record(attemptId: string, kind: string, tool: string | null, detail: string | null): void;
       persist(): void;
@@ -115,6 +125,10 @@ export function installMock(): void {
     repos: { '/Users/test/picked-repo': ['main', 'develop'] } as Record<string, string[]>,
     diffs: new Map<string, string>(),
     events: new Map<string, MockEvent[]>(),
+    queue: [] as string[],
+    maxConcurrent: 3,
+    pendingStarts: new Map<string, { agent: string; prompt: string }>(),
+    dirtyWorktrees: new Set<string>(),
     calls: [] as Array<{ cmd: string; args: unknown }>,
     listeners: new Map<string, number[]>(),
     cbSeq: 0,
@@ -159,6 +173,11 @@ export function installMock(): void {
     },
 
     pushTasks() {
+      // The core recomputes each card's queue position on every broadcast.
+      for (const t of mock.tasks) {
+        const at = mock.queue.indexOf(t.id);
+        t.queued_at = at < 0 ? null : at + 1;
+      }
       mock.persist();
       queueMicrotask(() => mock.emit('tasks:changed', mock.tasks));
     },
@@ -190,6 +209,20 @@ export function installMock(): void {
         detail,
       });
       mock.events.set(attemptId, rows);
+    },
+
+    running() {
+      return mock.sessions.filter((s) => s.live && s.attempt_id !== null).length;
+    },
+
+    /** Start whatever the freed slots can take, as the core does. */
+    drainQueue() {
+      while (mock.queue.length > 0 && mock.running() < mock.maxConcurrent) {
+        const taskId = mock.queue.shift()!;
+        const pending = mock.pendingStarts.get(taskId);
+        mock.pendingStarts.delete(taskId);
+        if (pending) startAttempt(taskId, pending.agent, pending.prompt);
+      }
     },
 
     /** The core renumbers both affected columns on every move. */
@@ -321,6 +354,11 @@ export function installMock(): void {
         s.status = 'saved';
       }
       mock.pushSessions();
+      // An attempt's terminal ending is the commonest way a slot frees.
+      if (s?.attempt_id) {
+        mock.drainQueue();
+        mock.pushTasks();
+      }
       return null;
     },
 
@@ -365,6 +403,7 @@ export function installMock(): void {
         position: mock.tasks.filter((t) => t.lifecycle === 'backlog').length,
         created_at: now(),
         attempts: [],
+        queued_at: null,
       });
       mock.pushTasks();
       return id;
@@ -417,9 +456,73 @@ export function installMock(): void {
     },
 
     open_attempt: (args) => {
-      const t = mock.tasks.find((x) => x.id === args.taskId);
-      if (!t) throw new Error(`no such task: ${String(args.taskId)}`);
+      const taskId = String(args.taskId);
+      const t = mock.tasks.find((x) => x.id === taskId);
+      if (!t) throw new Error(`no such task: ${taskId}`);
       const agent = String(args.agent ?? 'claude');
+      const prompt = String(args.prompt ?? '');
+      // Over the limit it waits its turn rather than being refused.
+      if (mock.running() >= mock.maxConcurrent) {
+        if (!mock.queue.includes(taskId)) mock.queue.push(taskId);
+        mock.pendingStarts.set(taskId, { agent, prompt });
+        mock.pushTasks();
+        return { attempt: null, queuedAt: mock.queue.indexOf(taskId) + 1 };
+      }
+      return { attempt: startAttempt(taskId, agent, prompt), queuedAt: null };
+    },
+
+    cancel_queued: (args) => {
+      const taskId = String(args.taskId);
+      mock.queue = mock.queue.filter((x) => x !== taskId);
+      mock.pendingStarts.delete(taskId);
+      mock.pushTasks();
+      return null;
+    },
+
+    concurrency: () => ({
+      max: mock.maxConcurrent,
+      running: mock.running(),
+      queued: mock.queue.length,
+    }),
+
+    set_concurrency: (args) => {
+      mock.maxConcurrent = Math.max(1, Number(args.max));
+      // Raising the limit is a way of saying "go now".
+      mock.drainQueue();
+      mock.pushTasks();
+      return null;
+    },
+
+    merge_attempt: (args) => {
+      const attempt = mock.tasks
+        .flatMap((x) => x.attempts)
+        .find((a) => a.id === args.attemptId);
+      if (!attempt) throw new Error(`no such attempt: ${String(args.attemptId)}`);
+      // The core refuses rather than producing a merge without the work in it.
+      if (mock.dirtyWorktrees.has(attempt.id)) {
+        throw new Error(`${attempt.branch} 還有沒有 commit 的變更，合併不會包含它們。`);
+      }
+      finishAttempt(attempt.id, 'merged');
+      return 'deadbeefcafe';
+    },
+
+    open_pr: (args) => {
+      const attempt = mock.tasks
+        .flatMap((x) => x.attempts)
+        .find((a) => a.id === args.attemptId);
+      if (!attempt) throw new Error(`no such attempt: ${String(args.attemptId)}`);
+      if (mock.dirtyWorktrees.has(attempt.id)) {
+        throw new Error(`${attempt.branch} 還有沒有 commit 的變更，推上去不會包含它們。`);
+      }
+      // The attempt deliberately stays open: review is when there is still
+      // something to change.
+      return `https://github.com/test/repo/pull/${attempt.seq}`;
+    },
+  };
+
+  /** Open an attempt now. Shared by the button and the queue, as in the core. */
+  function startAttempt(taskId: string, agent: string, prompt: string) {
+      const t = mock.tasks.find((x) => x.id === taskId)!;
       const seq = t.attempts.length + 1;
       const attemptId = `${t.id}-a${seq}`;
       const session = makeSession(`/Users/test/worktrees/card-${seq}`, agent);
@@ -446,7 +549,7 @@ export function installMock(): void {
       });
       t.lifecycle = 'running';
       // The core writes the prompt as sent onto the timeline.
-      mock.record(attemptId, 'prompt', null, String(args.prompt ?? ''));
+      mock.record(attemptId, 'prompt', null, prompt);
       mock.renumber();
       mock.pushSessions();
       mock.pushTasks();
@@ -455,10 +558,26 @@ export function installMock(): void {
         session_id: session.id,
         branch: `agentdesk/card-${seq}`,
         worktree_path: session.cwd,
-        prompt: String(args.prompt ?? ''),
+        prompt,
         prompt_sent: agent === 'claude',
       };
-    },
+  }
+
+  function finishAttempt(attemptId: string, outcome: string) {
+    const attempt = mock.tasks.flatMap((x) => x.attempts).find((a) => a.id === attemptId);
+    if (!attempt) return;
+    attempt.outcome = outcome;
+    attempt.frozen_diff =
+      mock.diffs.get(attemptId) ?? 'diff --git a/app.txt b/app.txt\n+fixed\n';
+    // The worktree goes, and the session with it — which frees a slot.
+    mock.sessions = mock.sessions.filter((s) => s.id !== attempt.session_id);
+    attempt.session_id = null;
+    mock.drainQueue();
+    mock.pushSessions();
+    mock.pushTasks();
+  }
+
+  const rest: Record<string, (args: Record<string, unknown>) => unknown> = {
 
     reopen_attempt: (args) => {
       const attempt = mock.tasks
@@ -477,17 +596,7 @@ export function installMock(): void {
     },
 
     finish_attempt: (args) => {
-      const attempt = mock.tasks
-        .flatMap((t) => t.attempts)
-        .find((a) => a.id === args.attemptId);
-      if (!attempt) throw new Error(`no such attempt: ${String(args.attemptId)}`);
-      attempt.outcome = String(args.outcome);
-      attempt.frozen_diff = 'diff --git a/app.txt b/app.txt\n+fixed\n';
-      // The worktree goes, and the session with it.
-      mock.sessions = mock.sessions.filter((s) => s.id !== attempt.session_id);
-      attempt.session_id = null;
-      mock.pushSessions();
-      mock.pushTasks();
+      finishAttempt(String(args.attemptId), String(args.outcome));
       return null;
     },
 
@@ -515,6 +624,7 @@ export function installMock(): void {
     'plugin:notification|is_permission_granted': () => true,
     'plugin:notification|notify': () => null,
   };
+  Object.assign(handlers, rest);
 
   // Tauri's unlisten path goes through this, not through invoke. Without it
   // every effect cleanup throws and the noise buries real failures.

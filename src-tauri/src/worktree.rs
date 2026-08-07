@@ -261,6 +261,131 @@ impl Worktrees {
         Ok(())
     }
 
+    /// Fold an attempt's branch back into the base.
+    ///
+    /// Every refusal here is one that would otherwise lose work quietly:
+    ///
+    ///   * The attempt's worktree still has uncommitted changes. Merging the
+    ///     branch would produce a merge that does not contain them, and the
+    ///     work would sit in a directory that is about to be removed.
+    ///   * The main checkout is on some other branch, or has changes of its
+    ///     own. Merging into it would rewrite what the person is in the
+    ///     middle of.
+    ///
+    /// Said plainly and refused, rather than worked around: a merge that
+    /// silently did something other than what it says is worse than one that
+    /// asks you to tidy up first.
+    pub fn merge_to_base(
+        &self,
+        env: &ShellEnv,
+        repo: &Path,
+        worktree: &Path,
+        branch: &str,
+        base_branch: &str,
+    ) -> Result<String> {
+        let dirty = git(env, worktree, &["status", "--porcelain"])?;
+        if !dirty.trim().is_empty() {
+            return Err(anyhow!(
+                "{branch} 還有沒有 commit 的變更，合併不會包含它們。\
+                 請先在 attempt 的 TUI 裡 commit，或改用「丟棄」。"
+            ));
+        }
+
+        let on = git(env, repo, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+        if on.trim() != base_branch {
+            return Err(anyhow!(
+                "這個 repo 目前在 `{}`，不是 `{base_branch}`。切過去再合併。",
+                on.trim()
+            ));
+        }
+        let repo_dirty = git(env, repo, &["status", "--porcelain"])?;
+        if !repo_dirty.trim().is_empty() {
+            return Err(anyhow!(
+                "`{base_branch}` 的工作目錄有未提交的變更，先收乾淨再合併。"
+            ));
+        }
+
+        let ahead = git(
+            env,
+            repo,
+            &["rev-list", "--count", &format!("{base_branch}..{branch}")],
+        )?;
+        if ahead.trim() == "0" {
+            return Err(anyhow!(
+                "{branch} 沒有任何 `{base_branch}` 還沒有的 commit，沒有東西可以合併。"
+            ));
+        }
+
+        // `--no-ff` so the attempt stays legible as one piece of work in the
+        // history rather than dissolving into the base.
+        git(
+            env,
+            repo,
+            &[
+                "merge",
+                "--no-ff",
+                "-m",
+                &format!("Merge {branch} (AgentDesk attempt)"),
+                branch,
+            ],
+        )?;
+        git(env, repo, &["rev-parse", "HEAD"])
+    }
+
+    /// Push the attempt's branch and open a pull request for it.
+    ///
+    /// The push runs from the worktree, which is already on the branch. `gh`
+    /// is looked up on the login-shell PATH like everything else, because its
+    /// credentials live in the environment a GUI process does not have.
+    pub fn push_and_open_pr(
+        &self,
+        env: &ShellEnv,
+        worktree: &Path,
+        branch: &str,
+        base_branch: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<String> {
+        let dirty = git(env, worktree, &["status", "--porcelain"])?;
+        if !dirty.trim().is_empty() {
+            return Err(anyhow!(
+                "{branch} 還有沒有 commit 的變更，推上去不會包含它們。請先 commit。"
+            ));
+        }
+
+        let gh = env
+            .which("gh")
+            .ok_or_else(|| anyhow!("`gh` 不在 login shell 的 PATH 上，無法開 PR"))?;
+
+        git(env, worktree, &["push", "--set-upstream", "origin", branch])?;
+
+        let out = std::process::Command::new(&gh)
+            .args([
+                "pr",
+                "create",
+                "--base",
+                base_branch,
+                "--head",
+                branch,
+                "--title",
+                title,
+                "--body",
+                body,
+            ])
+            .current_dir(worktree)
+            .envs(&env.vars)
+            .output()
+            .context("running gh pr create")?;
+        if !out.status.success() {
+            return Err(anyhow!(
+                "gh pr create 失敗：{}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+        // gh prints the URL of the pull request it made.
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    }
+
     /// What this attempt has changed since it started.
     ///
     /// Two calls, because `git diff` only knows about tracked files and an

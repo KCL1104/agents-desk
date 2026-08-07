@@ -257,6 +257,7 @@ fn preview_prompt(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// Start an attempt, or queue it when every slot is taken.
 #[tauri::command]
 fn open_attempt(
     state: State<'_, AppState>,
@@ -265,10 +266,10 @@ fn open_attempt(
     prompt: Option<String>,
     cols: u16,
     rows: u16,
-) -> StdResult<crate::core::OpenedAttempt, String> {
+) -> StdResult<crate::core::StartResult, String> {
     state
         .core()?
-        .open_attempt(
+        .start_attempt(
             &task_id,
             agent.unwrap_or_else(|| "claude".into()),
             prompt,
@@ -276,6 +277,44 @@ fn open_attempt(
             rows,
         )
         .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn cancel_queued(state: State<'_, AppState>, task_id: String) -> StdResult<(), String> {
+    state.core()?.cancel_queued(&task_id).map_err(|e| e.to_string())
+}
+
+/// How many attempts may hold a terminal at once. The thing being rationed
+/// is a person's attention, not a machine.
+#[tauri::command]
+fn concurrency(state: State<'_, AppState>) -> StdResult<serde_json::Value, String> {
+    let core = state.core()?;
+    Ok(serde_json::json!({
+        "max": core.max_concurrent(),
+        "running": core.running_attempts(),
+        "queued": core.queue().len(),
+    }))
+}
+
+#[tauri::command]
+fn set_concurrency(state: State<'_, AppState>, max: i64) -> StdResult<(), String> {
+    state.core()?.set_max_concurrent(max).map_err(|e| e.to_string())
+}
+
+/// Fold the attempt's branch back into its base, then close it out.
+#[tauri::command]
+fn merge_attempt(state: State<'_, AppState>, attempt_id: String) -> StdResult<String, String> {
+    state
+        .core()?
+        .merge_attempt(&attempt_id)
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// Push the branch and open a pull request. The attempt stays open: review is
+/// exactly when there is still something to change.
+#[tauri::command]
+fn open_pr(state: State<'_, AppState>, attempt_id: String) -> StdResult<String, String> {
+    state.core()?.open_pr(&attempt_id).map_err(|e| format!("{e:#}"))
 }
 
 /// Put a terminal back on an attempt that is not running — the state every
@@ -387,6 +426,11 @@ fn main() {
             finish_attempt,
             attempt_diff,
             attempt_events,
+            cancel_queued,
+            concurrency,
+            set_concurrency,
+            merge_attempt,
+            open_pr,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentDesk")

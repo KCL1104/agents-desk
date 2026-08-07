@@ -151,6 +151,16 @@ impl Harness {
             .expect("create task")
     }
 
+    /// Start an attempt now, through the same call the button makes. The
+    /// default limit leaves room, so this never lands in the queue.
+    fn start(&self, task_id: &str, agent: &str) -> crate::core::OpenedAttempt {
+        self.core
+            .start_attempt(task_id, agent.into(), None, 100, 30)
+            .expect("start attempt")
+            .attempt
+            .expect("there was a free slot")
+    }
+
     /// Every time the stub agent was started for this session, oldest first.
     fn launches(&self, session_id: &str, at_least: usize) -> Vec<Launch> {
         let dir = self.root.join("logs");
@@ -244,6 +254,18 @@ impl Harness {
     }
 }
 
+/// Poll until `done`, for the things another thread makes true.
+fn wait_for(timeout: Duration, mut done: impl FnMut() -> bool) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if done() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
 struct Launch {
     cwd: String,
     args: Vec<String>,
@@ -265,10 +287,7 @@ fn opening_an_attempt_puts_an_agent_in_a_worktree_of_its_own() {
     let _guard = h.rt.enter();
     let task = h.card("修好登入", "登入頁在 Safari 會白畫面");
 
-    let opened = h
-        .core
-        .open_attempt(&task, "claude".into(), None, 100, 30)
-        .expect("open attempt");
+    let opened = h.start(&task, "claude");
 
     assert_eq!(opened.branch, "agentdesk/task-".to_string() + &task[..8] + "-1");
     assert!(opened.prompt_sent, "claude's conventions are measured");
@@ -329,8 +348,8 @@ fn two_attempts_at_one_card_get_a_worktree_each() {
     let _guard = h.rt.enter();
     let task = h.card("Fix login", "make it work");
 
-    let a = h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
-    let b = h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+    let a = h.start(&task, "claude");
+    let b = h.start(&task, "claude");
 
     assert_eq!(a.branch, "agentdesk/fix-login-1");
     assert_eq!(b.branch, "agentdesk/fix-login-2");
@@ -352,7 +371,7 @@ fn finishing_an_attempt_freezes_the_diff_before_taking_the_worktree_back() {
     let h = Harness::new("finish");
     let _guard = h.rt.enter();
     let task = h.card("Fix login", "make it work");
-    let a = h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+    let a = h.start(&task, "claude");
 
     // What the agent did: an edit and a new file.
     std::fs::write(Path::new(&a.worktree_path).join("app.txt"), "fixed\n").unwrap();
@@ -383,7 +402,7 @@ fn a_finished_attempt_cannot_be_reopened() {
     let h = Harness::new("reopenfin");
     let _guard = h.rt.enter();
     let task = h.card("Fix login", "make it work");
-    let a = h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+    let a = h.start(&task, "claude");
     h.core.finish_attempt(&a.attempt_id, Outcome::Discarded).unwrap();
 
     let err = h
@@ -401,7 +420,7 @@ fn reopening_an_attempt_continues_instead_of_asking_again() {
     let h = Harness::new("reopen");
     let _guard = h.rt.enter();
     let task = h.card("Fix login", "make it work");
-    let a = h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+    let a = h.start(&task, "claude");
     h.launches(&a.session_id, 1); // let the first launch land
 
     h.core.close_session(&a.session_id).unwrap();
@@ -429,7 +448,7 @@ fn an_agent_whose_conventions_we_have_not_measured_is_not_sent_a_prompt() {
     let _guard = h.rt.enter();
     let task = h.card("Fix login", "make it work");
 
-    let opened = h.core.open_attempt(&task, "codex".into(), None, 100, 30).unwrap();
+    let opened = h.start(&task, "codex");
 
     assert!(!opened.prompt_sent);
     // Built and available to copy, just not delivered.
@@ -454,7 +473,9 @@ fn an_edited_prompt_is_what_gets_sent_and_what_gets_recorded() {
     let edited = "我改過的 prompt\n\n第二行".to_string();
     let opened = h
         .core
-        .open_attempt(&task, "claude".into(), Some(edited.clone()), 100, 30)
+        .start_attempt(&task, "claude".into(), Some(edited.clone()), 100, 30)
+        .unwrap()
+        .attempt
         .unwrap();
 
     assert_eq!(opened.prompt, edited);
@@ -465,6 +486,229 @@ fn an_edited_prompt_is_what_gets_sent_and_what_gets_recorded() {
         !events[0].detail.as_deref().unwrap().contains("the original request"),
         "the timeline shows the template, not what was actually sent"
     );
+}
+
+/* -------------------------- queue and finishing ------------------------ */
+
+/// Over the limit, a start waits instead of being refused. The answer to
+/// "too many at once" is "later", not "no".
+#[test]
+fn a_start_over_the_limit_waits_its_turn_and_then_goes_by_itself() {
+    let h = Harness::new("queue");
+    let _guard = h.rt.enter();
+    h.core.set_max_concurrent(1).unwrap();
+
+    let first = h.card("First", "p");
+    let second = h.card("Second", "p");
+
+    let a = h
+        .core
+        .start_attempt(&first, "claude".into(), None, 100, 30)
+        .unwrap();
+    assert!(a.attempt.is_some(), "the first one had room");
+
+    let b = h
+        .core
+        .start_attempt(&second, "claude".into(), Some("我排隊的 prompt".into()), 100, 30)
+        .unwrap();
+    assert!(b.attempt.is_none(), "the second should not have started");
+    assert_eq!(b.queued_at, Some(1));
+    assert_eq!(h.core.queue().len(), 1);
+
+    // The board shows where it is waiting.
+    let board = h.core.task_board();
+    let waiting = board.iter().find(|t| t.task.id == second).unwrap();
+    assert_eq!(waiting.queued_at, Some(1));
+    assert!(waiting.attempts.is_empty());
+
+    // A slot frees, and the queue moves on its own.
+    let session = a.attempt.unwrap().session_id;
+    h.core.close_session(&session).unwrap();
+
+    let started = wait_for(Duration::from_secs(10), || {
+        h.core
+            .task_board()
+            .into_iter()
+            .find(|t| t.task.id == second)
+            .map(|t| !t.attempts.is_empty())
+            .unwrap_or(false)
+    });
+    assert!(started, "the queue never moved after a slot came free");
+    assert!(h.core.queue().is_empty());
+
+    // And it sent the prompt that was approved, not a fresh render.
+    let attempt = h
+        .core
+        .task_board()
+        .into_iter()
+        .find(|t| t.task.id == second)
+        .unwrap()
+        .attempts[0]
+        .attempt
+        .clone();
+    let events = h.core.attempt_events(&attempt.id).unwrap();
+    assert_eq!(events[0].detail.as_deref(), Some("我排隊的 prompt"));
+}
+
+/// Raising the limit is a way of saying "go now", so it has to be one.
+#[test]
+fn raising_the_limit_releases_what_was_waiting() {
+    let h = Harness::new("raise");
+    let _guard = h.rt.enter();
+    h.core.set_max_concurrent(1).unwrap();
+
+    let first = h.card("First", "p");
+    let second = h.card("Second", "p");
+    h.core.start_attempt(&first, "claude".into(), None, 100, 30).unwrap();
+    h.core.start_attempt(&second, "claude".into(), None, 100, 30).unwrap();
+    assert_eq!(h.core.queue().len(), 1);
+
+    h.core.set_max_concurrent(2).unwrap();
+    assert!(h.core.queue().is_empty(), "raising the limit left it waiting");
+    assert_eq!(h.core.running_attempts(), 2);
+}
+
+/// Pressing 開始 again on a card that is already waiting means "these are the
+/// settings I want", not "run it twice".
+#[test]
+fn a_card_can_only_be_in_the_queue_once() {
+    let h = Harness::new("once");
+    let _guard = h.rt.enter();
+    h.core.set_max_concurrent(1).unwrap();
+
+    let first = h.card("First", "p");
+    let second = h.card("Second", "p");
+    h.core.start_attempt(&first, "claude".into(), None, 100, 30).unwrap();
+    h.core
+        .start_attempt(&second, "claude".into(), Some("first try".into()), 100, 30)
+        .unwrap();
+    h.core
+        .start_attempt(&second, "codex".into(), Some("changed my mind".into()), 100, 30)
+        .unwrap();
+
+    let queue = h.core.queue();
+    assert_eq!(queue.len(), 1);
+    assert_eq!(queue[0].agent, "codex");
+    assert_eq!(queue[0].prompt, "changed my mind");
+}
+
+#[test]
+fn a_queued_card_can_be_taken_back_out() {
+    let h = Harness::new("cancel");
+    let _guard = h.rt.enter();
+    h.core.set_max_concurrent(1).unwrap();
+    let first = h.card("First", "p");
+    let second = h.card("Second", "p");
+    h.core.start_attempt(&first, "claude".into(), None, 100, 30).unwrap();
+    h.core.start_attempt(&second, "claude".into(), None, 100, 30).unwrap();
+
+    h.core.cancel_queued(&second).unwrap();
+    assert!(h.core.queue().is_empty());
+    assert_eq!(
+        h.core.task_board().into_iter().find(|t| t.task.id == second).unwrap().queued_at,
+        None
+    );
+}
+
+/// Only attempts count against the limit. An ad-hoc session is something a
+/// person opened deliberately and is already looking at.
+#[test]
+fn ad_hoc_sessions_do_not_use_up_the_limit() {
+    let h = Harness::new("adhoclimit");
+    let _guard = h.rt.enter();
+    h.core.set_max_concurrent(1).unwrap();
+
+    h.core
+        .new_session(h.repo.to_string_lossy().into(), "claude".into(), vec![], 100, 30)
+        .unwrap();
+    let task = h.card("First", "p");
+    let r = h.core.start_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+    assert!(r.attempt.is_some(), "an ad-hoc session took the attempt's slot");
+}
+
+/* ------------------------------ merging -------------------------------- */
+
+#[test]
+fn merging_folds_the_branch_into_the_base_and_closes_the_attempt_out() {
+    let h = Harness::new("merge");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.start(&task, "claude");
+
+    std::fs::write(Path::new(&a.worktree_path).join("app.txt"), "fixed\n").unwrap();
+    git(Path::new(&a.worktree_path), &["add", "-A"]);
+    git(Path::new(&a.worktree_path), &["commit", "-qm", "fix it"]);
+
+    h.core.merge_attempt(&a.attempt_id).expect("merge");
+
+    // The work is on the base branch, in the checkout the person works in.
+    assert_eq!(
+        std::fs::read_to_string(h.repo.join("app.txt")).unwrap(),
+        "fixed\n"
+    );
+    // `--no-ff`, so the attempt stays legible as one piece of work.
+    assert!(git(&h.repo, &["log", "--oneline", "--merges", "-1"]).contains("Merge agentdesk/"));
+
+    // And the attempt is closed out: worktree gone, diff kept.
+    assert!(!Path::new(&a.worktree_path).exists());
+    assert!(h.core.attempt_diff(&a.attempt_id).unwrap().contains("fixed"));
+}
+
+/// The prompt asks the agent to commit. When it has not, merging the branch
+/// would produce a merge that does not contain the work — and the work is in
+/// a directory that is about to be removed.
+#[test]
+fn merging_refuses_while_the_worktree_still_has_uncommitted_work() {
+    let h = Harness::new("dirtywt");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.start(&task, "claude");
+    std::fs::write(Path::new(&a.worktree_path).join("app.txt"), "not committed\n").unwrap();
+
+    let err = h
+        .core
+        .merge_attempt(&a.attempt_id)
+        .expect_err("a merge that would drop the work must not happen");
+    assert!(err.to_string().contains("沒有 commit"), "unhelpful: {err}");
+
+    // Nothing was given up on the way to finding out.
+    assert!(Path::new(&a.worktree_path).exists());
+    assert!(h.core.task_board()[0].attempts[0].attempt.outcome.is_none());
+}
+
+/// Merging into a checkout that is on another branch would rewrite what the
+/// person is in the middle of.
+#[test]
+fn merging_refuses_when_the_checkout_is_somewhere_else() {
+    let h = Harness::new("otherbranch");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.start(&task, "claude");
+    std::fs::write(Path::new(&a.worktree_path).join("app.txt"), "fixed\n").unwrap();
+    git(Path::new(&a.worktree_path), &["add", "-A"]);
+    git(Path::new(&a.worktree_path), &["commit", "-qm", "fix it"]);
+
+    git(&h.repo, &["checkout", "-q", "-b", "something-else"]);
+    let err = h
+        .core
+        .merge_attempt(&a.attempt_id)
+        .expect_err("must not merge into whatever happens to be checked out");
+    assert!(err.to_string().contains("something-else"), "unhelpful: {err}");
+    assert!(Path::new(&a.worktree_path).exists());
+}
+
+#[test]
+fn merging_says_so_when_the_attempt_did_nothing() {
+    let h = Harness::new("nothing");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.start(&task, "claude");
+
+    let err = h
+        .core
+        .merge_attempt(&a.attempt_id)
+        .expect_err("an empty branch has nothing to merge");
+    assert!(err.to_string().contains("沒有東西可以合併"), "unhelpful: {err}");
 }
 
 /* ------------------------------ the timeline --------------------------- */
@@ -479,7 +723,7 @@ fn the_timeline_records_what_the_agent_reached_for() {
     let h = Harness::new("timeline");
     let _guard = h.rt.enter();
     let task = h.card("Fix login", "make it work");
-    let a = h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+    let a = h.start(&task, "claude");
 
     let tool = |name: &str, input: serde_json::Value| {
         serde_json::json!({ "hook_event_name": "PreToolUse", "tool_name": name, "tool_input": input })
@@ -523,7 +767,7 @@ fn the_timeline_does_not_narrate_every_status_report() {
     let h = Harness::new("quiet");
     let _guard = h.rt.enter();
     let task = h.card("Fix login", "make it work");
-    let a = h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+    let a = h.start(&task, "claude");
 
     for _ in 0..3 {
         h.hook(
@@ -556,7 +800,7 @@ fn an_ad_hoc_sessions_hooks_do_not_land_on_anybodys_timeline() {
     let h = Harness::new("adhoc");
     let _guard = h.rt.enter();
     let task = h.card("Fix login", "make it work");
-    let a = h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+    let a = h.start(&task, "claude");
     let scratch = h
         .core
         .new_session(h.repo.to_string_lossy().into(), "claude".into(), vec![], 100, 30)
@@ -585,7 +829,7 @@ fn a_running_attempts_diff_is_read_live_from_its_worktree() {
     let h = Harness::new("livediff");
     let _guard = h.rt.enter();
     let task = h.card("Fix login", "make it work");
-    let a = h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+    let a = h.start(&task, "claude");
 
     assert_eq!(
         h.core.attempt_diff(&a.attempt_id).unwrap(),
@@ -687,7 +931,7 @@ fn deleting_a_card_gives_back_the_worktrees_its_attempts_were_holding() {
     let h = Harness::new("delete");
     let _guard = h.rt.enter();
     let task = h.card("Fix login", "make it work");
-    let a = h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+    let a = h.start(&task, "claude");
     assert!(Path::new(&a.worktree_path).is_dir());
 
     h.core.delete_task(&task).unwrap();
@@ -706,7 +950,7 @@ fn the_badge_counts_attempts_and_ad_hoc_sessions_together() {
     let h = Harness::new("badge");
     let _guard = h.rt.enter();
     let task = h.card("Fix login", "make it work");
-    h.core.open_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+    h.start(&task, "claude");
     h.core
         .new_session(h.repo.to_string_lossy().into(), "claude".into(), vec![], 100, 30)
         .unwrap();

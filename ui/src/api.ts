@@ -10,6 +10,14 @@ import type {
   Task,
 } from './types';
 
+/** What pressing 開始 did. Mirrors core.rs StartResult. */
+export interface StartResult {
+  /** Set when there was room and it started now. */
+  attempt: OpenedAttempt | null;
+  /** Set when there was not: where it sits in the queue, counting from 1. */
+  queuedAt: number | null;
+}
+
 /** What opening an attempt produced. Mirrors core.rs OpenedAttempt. */
 export interface OpenedAttempt {
   attempt_id: string;
@@ -65,7 +73,20 @@ export const api = {
     prompt: string | null,
     cols: number,
     rows: number,
-  ) => invoke<OpenedAttempt>('open_attempt', { taskId, agent, prompt, cols, rows }),
+  ) => invoke<StartResult>('open_attempt', { taskId, agent, prompt, cols, rows }),
+  cancelQueued: (taskId: string) => invoke<void>('cancel_queued', { taskId }),
+
+  /** How many attempts may hold a terminal at once. What is being rationed
+      is a person's attention, not a machine. */
+  concurrency: () =>
+    invoke<{ max: number; running: number; queued: number }>('concurrency'),
+  setConcurrency: (max: number) => invoke<void>('set_concurrency', { max }),
+
+  /** Fold the attempt's branch back into its base, then close it out. */
+  mergeAttempt: (attemptId: string) => invoke<string>('merge_attempt', { attemptId }),
+  /** Push and open a pull request. The attempt stays open — review is when
+      there is still something to change. */
+  openPr: (attemptId: string) => invoke<string>('open_pr', { attemptId }),
   reopenAttempt: (attemptId: string, cols: number, rows: number) =>
     invoke<string>('reopen_attempt', { attemptId, cols, rows }),
   finishAttempt: (attemptId: string, outcome: Outcome) =>

@@ -75,6 +75,9 @@ export interface Task {
   position: number;
   created_at: number;
   attempts: Attempt[];
+  /** Where this card sits in the start queue, counting from 1, when every
+      slot was taken at the moment 開始 was pressed. */
+  queued_at: number | null;
 }
 
 export interface SessionMeta {

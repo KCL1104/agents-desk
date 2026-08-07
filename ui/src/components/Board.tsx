@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { api } from '../api';
 import type { Attempt, Lifecycle, SessionMeta, Task } from '../types';
 import { needsYou } from '../types';
 import {
@@ -24,6 +25,7 @@ interface Props {
   onResume: (attemptId: string) => void;
   /** Open the diff and timeline for this attempt, beside its terminal. */
   onInspect: (attempt: Attempt) => void;
+  onCancelQueued: (taskId: string) => void;
   onNewTask: () => void;
   onDeleteTask: (id: string) => void;
 }
@@ -48,6 +50,7 @@ export function Board({
   onStart,
   onResume,
   onInspect,
+  onCancelQueued,
   onNewTask,
   onDeleteTask,
 }: Props) {
@@ -55,6 +58,7 @@ export function Board({
   const [over, setOver] = useState<{ col: Lifecycle; taskId: string | null } | null>(null);
 
   const adHoc = sessions.filter((s) => s.attempt_id === null);
+  const running = sessions.filter((s) => s.live && s.attempt_id !== null).length;
 
   /**
    * Which card moved, and where it lands.
@@ -74,6 +78,7 @@ export function Board({
 
   return (
     <div className="board" data-testid="board">
+      <Concurrency running={running} tasks={tasks} />
       <div className="board-cols">
         {COLUMNS.map((col) => {
           const cards = columnOf(tasks, col);
@@ -143,6 +148,7 @@ export function Board({
                     onStart={() => onStart(task)}
                     onResume={onResume}
                     onInspect={onInspect}
+                    onCancelQueued={onCancelQueued}
                     onDelete={() => onDeleteTask(task.id)}
                   />
                 ))}
@@ -180,6 +186,60 @@ export function Board({
   );
 }
 
+/**
+ * How many attempts may hold a terminal at once.
+ *
+ * The thing being rationed is a person, not a machine — this is an attention
+ * scheduler, and past three or four live TUIs nobody is keeping a thread on
+ * all of them. Cards over the limit wait and then go by themselves.
+ */
+function Concurrency({ running, tasks }: { running: number; tasks: Task[] }) {
+  const [max, setMax] = useState<number | null>(null);
+  const queued = tasks.filter((t) => t.queued_at !== null).length;
+
+  // Re-read whenever the running count moves: raising the limit releases what
+  // was waiting, and the number here should agree with the board.
+  useEffect(() => {
+    void api
+      .concurrency()
+      .then((c) => setMax(c.max))
+      .catch(() => setMax(null));
+  }, [running, queued]);
+
+  const change = (next: number) => {
+    setMax(next);
+    void api.setConcurrency(next).catch(() => {
+      /* the next read puts it back */
+    });
+  };
+
+  if (max === null) return null;
+  return (
+    <div className="board-limit" data-testid="concurrency">
+      <span className="muted small">同時執行</span>
+      <button
+        className="icon"
+        disabled={max <= 1}
+        aria-label="減少同時執行數"
+        onClick={() => change(max - 1)}
+      >
+        −
+      </button>
+      <strong data-testid="concurrency-max">
+        {running} / {max}
+      </strong>
+      <button className="icon" aria-label="增加同時執行數" onClick={() => change(max + 1)}>
+        ＋
+      </button>
+      {queued > 0 && (
+        <span className="muted small" data-testid="queue-count">
+          · {queued} 個排隊中
+        </span>
+      )}
+    </div>
+  );
+}
+
 function Card({
   task,
   live,
@@ -193,6 +253,7 @@ function Card({
   onStart,
   onResume,
   onInspect,
+  onCancelQueued,
   onDelete,
 }: {
   task: Task;
@@ -207,10 +268,12 @@ function Card({
   onStart: () => void;
   onResume: (attemptId: string) => void;
   onInspect: (attempt: Attempt) => void;
+  onCancelQueued: (taskId: string) => void;
   onDelete: () => void;
 }) {
   const waiting = live.kind === 'session' && needsYou(live.status);
-  const agent = live.kind === 'none' ? null : live.attempt.agent;
+  const hasAttempt = live.kind !== 'none' && live.kind !== 'queued';
+  const agent = hasAttempt ? live.attempt.agent : null;
 
   // The whole card is the target when there is a session behind it: getting
   // into the TUI is the common act, and making people find a small button
@@ -247,9 +310,7 @@ function Card({
       <div className="board-card-state" data-testid={`state-${task.id}`}>
         {waiting && <span aria-hidden="true">⚠ </span>}
         {liveLabel(live)}
-        {live.kind !== 'none' && (
-          <span className="muted small mono"> #{live.attempt.seq}</span>
-        )}
+        {hasAttempt && <span className="muted small mono"> #{live.attempt.seq}</span>}
       </div>
 
       {live.kind === 'session' && live.session.activity && (
@@ -262,6 +323,16 @@ function Card({
         {live.kind === 'none' && (
           <button className="primary" onClick={stop(onStart)}>
             開始
+          </button>
+        )}
+        {/* Waiting for a slot. It will go on its own, so the only thing worth
+            offering is a way to change your mind. */}
+        {live.kind === 'queued' && (
+          <button
+            data-testid={`unqueue-${task.id}`}
+            onClick={stop(() => onCancelQueued(task.id))}
+          >
+            取消排隊
           </button>
         )}
         {/* Every attempt is in this state after a restart — the app kills its
@@ -279,7 +350,7 @@ function Card({
         )}
         {/* Answers "what did this one change, and what did it do" without
             reading the TUI — which is the whole job of the 待驗收 column. */}
-        {live.kind !== 'none' && (
+        {hasAttempt && (
           <button
             data-testid={`inspect-${task.id}`}
             onClick={stop(() => onInspect(live.attempt))}
@@ -292,7 +363,7 @@ function Card({
             in its own worktree, is a thing worth being able to do — comparing
             their diffs is the point. Deciding which one won is a separate,
             deliberate act, not a side effect of starting the second. */}
-        {live.kind !== 'none' && (
+        {hasAttempt && (
           <button
             className={live.kind === 'finished' ? 'primary' : ''}
             data-testid={`retry-${task.id}`}

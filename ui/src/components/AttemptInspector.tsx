@@ -5,7 +5,11 @@ import { STATUS_LABEL } from '../sections';
 
 interface Props {
   attempt: Attempt;
+  /** Named so the merge button can say where the work is going. */
+  baseBranch: string;
   onClose: () => void;
+  /** The attempt ended: nothing is left to inspect here. */
+  onDone: () => void;
 }
 
 type Pane = 'diff' | 'timeline';
@@ -20,7 +24,7 @@ type Pane = 'diff' | 'timeline';
  * turn a follow-up into a navigation problem, which is the point at which
  * this stops being a session manager and becomes a board.
  */
-export function AttemptInspector({ attempt, onClose }: Props) {
+export function AttemptInspector({ attempt, baseBranch, onClose, onDone }: Props) {
   const [pane, setPane] = useState<Pane>('diff');
   const [diff, setDiff] = useState<string | null>(null);
   const [events, setEvents] = useState<AttemptEvent[]>([]);
@@ -89,12 +93,94 @@ export function AttemptInspector({ attempt, onClose }: Props) {
         </p>
       )}
 
-      {pane === 'diff' ? (
-        <DiffPane diff={diff} />
-      ) : (
-        <Timeline events={events} />
+      {pane === 'diff' ? <DiffPane diff={diff} /> : <Timeline events={events} />}
+
+      {attempt.outcome === null && (
+        <Finish attempt={attempt} baseBranch={baseBranch} onDone={onDone} />
       )}
     </aside>
+  );
+}
+
+/**
+ * The two ways an attempt ends, and the one way it is thrown away.
+ *
+ * This is where it stops. Reviewing a pull request, chasing its checks and
+ * merging it are somebody else's tool and a much larger one — trying to be
+ * that as well would dilute the part of this that is actually deep.
+ *
+ * Merging closes the attempt out and takes the worktree back. Opening a pull
+ * request deliberately does not: review is exactly when there is still
+ * something to change, and the worktree is where changing it happens.
+ */
+function Finish({
+  attempt,
+  baseBranch,
+  onDone,
+}: {
+  attempt: Attempt;
+  baseBranch: string;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [prUrl, setPrUrl] = useState<string | null>(null);
+
+  const run = (what: string, fn: () => Promise<unknown>) => () => {
+    setBusy(what);
+    setProblem(null);
+    void fn()
+      .then((r) => {
+        if (what === 'pr' && typeof r === 'string') setPrUrl(r);
+        if (what === 'merge' || what === 'discard') onDone();
+      })
+      // Every refusal here is one that would otherwise lose work quietly —
+      // uncommitted changes, the wrong branch checked out — so it is shown
+      // in full rather than summarised.
+      .catch((e) => setProblem(String(e)))
+      .finally(() => setBusy(null));
+  };
+
+  return (
+    <footer className="inspector-foot">
+      {problem && (
+        <p className="dialog-error" role="alert" data-testid="finish-error">
+          {problem}
+        </p>
+      )}
+      {prUrl && (
+        <p className="mono small" data-testid="pr-url">
+          {prUrl}
+        </p>
+      )}
+      <div className="row">
+        <button
+          className="primary"
+          disabled={busy !== null}
+          data-testid="merge-attempt"
+          onClick={run('merge', () => api.mergeAttempt(attempt.id))}
+        >
+          合併回 {baseBranch}
+        </button>
+        <button
+          disabled={busy !== null}
+          data-testid="open-pr"
+          onClick={run('pr', () => api.openPr(attempt.id))}
+        >
+          push + 開 PR
+        </button>
+        <span className="spacer" />
+        <button
+          className="danger"
+          disabled={busy !== null}
+          data-testid="discard-attempt"
+          title="關掉這個 attempt 並收回 worktree。變更會凍結保留。"
+          onClick={run('discard', () => api.finishAttempt(attempt.id, 'discarded'))}
+        >
+          丟棄
+        </button>
+      </div>
+    </footer>
   );
 }
 

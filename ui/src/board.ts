@@ -34,6 +34,8 @@ export const TASK_MIME = 'application/x-agentdesk-task';
 export type Live =
   /** No attempt has been made at this card yet. */
   | { kind: 'none' }
+  /** Approved, but every slot was taken. It will go on its own. */
+  | { kind: 'queued'; position: number }
   /** An attempt is running, and this is what its session reports. */
   | { kind: 'session'; status: Status; session: SessionMeta; attempt: Attempt }
   /** An attempt exists but nothing is running it. Resumable. */
@@ -57,6 +59,13 @@ export function currentAttempt(task: Task): Attempt | null {
 
 export function liveStateOf(task: Task, sessions: readonly SessionMeta[]): Live {
   const attempt = currentAttempt(task);
+  // A card waiting for a slot has no attempt yet — the worktree is not made
+  // until its turn comes. Tested for a number rather than against null, so a
+  // payload that simply omits the field reads as "not queued" rather than as
+  // "queued at position undefined".
+  if (!attempt && typeof task.queued_at === 'number') {
+    return { kind: 'queued', position: task.queued_at };
+  }
   if (!attempt) return { kind: 'none' };
   if (attempt.outcome !== null) return { kind: 'finished', attempt };
 
@@ -75,6 +84,8 @@ export function liveLabel(live: Live): string {
   switch (live.kind) {
     case 'none':
       return '尚未開始';
+    case 'queued':
+      return `排隊中 · 第 ${live.position} 個`;
     case 'stopped':
       return '未執行';
     case 'finished':

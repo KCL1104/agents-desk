@@ -217,7 +217,7 @@ impl Store {
     }
 
     /// The schema this build expects. Bump it and add a `V<n>` step below.
-    const SCHEMA_VERSION: i64 = 2;
+    const SCHEMA_VERSION: i64 = 3;
 
     /// Sessions and tabs: everything that existed before the schema was
     /// versioned.
@@ -286,6 +286,26 @@ impl Store {
         CREATE INDEX sessions_by_attempt ON sessions(attempt_id);
     "#;
 
+    /// Settings, and starts that are waiting for a slot.
+    const V3: &'static str = r#"
+        CREATE TABLE settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        CREATE TABLE queued_starts (
+            id         TEXT PRIMARY KEY,
+            task_id    TEXT NOT NULL UNIQUE,
+            agent      TEXT NOT NULL,
+            prompt     TEXT NOT NULL,
+            cols       INTEGER NOT NULL,
+            rows       INTEGER NOT NULL,
+            position   INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX queued_by_position ON queued_starts(position);
+    "#;
+
     /// Bring the database up to `SCHEMA_VERSION`, one step at a time.
     ///
     /// The schema will keep moving from here, and the old best-effort
@@ -323,6 +343,7 @@ impl Store {
             let step = match next {
                 1 => Self::V1,
                 2 => Self::V2,
+                3 => Self::V3,
                 n => return Err(anyhow::anyhow!("no migration defined for version {n}")),
             };
             let tx = conn.transaction()?;
@@ -516,6 +537,7 @@ impl Store {
             params![id],
         )?;
         tx.execute("DELETE FROM attempts WHERE task_id = ?1", params![id])?;
+        tx.execute("DELETE FROM queued_starts WHERE task_id = ?1", params![id])?;
         tx.execute("DELETE FROM tasks WHERE id = ?1", params![id])?;
         tx.commit()?;
         Ok(())
@@ -649,6 +671,96 @@ impl Store {
         Ok(())
     }
 
+    /* --------------------------- settings -------------------------- */
+
+    pub fn setting(&self, key: &str) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
+        let mut rows = stmt.query(params![key])?;
+        Ok(match rows.next()? {
+            Some(r) => Some(r.get(0)?),
+            None => None,
+        })
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        self.conn.lock().unwrap().execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    /* ---------------------------- queue ---------------------------- */
+
+    /// Put a start in the queue, or replace the one this card already had.
+    ///
+    /// One queued start per card: pressing 開始 twice on a waiting card means
+    /// "these are the settings I want when it runs", not "run it twice".
+    pub fn enqueue_start(&self, q: &QueuedStart) -> Result<()> {
+        self.conn.lock().unwrap().execute(
+            r#"INSERT INTO queued_starts (id, task_id, agent, prompt, cols, rows, position, created_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+               ON CONFLICT(task_id) DO UPDATE SET
+                 agent  = excluded.agent,
+                 prompt = excluded.prompt,
+                 cols   = excluded.cols,
+                 rows   = excluded.rows"#,
+            params![
+                q.id,
+                q.task_id,
+                q.agent,
+                q.prompt,
+                q.cols as i64,
+                q.rows as i64,
+                q.position,
+                q.created_at as i64,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn queue(&self) -> Result<Vec<QueuedStart>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, task_id, agent, prompt, cols, rows, position, created_at \
+             FROM queued_starts ORDER BY position, created_at",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(QueuedStart {
+                    id: r.get(0)?,
+                    task_id: r.get(1)?,
+                    agent: r.get(2)?,
+                    prompt: r.get(3)?,
+                    cols: r.get::<_, i64>(4)? as u16,
+                    rows: r.get::<_, i64>(5)? as u16,
+                    position: r.get(6)?,
+                    created_at: r.get::<_, i64>(7)? as u64,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn next_queue_position(&self) -> Result<i64> {
+        let n: i64 = self.conn.lock().unwrap().query_row(
+            "SELECT coalesce(max(position), -1) FROM queued_starts",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(n + 1)
+    }
+
+    pub fn dequeue(&self, task_id: &str) -> Result<()> {
+        self.conn
+            .lock()
+            .unwrap()
+            .execute("DELETE FROM queued_starts WHERE task_id = ?1", params![task_id])?;
+        Ok(())
+    }
+
     pub fn list_events(&self, attempt_id: &str) -> Result<Vec<AttemptEvent>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -669,6 +781,21 @@ impl Store {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
+}
+
+/// A start that is waiting for a slot.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QueuedStart {
+    pub id: String,
+    pub task_id: String,
+    pub agent: String,
+    /// The prompt as it was approved, kept so an auto-start sends exactly what
+    /// the person saw rather than re-rendering a template that has moved on.
+    pub prompt: String,
+    pub cols: u16,
+    pub rows: u16,
+    pub position: i64,
+    pub created_at: u64,
 }
 
 /// Left to right on the board. `Abandoned` has no column — a card in it is
@@ -889,6 +1016,45 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// The ordinary upgrade: a database written by the previous build has to
+    /// gain the new tables and keep everything it already had. This is the
+    /// path every existing install takes, so it is the one most worth having
+    /// a test for.
+    #[test]
+    fn a_database_from_the_previous_version_keeps_its_data() {
+        let path = scratch("v2");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(Store::V1).unwrap();
+            conn.execute_batch(Store::V2).unwrap();
+            conn.pragma_update(None, "user_version", 2i64).unwrap();
+            conn.execute(
+                "INSERT INTO tasks (id, title, prompt, repo_path, base_branch, lifecycle, position, created_at) \
+                 VALUES ('t1', '修好登入', 'p', '/repo', 'main', 'running', 0, 1000)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO attempts (id, task_id, seq, agent, worktree_path, branch, base_sha, created_at) \
+                 VALUES ('a1', 't1', 1, 'claude', '/wt/a1', 'agentdesk/login-1', 'abc', 1000)",
+                [],
+            )
+            .unwrap();
+        }
+
+        let store = Store::open(&path).expect("an M3 database must still open");
+        assert_eq!(version_of(&path), Store::SCHEMA_VERSION);
+
+        let tasks = store.list_tasks().unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].title, "修好登入");
+        assert_eq!(store.list_attempts("t1").unwrap().len(), 1);
+        // And the new layer works on top of it.
+        assert!(store.queue().unwrap().is_empty());
+        assert_eq!(store.setting("max_concurrent").unwrap(), None);
+        let _ = std::fs::remove_file(&path);
+    }
+
     #[test]
     fn a_fresh_database_lands_on_the_current_version() {
         let path = scratch("fresh");
@@ -1083,6 +1249,80 @@ mod tests {
         let tools: Vec<_> = events.iter().map(|e| e.tool.as_deref()).collect();
         assert_eq!(tools, vec![None, Some("Bash"), Some("Edit")]);
         assert_eq!(events[0].kind, "prompt");
+    }
+
+    /* ------------------------------ queue -------------------------- */
+
+    fn queued(task_id: &str, agent: &str, position: i64) -> QueuedStart {
+        QueuedStart {
+            id: format!("q-{task_id}"),
+            task_id: task_id.into(),
+            agent: agent.into(),
+            prompt: format!("prompt for {task_id}"),
+            cols: 100,
+            rows: 30,
+            position,
+            created_at: 1000 + position as u64,
+        }
+    }
+
+    #[test]
+    fn the_queue_comes_back_in_the_order_it_was_joined() {
+        let s = Store::in_memory().unwrap();
+        s.enqueue_start(&queued("b", "claude", 1)).unwrap();
+        s.enqueue_start(&queued("a", "claude", 0)).unwrap();
+        let ids: Vec<_> = s.queue().unwrap().into_iter().map(|q| q.task_id).collect();
+        assert_eq!(ids, vec!["a", "b"]);
+    }
+
+    /// Pressing 開始 again on a card that is already waiting means "these are
+    /// the settings I want when it runs", not "run it twice".
+    #[test]
+    fn a_card_queued_twice_replaces_its_own_entry() {
+        let s = Store::in_memory().unwrap();
+        s.enqueue_start(&queued("a", "claude", 0)).unwrap();
+        let mut again = queued("a", "codex", 5);
+        again.id = "different-id".into();
+        again.prompt = "changed my mind".into();
+        s.enqueue_start(&again).unwrap();
+
+        let q = s.queue().unwrap();
+        assert_eq!(q.len(), 1);
+        assert_eq!(q[0].agent, "codex");
+        assert_eq!(q[0].prompt, "changed my mind");
+        // It keeps its place rather than going to the back for being edited.
+        assert_eq!(q[0].position, 0);
+    }
+
+    /// Positions only ever go up, so a card that leaves the queue cannot let
+    /// a later one jump ahead of the ones already waiting.
+    #[test]
+    fn a_new_entry_goes_behind_everything_that_is_already_waiting() {
+        let s = Store::in_memory().unwrap();
+        assert_eq!(s.next_queue_position().unwrap(), 0);
+        s.enqueue_start(&queued("a", "claude", 0)).unwrap();
+        s.enqueue_start(&queued("b", "claude", 1)).unwrap();
+        s.dequeue("a").unwrap();
+        assert_eq!(s.next_queue_position().unwrap(), 2);
+    }
+
+    #[test]
+    fn deleting_a_task_takes_its_queued_start_with_it() {
+        let s = Store::in_memory().unwrap();
+        s.upsert_task(&task("t1", Lifecycle::Backlog, 0)).unwrap();
+        s.enqueue_start(&queued("t1", "claude", 0)).unwrap();
+        s.delete_task("t1").unwrap();
+        assert!(s.queue().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_setting_round_trips_and_can_be_changed() {
+        let s = Store::in_memory().unwrap();
+        assert_eq!(s.setting("max_concurrent").unwrap(), None);
+        s.set_setting("max_concurrent", "5").unwrap();
+        assert_eq!(s.setting("max_concurrent").unwrap().as_deref(), Some("5"));
+        s.set_setting("max_concurrent", "2").unwrap();
+        assert_eq!(s.setting("max_concurrent").unwrap().as_deref(), Some("2"));
     }
 
     /// A session belongs to an attempt from birth. Letting a later save revise

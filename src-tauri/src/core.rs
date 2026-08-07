@@ -215,6 +215,9 @@ struct PendingEvent {
 struct Router {
     sink: Arc<dyn UiSink>,
     sessions: Arc<Mutex<HashMap<String, SessionMeta>>>,
+    /// Set once the core exists, so an exiting terminal can let the queue know
+    /// a slot just came free. Weak, because the core owns this router.
+    core: OnceLock<std::sync::Weak<Core>>,
     /// Timeline rows leave through here rather than being written inline.
     ///
     /// `on_hook` runs on the path that must never make an agent wait: a hook
@@ -246,13 +249,29 @@ impl PtySink for Router {
     }
 
     fn on_exit(&self, id: &str, status: String) {
-        if let Some(s) = self.sessions.lock().unwrap().get_mut(id) {
-            s.status = Status::Exited;
-            s.live = false;
-        }
+        let freed = {
+            let mut sessions = self.sessions.lock().unwrap();
+            match sessions.get_mut(id) {
+                Some(s) => {
+                    s.status = Status::Exited;
+                    s.live = false;
+                    s.attempt_id.is_some()
+                }
+                None => false,
+            }
+        };
         self.sink
             .emit("term:exit", serde_json::json!({ "id": id, "status": status }));
         self.broadcast();
+
+        // An attempt's terminal ending is the commonest way a slot comes
+        // free, so it is the main thing that makes the queue move.
+        if freed {
+            if let Some(core) = self.core.get().and_then(|w| w.upgrade()) {
+                core.drain_queue();
+                core.emit_tasks();
+            }
+        }
     }
 }
 
@@ -357,6 +376,9 @@ pub struct TaskView {
     #[serde(flatten)]
     pub task: StoredTask,
     pub attempts: Vec<AttemptView>,
+    /// Where this card sits in the start queue, counting from 1, when every
+    /// slot was taken at the moment 開始 was pressed.
+    pub queued_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -365,6 +387,24 @@ pub struct AttemptView {
     pub attempt: StoredAttempt,
     /// `None` once the attempt's session has been archived out from under it.
     pub session_id: Option<String>,
+}
+
+/// How many attempts may hold a terminal at once, before anyone says.
+///
+/// The product is an attention scheduler, and the thing actually being
+/// rationed is a person. Three is about as many TUIs as one human can keep a
+/// thread on.
+const DEFAULT_MAX_CONCURRENT: i64 = 3;
+const MAX_CONCURRENT_KEY: &str = "max_concurrent";
+
+/// What pressing 開始 did.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartResult {
+    /// Set when there was room and it started now.
+    pub attempt: Option<OpenedAttempt>,
+    /// Set when there was not: where it sits in the queue, counting from 1.
+    pub queued_at: Option<i64>,
 }
 
 /// What opening an attempt produced.
@@ -478,6 +518,7 @@ impl Core {
         let router = Arc::new(Router {
             sink: Arc::clone(&sink),
             sessions: Arc::clone(&sessions),
+            core: OnceLock::new(),
             events: events_tx,
         });
 
@@ -496,16 +537,21 @@ impl Core {
 
         // Status reporting is a nicety: if the listener cannot bind, sessions
         // still run, they just show no status.
-        match hooks::start(&data_dir, router as Arc<dyn HookHandler>).await {
+        match hooks::start(&data_dir, Arc::clone(&router) as Arc<dyn HookHandler>).await {
             Ok(server) => {
                 let _ = core.hooks.set(server);
             }
             Err(e) => eprintln!("[core] status hooks unavailable: {e:#}"),
         }
 
+        let _ = router.core.set(Arc::downgrade(&core));
+
         core.broadcast();
         core.emit_tabs();
         core.emit_tasks();
+        // Every terminal died with the last run, so anything that was waiting
+        // for a slot has one now.
+        core.drain_queue();
         Ok(core)
     }
 
@@ -615,6 +661,15 @@ impl Core {
             .filter_map(|s| s.attempt_id.clone().map(|a| (a, s.id.clone())))
             .collect();
 
+        let queue: HashMap<String, i64> = self
+            .store
+            .queue()
+            .unwrap_or_default()
+            .into_iter()
+            .enumerate()
+            .map(|(i, q)| (q.task_id, i as i64 + 1))
+            .collect();
+
         self.store
             .list_tasks()
             .unwrap_or_default()
@@ -630,7 +685,12 @@ impl Core {
                         attempt,
                     })
                     .collect();
-                TaskView { task, attempts }
+                let queued_at = queue.get(&task.id).copied();
+                TaskView {
+                    task,
+                    attempts,
+                    queued_at,
+                }
             })
             .collect()
     }
@@ -646,23 +706,7 @@ impl Core {
     /// unedited one is never left quoting a number it did not get.
     pub fn preview_prompt(&self, task_id: &str, agent: &str) -> Result<serde_json::Value> {
         let task = self.task(task_id)?;
-        let seq = self.store.next_attempt_seq(task_id)?;
-        let slug = worktree::slug(&task.title, &task.id);
-        let base_sha = self
-            .worktrees
-            .head_of(&self.env, std::path::Path::new(&task.repo_path), &task.base_branch)
-            .unwrap_or_default();
-        let template = prompt::load_or_create(&self.data_dir)?;
-        let text = prompt::render(
-            &template,
-            &prompt::Vars {
-                title: &task.title,
-                branch: &format!("agentdesk/{slug}-{seq}"),
-                base_branch: &task.base_branch,
-                base_sha: &base_sha,
-                prompt: &task.prompt,
-            },
-        );
+        let text = self.render_prompt(&task, None)?;
         Ok(serde_json::json!({
             "prompt": text,
             // So the dialog can say plainly that this one will not be sent
@@ -677,7 +721,143 @@ impl Core {
     /// `first_prompt` is what the dialog showed, after any edits. It is sent
     /// as written and recorded on the timeline as written, so what the agent
     /// was actually asked is never inferred after the fact.
-    pub fn open_attempt(
+    /// Start an attempt, or put it in the queue if every slot is taken.
+    ///
+    /// Queueing rather than refusing, because the answer to "too many at
+    /// once" is "later", not "no". The prompt is stored exactly as approved:
+    /// when its turn comes it sends what the person saw, not a re-render of a
+    /// template that may have been edited since.
+    pub fn start_attempt(
+        &self,
+        task_id: &str,
+        agent: String,
+        first_prompt: Option<String>,
+        cols: u16,
+        rows: u16,
+    ) -> Result<StartResult> {
+        let task = self.task(task_id)?;
+        if self.running_attempts() >= self.max_concurrent() {
+            let prompt = match first_prompt {
+                Some(p) => p,
+                None => self.render_prompt(&task, None)?,
+            };
+            let position = self.store.next_queue_position()?;
+            self.store.enqueue_start(&crate::store::QueuedStart {
+                id: uuid::Uuid::new_v4().to_string(),
+                task_id: task_id.to_string(),
+                agent,
+                prompt,
+                cols,
+                rows,
+                position,
+                created_at: now_ms(),
+            })?;
+            let at = self
+                .store
+                .queue()?
+                .iter()
+                .position(|q| q.task_id == task_id)
+                .map(|i| i as i64 + 1)
+                .unwrap_or(1);
+            self.emit_tasks();
+            return Ok(StartResult {
+                attempt: None,
+                queued_at: Some(at),
+            });
+        }
+
+        let opened = self.open_attempt(task_id, agent, first_prompt, cols, rows)?;
+        Ok(StartResult {
+            attempt: Some(opened),
+            queued_at: None,
+        })
+    }
+
+    /// How many attempts hold a terminal right now. This is the thing the
+    /// quota rations — a saved attempt costs nobody any attention.
+    pub fn running_attempts(&self) -> i64 {
+        self.sessions
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|s| s.live && s.attempt_id.is_some())
+            .count() as i64
+    }
+
+    pub fn max_concurrent(&self) -> i64 {
+        self.store
+            .setting(MAX_CONCURRENT_KEY)
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse().ok())
+            .filter(|n| *n >= 1)
+            .unwrap_or(DEFAULT_MAX_CONCURRENT)
+    }
+
+    /// Raising the limit lets waiting cards go at once; that is the point of
+    /// raising it.
+    pub fn set_max_concurrent(&self, n: i64) -> Result<()> {
+        self.store
+            .set_setting(MAX_CONCURRENT_KEY, &n.max(1).to_string())?;
+        self.drain_queue();
+        self.emit_tasks();
+        Ok(())
+    }
+
+    pub fn cancel_queued(&self, task_id: &str) -> Result<()> {
+        self.store.dequeue(task_id)?;
+        self.emit_tasks();
+        Ok(())
+    }
+
+    /// Start whatever the freed slots can take.
+    ///
+    /// Called whenever a slot might have opened. A queued start that fails —
+    /// its repository moved, its base branch went — is dropped from the queue
+    /// with a note rather than retried forever in front of the ones behind it.
+    pub fn drain_queue(&self) {
+        loop {
+            if self.running_attempts() >= self.max_concurrent() {
+                return;
+            }
+            let Some(next) = self.store.queue().ok().and_then(|q| q.into_iter().next()) else {
+                return;
+            };
+            // Off the queue first, so a failure cannot loop on it.
+            let _ = self.store.dequeue(&next.task_id);
+            match self.open_attempt(
+                &next.task_id,
+                next.agent.clone(),
+                Some(next.prompt.clone()),
+                next.cols,
+                next.rows,
+            ) {
+                Ok(opened) => {
+                    eprintln!(
+                        "[core] queue: started {} on {}",
+                        next.task_id, opened.branch
+                    );
+                }
+                Err(e) => {
+                    eprintln!("[core] queue: {} could not start: {e:#}", next.task_id);
+                    self.sink.emit(
+                        "notify",
+                        serde_json::json!({
+                            "title": "排隊中的 task 起不來",
+                            "body": format!("{e:#}"),
+                            "sessionId": serde_json::Value::Null,
+                        }),
+                    );
+                }
+            }
+        }
+    }
+
+    pub fn queue(&self) -> Vec<crate::store::QueuedStart> {
+        self.store.queue().unwrap_or_default()
+    }
+
+    fn open_attempt(
         &self,
         task_id: &str,
         agent: String,
@@ -721,19 +901,7 @@ impl Core {
 
         let text = match first_prompt {
             Some(edited) => edited,
-            None => {
-                let template = prompt::load_or_create(&self.data_dir)?;
-                prompt::render(
-                    &template,
-                    &prompt::Vars {
-                        title: &task.title,
-                        branch: &wt.branch,
-                        base_branch: &task.base_branch,
-                        base_sha: &wt.base_sha,
-                        prompt: &task.prompt,
-                    },
-                )
-            }
+            None => self.render_prompt(task, Some(wt))?,
         };
 
         let delivery = prompt::delivery_for(&agent);
@@ -903,6 +1071,7 @@ impl Core {
         self.close_attempt(&attempt, outcome)?;
         self.emit_tasks();
         self.broadcast();
+        self.drain_queue();
         Ok(())
     }
 
@@ -962,6 +1131,103 @@ impl Core {
             &self.env,
             std::path::Path::new(&attempt.worktree_path),
             &attempt.base_sha,
+        )
+    }
+
+    /// The first message for this card.
+    ///
+    /// With a worktree in hand it names the branch and base that were really
+    /// handed out. Without one — previewing, or queueing before anything has
+    /// been created — it names the best guess available, and `open_attempt`
+    /// renders again against what git actually gave it.
+    fn render_prompt(
+        &self,
+        task: &StoredTask,
+        wt: Option<&worktree::OpenedWorktree>,
+    ) -> Result<String> {
+        let template = prompt::load_or_create(&self.data_dir)?;
+        let (branch, base_sha) = match wt {
+            Some(w) => (w.branch.clone(), w.base_sha.clone()),
+            None => {
+                let seq = self.store.next_attempt_seq(&task.id)?;
+                let slug = worktree::slug(&task.title, &task.id);
+                let sha = self
+                    .worktrees
+                    .head_of(
+                        &self.env,
+                        std::path::Path::new(&task.repo_path),
+                        &task.base_branch,
+                    )
+                    .unwrap_or_default();
+                (format!("agentdesk/{slug}-{seq}"), sha)
+            }
+        };
+        Ok(prompt::render(
+            &template,
+            &prompt::Vars {
+                title: &task.title,
+                branch: &branch,
+                base_branch: &task.base_branch,
+                base_sha: &base_sha,
+                prompt: &task.prompt,
+            },
+        ))
+    }
+
+    /* ---------------------------- finishing ------------------------ */
+
+    /// Fold an attempt's branch back into its base, then close the attempt
+    /// out. The merge has to succeed before anything is given up.
+    pub fn merge_attempt(&self, attempt_id: &str) -> Result<String> {
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        let task = self.task(&attempt.task_id)?;
+
+        let sha = self.worktrees.merge_to_base(
+            &self.env,
+            std::path::Path::new(&task.repo_path),
+            std::path::Path::new(&attempt.worktree_path),
+            &attempt.branch,
+            &task.base_branch,
+        )?;
+
+        self.close_attempt(&attempt, Outcome::Merged)?;
+        self.emit_tasks();
+        self.broadcast();
+        self.drain_queue();
+        Ok(sha)
+    }
+
+    /// Push the branch and open a pull request.
+    ///
+    /// The attempt is deliberately *not* closed out: the worktree stays until
+    /// the pull request is resolved, because that is when there is still
+    /// something to change in response to review. Reviewing and merging a
+    /// pull request is somebody else's tool.
+    pub fn open_pr(&self, attempt_id: &str) -> Result<String> {
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        let task = self.task(&attempt.task_id)?;
+
+        let body = format!(
+            "AgentDesk attempt #{} ({}), from `{}` @ {}.\n\n---\n\n{}",
+            attempt.seq,
+            attempt.agent,
+            task.base_branch,
+            &attempt.base_sha[..attempt.base_sha.len().min(8)],
+            task.prompt
+        );
+        self.worktrees.push_and_open_pr(
+            &self.env,
+            std::path::Path::new(&attempt.worktree_path),
+            &attempt.branch,
+            &task.base_branch,
+            &task.title,
+            &body,
         )
     }
 
@@ -1118,11 +1384,22 @@ impl Core {
 
     pub fn close_session(&self, id: &str) -> Result<()> {
         self.ptys.kill(id);
-        if let Some(s) = self.sessions.lock().unwrap().get_mut(id) {
-            s.status = Status::Saved;
-            s.live = false;
-        }
+        let freed = {
+            let mut sessions = self.sessions.lock().unwrap();
+            match sessions.get_mut(id) {
+                Some(s) => {
+                    s.status = Status::Saved;
+                    s.live = false;
+                    s.attempt_id.is_some()
+                }
+                None => false,
+            }
+        };
         self.broadcast();
+        if freed {
+            self.drain_queue();
+            self.emit_tasks();
+        }
         Ok(())
     }
 

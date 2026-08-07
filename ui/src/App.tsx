@@ -376,7 +376,7 @@ export default function App() {
     async (task: Task, agent: string, prompt: string) => {
       setDialogError(null);
       try {
-        const opened = await api.openAttempt(
+        const result = await api.openAttempt(
           task.id,
           agent,
           prompt,
@@ -384,7 +384,10 @@ export default function App() {
           INITIAL_ROWS,
         );
         setStarting(null);
-        await onOpen(opened.session_id);
+        // Over the limit it waits its turn instead of starting. There is no
+        // terminal to go to yet, so the board is where you want to be left —
+        // the card says where it is in the queue.
+        if (result.attempt) await onOpen(result.attempt.session_id);
       } catch (e) {
         setDialogError(String(e));
       }
@@ -424,6 +427,10 @@ export default function App() {
 
   const onMoveTask = useCallback((id: string, lifecycle: Lifecycle, position: number) => {
     void api.moveTask(id, lifecycle, position).catch((e) => setError(`搬移卡片失敗：${String(e)}`));
+  }, []);
+
+  const onCancelQueued = useCallback((taskId: string) => {
+    void api.cancelQueued(taskId).catch((e) => setError(`取消排隊失敗：${String(e)}`));
   }, []);
 
   const onDeleteTask = useCallback((id: string) => {
@@ -628,7 +635,14 @@ export default function App() {
             mounted and one click away, so a follow-up after reading the diff
             is typing rather than navigating. */}
         {inspected && (
-          <AttemptInspector attempt={inspected} onClose={() => setInspectId(null)} />
+          <AttemptInspector
+            attempt={inspected}
+            baseBranch={
+              tasks.find((t) => t.id === inspected.task_id)?.base_branch ?? 'base'
+            }
+            onClose={() => setInspectId(null)}
+            onDone={() => setInspectId(null)}
+          />
         )}
         </div>
 
@@ -644,6 +658,7 @@ export default function App() {
             }}
             onResume={onResumeAttempt}
             onInspect={onInspectAttempt}
+            onCancelQueued={onCancelQueued}
             onNewTask={() => {
               setDialogError(null);
               setShowNewTask(true);

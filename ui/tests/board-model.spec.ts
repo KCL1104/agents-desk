@@ -35,6 +35,7 @@ function task(over: Partial<Task> = {}): Task {
     position: 0,
     created_at: 1000,
     attempts: [],
+    queued_at: null,
     ...over,
   };
 }
@@ -128,6 +129,26 @@ test.describe('the second axis', () => {
 
   test('a card nobody has started says so', () => {
     expect(liveLabel(liveStateOf(task(), []))).toBe('尚未開始');
+  });
+
+  /**
+   * Waiting for a slot is its own state. It has no attempt yet — the worktree
+   * is not made until its turn comes — so it must not read as "not started",
+   * which is the one thing that would make someone press 開始 again.
+   */
+  test('a card waiting for a slot says where it is in the queue', () => {
+    const live = liveStateOf(task({ queued_at: 2 }), []);
+    expect(live.kind).toBe('queued');
+    expect(liveLabel(live)).toBe('排隊中 · 第 2 個');
+  });
+
+  /// Once it starts, the attempt is what the card is about.
+  test('a card that got its turn stops reading as queued', () => {
+    const live = liveStateOf(
+      task({ queued_at: null, attempts: [attempt({ id: 'a1', seq: 1, session_id: 's1' })] }),
+      [session({ id: 's1', status: 'running' })],
+    );
+    expect(live.kind).toBe('session');
   });
 
   /// A card that is merely stopped must not look like a warning, or the
