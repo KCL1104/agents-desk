@@ -125,8 +125,25 @@ git push origin v0.1.0
 接著：建 draft release → 四個平台平行 build → **全綠才把 release 轉正**。
 有平台掛掉就停在 draft，不會出半套。
 
-只想拿執行檔、不想發版：到 Actions 頁面手動跑 Release，產物會掛在該次 run 的
-artifacts 底下，不碰任何 release。
+### nightly build
+
+每次 push 到 `main` 都會跑同一套四平台 build，並發佈到一個 tag 為 `nightly` 的
+滾動 prerelease，蓋掉上一份。所以 `main` 的最新版本永遠一個連結就拿得到，不用等
+誰去發版：
+
+    https://github.com/KCL1104/agents-desk/releases/tag/nightly
+
+它是 prerelease，而且**永遠不會被標成 latest** —— 不會擠掉正式版在 repo 首頁與
+release API 上的位置。有平台失敗的話，那份 draft 會被丟掉、上一份 nightly 留著，
+不會出半套。build 途中又有新 commit 進來會直接取代它（只有最新的產物有意義），
+但 tag 的 build 永遠不會被取消。
+
+這也是為什麼 `ci.yml` 不再打包 —— 它以前每次 push 到 main 都建三個平台，然後
+整包丟掉。
+
+只想拿執行檔、完全不碰 release：到 Actions 頁面手動跑 Release，產物會掛在該次
+run 的 artifacts 底下。其實每次 run 都會掛，所以 tag 與 nightly 的 build 也都能
+直接從 run 裡下載。
 
 | 平台 | runner | 產物 |
 | --- | --- | --- |
@@ -181,8 +198,9 @@ npm run tauri -- icon path/to/new-icon.png
 ## CI
 
 `.github/workflows/ci.yml`。push 到 main 與所有 PR 都會跑：Rust `cargo test`、
-前端 typecheck + build + Playwright、sidecar typecheck + build。push 到 main 時
-另外跑一輪三平台 bundle，確保打包本身沒壞（PR 不跑，太貴）。
+前端 typecheck + build + Playwright、sidecar typecheck + build。**只管正確性** ——
+打包是 release.yml 的事，而且 push 到 main 那一輪會產出真的能下載的安裝檔，而不是
+建完就刪掉。
 
 `cargo fmt` 與 `clippy` **不擋 CI**，只把結果印出來 —— 現在這棵樹還不是
 rustfmt-clean，把整棵樹重排是另一件事，不該跟接 CI 綁在一起。

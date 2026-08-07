@@ -156,8 +156,28 @@ Then: create a draft release → build all four platforms in parallel → **publ
 only when every one is green**. If a platform fails it stays a draft, so nothing
 half-built ships.
 
-To get binaries without cutting a release, run the Release workflow manually
-from the Actions tab; the artifacts hang off that run and no release is touched.
+### Nightly builds
+
+Every push to `main` runs the same four-platform build and publishes it to a
+rolling prerelease tagged `nightly`, replacing whatever was there before. So the
+newest build of `main` is always one click away without waiting for a version to
+be cut:
+
+    https://github.com/KCL1104/agents-desk/releases/tag/nightly
+
+It is a prerelease and never marked "latest", so it cannot displace a real
+version on the repo's front page or in the release API. If any platform fails,
+the draft is discarded and the previous nightly stays up rather than a partial
+one shipping. Pushes that land while a build is running supersede it — only the
+newest commit's binaries are wanted — whereas a tag build is never cancelled.
+
+This is why `ci.yml` does not build installers: it used to bundle three
+platforms on every push to main and throw them away.
+
+To get binaries without touching any release, run the Release workflow manually
+from the Actions tab; the artifacts hang off that run. Every run attaches them
+that way regardless, so a tagged or nightly build is also downloadable from the
+run itself.
 
 | Platform | Runner | Artifacts |
 | --- | --- | --- |
@@ -222,8 +242,9 @@ somewhere else with `-o` first and copy back the files you need.
 
 `.github/workflows/ci.yml`. Runs on pushes to main and on every PR: Rust
 `cargo test`, frontend typecheck + build + Playwright, sidecar typecheck +
-build. Pushes to main additionally run a three-platform bundle to prove
-packaging itself still works (PRs skip it — too expensive).
+build. Correctness only — packaging is release.yml's job, and a push to main
+proves it by producing installers people can actually download rather than by
+building them and deleting them.
 
 `cargo fmt` and `clippy` **do not gate CI**; they only report. This tree is not
 rustfmt-clean, and reformatting the whole thing is a separate change that should

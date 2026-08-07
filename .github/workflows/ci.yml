@@ -1,5 +1,9 @@
 name: CI
 
+# Correctness checks only. Packaging lives in release.yml, which builds all four
+# platforms on every push to main and publishes them to the rolling `nightly`
+# prerelease — so the installers CI produces stay downloadable rather than being
+# built here and thrown away.
 on:
   push:
     branches: [main]
@@ -147,69 +151,3 @@ jobs:
       - name: Build
         working-directory: sidecar
         run: npm run build
-
-  # ---------------------------------------------------------------------------
-  # Proves the release bundler still works on every OS, without cutting a release.
-  # Only on demand and on main, since a full three-platform bundle is expensive.
-  # ---------------------------------------------------------------------------
-  bundle:
-    name: Bundle (${{ matrix.name }})
-    if: github.event_name != 'pull_request'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: linux-x86_64
-            runner: ubuntu-22.04
-          - name: macos-aarch64
-            runner: macos-15
-          - name: windows-x86_64
-            runner: windows-latest
-    runs-on: ${{ matrix.runner }}
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            ui/package-lock.json
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
-          key: bundle-${{ matrix.name }}
-
-      - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            xdg-utils
-
-      - name: Install Tauri CLI
-        run: npm ci
-
-      - name: Install frontend dependencies
-        working-directory: ui
-        run: npm ci
-
-      - name: Bundle
-        run: npm run tauri -- build

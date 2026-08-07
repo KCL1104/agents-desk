@@ -2,13 +2,21 @@ name: Release
 
 # Builds AgentDesk installers for Linux, macOS (Apple Silicon + Intel) and Windows.
 #
-# Two ways to run it:
-#   1. Push a tag like `v0.1.0`  -> builds every platform, uploads the artifacts to a
-#      GitHub Release, then publishes that release once all four builds are green.
-#   2. Run it manually (workflow_dispatch) -> builds every platform and attaches the
+# Three ways to run it:
+#   1. Push a tag like `v0.1.0` -> builds every platform into a GitHub Release named
+#      after the tag, published once all four builds are green.
+#   2. Push to main -> builds every platform into the rolling `nightly` prerelease,
+#      replacing whatever was there before. This is how the binaries CI produces stay
+#      downloadable instead of being thrown away at the end of the run.
+#   3. Run it manually (workflow_dispatch) -> builds every platform and attaches the
 #      installers as workflow artifacts. No release is created or touched.
+#
+# Every run also attaches the installers to the run itself, so a build is downloadable
+# even when no release was involved.
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
@@ -19,25 +27,36 @@ permissions:
 
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false
+  # Superseding only makes sense for the rolling build: when several commits land
+  # on main at once, only the newest one's binaries are wanted, and the run that
+  # takes over recreates the nightly release from scratch anyway. A tag build must
+  # never be cancelled — its artifacts are the release.
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Only runs for tag pushes. Creates the draft release that the build matrix
-  # uploads into, so the four platform jobs don't race to create it themselves.
+  # Creates the draft release the build matrix uploads into, so the four platform
+  # jobs never race to create it themselves. Skipped on manual dispatch, where the
+  # point is a build without touching any release.
   # ---------------------------------------------------------------------------
   create-release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create.outputs.release_id }}
+      tag: ${{ steps.create.outputs.tag }}
+      nightly: ${{ steps.create.outputs.nightly }}
     steps:
       - uses: actions/checkout@v7
 
       # The bundler names every artifact after the version in tauri.conf.json, not
       # after the git tag. Without this guard, tagging v0.2.0 while the config still
       # says 0.1.0 silently ships files called AgentDesk_0.1.0_*.
+      #
+      # Only applies to tags. A nightly is whatever main currently says it is, so
+      # there is nothing for it to disagree with.
       - name: Check the tag matches tauri.conf.json
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           tag_version="${GITHUB_REF_NAME#v}"
           config_version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
@@ -53,15 +72,51 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Re-running a tag should reuse its release rather than fail.
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" \
+          set -euo pipefail
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+            echo "nightly=false" >> "$GITHUB_OUTPUT"
+            # Re-running a tag should reuse its release rather than fail.
+            if ! gh release view "$tag" >/dev/null 2>&1; then
+              gh release create "$tag" \
+                --draft \
+                --title "AgentDesk $tag" \
+                --generate-notes
+            fi
+          else
+            tag="nightly"
+            echo "nightly=true" >> "$GITHUB_OUTPUT"
+            version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+            # A rolling release has to be replaced, not appended to, or it would
+            # accumulate one set of installers per commit under the same tag.
+            # Deleting the tag with it keeps `nightly` pointing at the commit the
+            # binaries were actually built from.
+            gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+
+            # Written to a file rather than passed inline: a quoted multi-line
+            # string inside this block would carry the YAML indentation into the
+            # release notes.
+            cat > /tmp/nightly-notes.md <<NOTES
+          Unstable build from \`main\` at ${GITHUB_SHA}, replaced on every push.
+
+          Unsigned, the same as the tagged releases — see the README for how to open
+          it on macOS and Windows.
+
+          For something stable, use the newest versioned release:
+          ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/latest
+          NOTES
+
+            gh release create "$tag" \
               --draft \
-              --title "AgentDesk $GITHUB_REF_NAME" \
-              --generate-notes
+              --prerelease \
+              --target "$GITHUB_SHA" \
+              --title "AgentDesk nightly (${version}, ${GITHUB_SHA:0:7})" \
+              --notes-file /tmp/nightly-notes.md
           fi
-          release_id="$(gh release view "$GITHUB_REF_NAME" --json databaseId --jq .databaseId)"
-          echo "release_id=${release_id}" >> "$GITHUB_OUTPUT"
+
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "release_id=$(gh release view "$tag" --json databaseId --jq .databaseId)" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
   # The actual cross-platform build.
@@ -186,15 +241,42 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Flip the draft release to published, but only once every platform succeeded.
-  # A partial failure leaves the release in draft so nothing half-built ships.
+  # A partial failure leaves the release in draft so nothing half-built ships —
+  # which for a nightly also means the previous good one stays the visible copy.
   # ---------------------------------------------------------------------------
   publish-release:
     needs: [create-release, build]
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.build.result == 'success' }}
+    if: ${{ github.event_name == 'push' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          TAG: ${{ needs.create-release.outputs.tag }}
+          NIGHTLY: ${{ needs.create-release.outputs.nightly }}
+        run: |
+          set -euo pipefail
+          if [ "$NIGHTLY" = "true" ]; then
+            # Never --latest: a rolling build must not displace the newest real
+            # version on the repo's front page or in the "latest release" API.
+            gh release edit "$TAG" --draft=false --prerelease
+          else
+            gh release edit "$TAG" --draft=false --latest
+          fi
+
+  # ---------------------------------------------------------------------------
+  # A failed nightly would otherwise leave an invisible draft behind, and the
+  # next push would delete it anyway — but a draft with a moved tag is confusing
+  # in the meantime, so clean it up.
+  # ---------------------------------------------------------------------------
+  discard-failed-nightly:
+    needs: [create-release, build]
+    if: ${{ always() && needs.create-release.outputs.nightly == 'true' && needs.build.result != 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove the unfinished nightly draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release delete nightly --yes --cleanup-tag || true
