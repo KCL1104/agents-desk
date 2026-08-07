@@ -99,6 +99,13 @@ session 的流程，以及 xterm 對**真實 PTY bytes** 的解碼與渲染。
 - `ui/tests/i18n.spec.ts` —— 沒選過語言時跟隨系統、選過就以選的為準、切換當下就
   重繪且重開仍在，以及語言確實有送到後端讓原生通知跟著換
 
+兩個會去驅動真的 `claude` 的測試（`tests/hooks.rs` 與 `tests/prompt_injection.rs`）
+在沒有登入好的 CLI 時會自己跳過。**只檢查 `PATH` 上有沒有是不夠的** —— 沒登入過的
+CLI 會停在歡迎畫面、永遠不會開始一個 session，於是測試會把整個 timeout 燒完，只
+證明了「這台機器沒登入」。所以改成去讀 Claude Code 自己的 `~/.claude.json` 裡的
+`hasCompletedOnboarding`。那個 key 哪天換了位置的話，這些測試會變成「跳過」而不是
+「錯誤地通過」，而且會在 stderr 說明原因。要強制跑就 `AGENTDESK_TEST_ASSUME_CLAUDE=1`。
+
 ---
 
 ## 發佈

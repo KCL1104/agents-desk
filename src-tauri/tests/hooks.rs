@@ -10,6 +10,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+mod common;
+
 #[path = "../src/hooks.rs"]
 mod hooks;
 #[path = "../src/pty.rs"]
@@ -82,8 +84,7 @@ fn a_pty_session_reports_its_status_back_through_the_plugin() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let env = rt.block_on(shell_env::resolve());
 
-    if env.which("claude").is_none() {
-        eprintln!("claude not installed; skipping");
+    if !common::require_claude(env.which("claude").is_some()) {
         return;
     }
 

@@ -125,6 +125,15 @@ merely that something was output:
   survives a reload, and the choice reaches the backend so native notifications
   match
 
+The two tests that drive a real `claude` (`tests/hooks.rs` and
+`tests/prompt_injection.rs`) skip themselves when there is no signed-in CLI to
+drive. Being on `PATH` is not enough to check: a CLI nobody has signed into
+comes up on its welcome flow and never starts a session, so the test would burn
+its full timeout proving only that this machine has no login. They read
+`hasCompletedOnboarding` from Claude Code's own `~/.claude.json` instead. If
+that key ever moves they start skipping rather than start passing wrongly, and
+the skip says why on stderr. `AGENTDESK_TEST_ASSUME_CLAUDE=1` runs them anyway.
+
 ---
 
 ## Release

@@ -22,6 +22,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+mod common;
+
 #[path = "../src/pty.rs"]
 mod pty;
 #[path = "../src/shell_env.rs"]
@@ -254,8 +256,7 @@ fn a_multi_line_prompt_reaches_a_fresh_worktree_as_one_message() {
     let env = tokio::runtime::Runtime::new()
         .unwrap()
         .block_on(shell_env::resolve());
-    if env.which("claude").is_none() {
-        eprintln!("claude not installed; skipping");
+    if !common::require_claude(env.which("claude").is_some()) {
         return;
     }
 
