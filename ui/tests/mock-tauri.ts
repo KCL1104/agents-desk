@@ -32,6 +32,7 @@ export interface MockAttempt {
   worktree_path: string;
   branch: string;
   base_sha: string;
+  mode: string;
   outcome: string | null;
   frozen_diff: string | null;
   created_at: number;
@@ -82,7 +83,7 @@ declare global {
       events: Map<string, MockEvent[]>;
       /** Cards waiting for a slot, in order. */
       queue: string[];
-      pendingStarts: Map<string, { agent: string; prompt: string }>;
+      pendingStarts: Map<string, { agent: string; prompt: string; mode: string }>;
       /** Attempts whose worktree has uncommitted work, so merge must refuse. */
       dirtyWorktrees: Set<string>;
       /** The repo's `.agentdesk/config.json` run script names. */
@@ -144,7 +145,7 @@ export function installMock(): void {
     events: new Map<string, MockEvent[]>(),
     queue: [] as string[],
     maxConcurrent: 3,
-    pendingStarts: new Map<string, { agent: string; prompt: string }>(),
+    pendingStarts: new Map<string, { agent: string; prompt: string; mode: string }>(),
     dirtyWorktrees: new Set<string>(),
     runScripts: [] as string[],
     calls: [] as Array<{ cmd: string; args: unknown }>,
@@ -239,7 +240,7 @@ export function installMock(): void {
         const taskId = mock.queue.shift()!;
         const pending = mock.pendingStarts.get(taskId);
         mock.pendingStarts.delete(taskId);
-        if (pending) startAttempt(taskId, pending.agent, pending.prompt);
+        if (pending) startAttempt(taskId, pending.agent, pending.prompt, pending.mode);
       }
     },
 
@@ -481,14 +482,15 @@ export function installMock(): void {
       if (!t) throw new Error(`no such task: ${taskId}`);
       const agent = String(args.agent ?? 'claude');
       const prompt = String(args.prompt ?? '');
+      const mode = String(args.mode ?? 'normal');
       // Over the limit it waits its turn rather than being refused.
       if (mock.running() >= mock.maxConcurrent) {
         if (!mock.queue.includes(taskId)) mock.queue.push(taskId);
-        mock.pendingStarts.set(taskId, { agent, prompt });
+        mock.pendingStarts.set(taskId, { agent, prompt, mode });
         mock.pushTasks();
         return { attempt: null, queuedAt: mock.queue.indexOf(taskId) + 1 };
       }
-      return { attempt: startAttempt(taskId, agent, prompt), queuedAt: null };
+      return { attempt: startAttempt(taskId, agent, prompt, mode), queuedAt: null };
     },
 
     cancel_queued: (args) => {
@@ -541,7 +543,7 @@ export function installMock(): void {
   };
 
   /** Open an attempt now. Shared by the button and the queue, as in the core. */
-  function startAttempt(taskId: string, agent: string, prompt: string) {
+  function startAttempt(taskId: string, agent: string, prompt: string, mode = 'normal') {
       const t = mock.tasks.find((x) => x.id === taskId)!;
       const seq = t.attempts.length + 1;
       const attemptId = `${t.id}-a${seq}`;
@@ -562,6 +564,7 @@ export function installMock(): void {
         worktree_path: session.cwd,
         branch: `agentdesk/card-${seq}`,
         base_sha: 'abcd1234deadbeef',
+        mode,
         outcome: null,
         frozen_diff: null,
         created_at: now(),

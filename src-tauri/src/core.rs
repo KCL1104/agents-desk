@@ -17,7 +17,9 @@ use crate::hooks::{self, Activity, HookHandler, HookReport, HookServer, HookStat
 use crate::prompt::{self, Delivery};
 use crate::pty::{PtyRegistry, PtySink};
 use crate::shell_env::{self, ShellEnv};
-use crate::store::{Lifecycle, Outcome, Store, StoredAttempt, StoredSession, StoredTab, StoredTask};
+use crate::store::{
+    Lifecycle, Outcome, PermissionMode, Store, StoredAttempt, StoredSession, StoredTab, StoredTask,
+};
 use crate::worktree::{self, Worktrees};
 
 pub trait UiSink: Send + Sync + 'static {
@@ -819,6 +821,7 @@ impl Core {
         task_id: &str,
         agent: String,
         first_prompt: Option<String>,
+        mode: PermissionMode,
         cols: u16,
         rows: u16,
     ) -> Result<StartResult> {
@@ -834,6 +837,7 @@ impl Core {
                 task_id: task_id.to_string(),
                 agent,
                 prompt,
+                mode,
                 cols,
                 rows,
                 position,
@@ -853,7 +857,7 @@ impl Core {
             });
         }
 
-        let opened = self.open_attempt(task_id, agent, first_prompt, cols, rows)?;
+        let opened = self.open_attempt(task_id, agent, first_prompt, mode, cols, rows)?;
         Ok(StartResult {
             attempt: Some(opened),
             queued_at: None,
@@ -916,6 +920,7 @@ impl Core {
                 &next.task_id,
                 next.agent.clone(),
                 Some(next.prompt.clone()),
+                next.mode,
                 next.cols,
                 next.rows,
             ) {
@@ -949,6 +954,7 @@ impl Core {
         task_id: &str,
         agent: String,
         first_prompt: Option<String>,
+        mode: PermissionMode,
         cols: u16,
         rows: u16,
     ) -> Result<OpenedAttempt> {
@@ -962,7 +968,7 @@ impl Core {
             .create(&self.env, &repo, &task.base_branch, &slug, seq)?;
 
         // From here on a failure has a worktree to give back.
-        let opened = self.finish_opening(&task, agent, first_prompt, &wt, cols, rows);
+        let opened = self.finish_opening(&task, agent, first_prompt, mode, &wt, cols, rows);
         if opened.is_err() {
             let _ = self.worktrees.remove(&self.env, &repo, &wt.path);
         }
@@ -974,11 +980,13 @@ impl Core {
         Ok(opened)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn finish_opening(
         &self,
         task: &StoredTask,
         agent: String,
         first_prompt: Option<String>,
+        mode: PermissionMode,
         wt: &worktree::OpenedWorktree,
         cols: u16,
         rows: u16,
@@ -1052,12 +1060,21 @@ impl Core {
             .unwrap()
             .insert(session_id.clone(), meta.clone());
 
+        // The mode's flags are measured for Claude Code only; any other CLI
+        // launches without them rather than being handed a guess. The mode is
+        // still recorded either way — it is what the person approved.
+        let opts: Vec<String> = if agent == "claude" {
+            mode.claude_args().iter().map(|s| s.to_string()).collect()
+        } else {
+            Vec::new()
+        };
+
         // `--continue` is deliberately absent: this worktree has no history
         // for it to continue, and the prompt is what starts the work.
         if let Err(e) = self.launch(
             &session_id,
             &agent,
-            Vec::new(),
+            opts,
             positional,
             &cwd,
             cols,
@@ -1076,6 +1093,7 @@ impl Core {
             worktree_path: cwd.clone(),
             branch: wt.branch.clone(),
             base_sha: wt.base_sha.clone(),
+            mode,
             outcome: None,
             frozen_diff: None,
             created_at: at,
@@ -1145,7 +1163,11 @@ impl Core {
         let session_id = uuid::Uuid::new_v4().to_string();
         let at = now_ms();
         let opts = if attempt.agent == "claude" {
-            vec!["--continue".to_string()]
+            // The permission mode rides along on a resume: it is part of what
+            // was approved for this attempt, not a per-launch choice.
+            let mut o = vec!["--continue".to_string()];
+            o.extend(attempt.mode.claude_args().iter().map(|s| s.to_string()));
+            o
         } else {
             Vec::new()
         };
@@ -1611,11 +1633,20 @@ impl Core {
 
         // `--continue` picks up the most recent conversation in this
         // directory, which is what reopening means to the user.
-        let args = if meta.agent == "claude" {
+        let mut args = if meta.agent == "claude" {
             vec!["--continue".to_string()]
         } else {
             Vec::new()
         };
+        // An attempt session resumes with the permission mode chosen for the
+        // attempt — approved once, kept until the attempt ends.
+        if meta.agent == "claude" {
+            if let Some(attempt_id) = &meta.attempt_id {
+                if let Ok(Some(attempt)) = self.store.get_attempt(attempt_id) {
+                    args.extend(attempt.mode.claude_args().iter().map(|s| s.to_string()));
+                }
+            }
+        }
 
         // Marked live before the launch, not after: a child that exits at
         // once reports Exited in between, and writing "starting, live" over

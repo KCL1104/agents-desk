@@ -5,6 +5,7 @@ import type {
   BootStatus,
   Lifecycle,
   Outcome,
+  PermissionMode,
   SessionMeta,
   Tab,
   Task,
@@ -71,9 +72,10 @@ export const api = {
     taskId: string,
     agent: string,
     prompt: string | null,
+    mode: PermissionMode,
     cols: number,
     rows: number,
-  ) => invoke<StartResult>('open_attempt', { taskId, agent, prompt, cols, rows }),
+  ) => invoke<StartResult>('open_attempt', { taskId, agent, prompt, mode, cols, rows }),
   cancelQueued: (taskId: string) => invoke<void>('cancel_queued', { taskId }),
 
   /** How many attempts may hold a terminal at once. What is being rationed

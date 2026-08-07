@@ -114,6 +114,55 @@ impl Outcome {
     }
 }
 
+/// How much the agent may do without asking, chosen per attempt.
+///
+/// The worktree is the safety argument: an attempt cannot touch the person's
+/// checkout or any other attempt, so "stop asking" risks only the attempt's
+/// own branch — which is why this is offered per attempt and never for ad-hoc
+/// sessions, which run wherever they were pointed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionMode {
+    /// The CLI's own defaults: it asks when it would ask in a terminal.
+    #[default]
+    Normal,
+    /// File edits go through without a prompt; commands still ask.
+    AcceptEdits,
+    /// Nothing asks. The attempt runs to the end of its own judgement.
+    Yolo,
+}
+
+impl PermissionMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::AcceptEdits => "accept_edits",
+            Self::Yolo => "yolo",
+        }
+    }
+
+    /// Lenient on purpose: rows written before the column existed read back
+    /// as `''`, and an unknown mode must degrade to asking, never to not
+    /// asking.
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "accept_edits" => Self::AcceptEdits,
+            "yolo" => Self::Yolo,
+            _ => Self::Normal,
+        }
+    }
+
+    /// The flags this mode adds to a Claude Code launch. Only Claude Code's
+    /// flags are measured; other CLIs get no flags rather than a guess.
+    pub fn claude_args(self) -> &'static [&'static str] {
+        match self {
+            Self::Normal => &[],
+            Self::AcceptEdits => &["--permission-mode", "acceptEdits"],
+            Self::Yolo => &["--dangerously-skip-permissions"],
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StoredTask {
     pub id: String,
@@ -141,6 +190,10 @@ pub struct StoredAttempt {
     pub branch: String,
     /// The base commit at the moment the attempt opened — the diff baseline.
     pub base_sha: String,
+    /// How much the agent may do without asking. Kept on the attempt so a
+    /// resume after a restart runs with what the person chose, and so the
+    /// card can say a session is running unprompted.
+    pub mode: PermissionMode,
     pub outcome: Option<Outcome>,
     /// `git diff` captured just before the worktree was removed. Once an
     /// outcome is set the worktree is gone, so this is the only way the diff
@@ -217,7 +270,7 @@ impl Store {
     }
 
     /// The schema this build expects. Bump it and add a `V<n>` step below.
-    const SCHEMA_VERSION: i64 = 3;
+    const SCHEMA_VERSION: i64 = 4;
 
     /// Sessions and tabs: everything that existed before the schema was
     /// versioned.
@@ -306,6 +359,14 @@ impl Store {
         CREATE INDEX queued_by_position ON queued_starts(position);
     "#;
 
+    /// Permission modes, per attempt and per queued start. `''` reads back as
+    /// `normal`, so every row written before this column existed keeps the
+    /// behaviour it always had: asking.
+    const V4: &'static str = r#"
+        ALTER TABLE attempts ADD COLUMN mode TEXT NOT NULL DEFAULT '';
+        ALTER TABLE queued_starts ADD COLUMN mode TEXT NOT NULL DEFAULT '';
+    "#;
+
     /// Bring the database up to `SCHEMA_VERSION`, one step at a time.
     ///
     /// The schema will keep moving from here, and the old best-effort
@@ -344,6 +405,7 @@ impl Store {
                 1 => Self::V1,
                 2 => Self::V2,
                 3 => Self::V3,
+                4 => Self::V4,
                 n => return Err(anyhow::anyhow!("no migration defined for version {n}")),
             };
             let tx = conn.transaction()?;
@@ -568,8 +630,8 @@ impl Store {
     pub fn insert_attempt(&self, a: &StoredAttempt) -> Result<()> {
         self.conn.lock().unwrap().execute(
             r#"INSERT INTO attempts
-                 (id, task_id, seq, agent, worktree_path, branch, base_sha, outcome, frozen_diff, created_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"#,
+                 (id, task_id, seq, agent, worktree_path, branch, base_sha, mode, outcome, frozen_diff, created_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"#,
             params![
                 a.id,
                 a.task_id,
@@ -578,6 +640,7 @@ impl Store {
                 a.worktree_path,
                 a.branch,
                 a.base_sha,
+                a.mode.as_str(),
                 a.outcome.map(|o| o.as_str()),
                 a.frozen_diff,
                 a.created_at as i64,
@@ -588,7 +651,7 @@ impl Store {
 
     pub fn list_attempts(&self, task_id: &str) -> Result<Vec<StoredAttempt>> {
         self.query_attempts(
-            r#"SELECT id, task_id, seq, agent, worktree_path, branch, base_sha, outcome, frozen_diff, created_at
+            r#"SELECT id, task_id, seq, agent, worktree_path, branch, base_sha, mode, outcome, frozen_diff, created_at
                FROM attempts WHERE task_id = ?1 ORDER BY seq"#,
             params![task_id],
         )
@@ -597,7 +660,7 @@ impl Store {
     pub fn get_attempt(&self, id: &str) -> Result<Option<StoredAttempt>> {
         Ok(self
             .query_attempts(
-                r#"SELECT id, task_id, seq, agent, worktree_path, branch, base_sha, outcome, frozen_diff, created_at
+                r#"SELECT id, task_id, seq, agent, worktree_path, branch, base_sha, mode, outcome, frozen_diff, created_at
                    FROM attempts WHERE id = ?1"#,
                 params![id],
             )?
@@ -607,7 +670,7 @@ impl Store {
     /// Attempts with no outcome yet — the ones still holding a worktree.
     pub fn open_attempts(&self) -> Result<Vec<StoredAttempt>> {
         self.query_attempts(
-            r#"SELECT id, task_id, seq, agent, worktree_path, branch, base_sha, outcome, frozen_diff, created_at
+            r#"SELECT id, task_id, seq, agent, worktree_path, branch, base_sha, mode, outcome, frozen_diff, created_at
                FROM attempts WHERE outcome IS NULL ORDER BY created_at"#,
             params![],
         )
@@ -622,7 +685,8 @@ impl Store {
         let mut stmt = conn.prepare(sql)?;
         let rows = stmt
             .query_map(args, |r| {
-                let outcome: Option<String> = r.get(7)?;
+                let mode: String = r.get(7)?;
+                let outcome: Option<String> = r.get(8)?;
                 Ok(StoredAttempt {
                     id: r.get(0)?,
                     task_id: r.get(1)?,
@@ -631,9 +695,10 @@ impl Store {
                     worktree_path: r.get(4)?,
                     branch: r.get(5)?,
                     base_sha: r.get(6)?,
+                    mode: PermissionMode::parse(&mode),
                     outcome: outcome.as_deref().and_then(Outcome::parse),
-                    frozen_diff: r.get(8)?,
-                    created_at: r.get::<_, i64>(9)? as u64,
+                    frozen_diff: r.get(9)?,
+                    created_at: r.get::<_, i64>(10)? as u64,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -700,11 +765,12 @@ impl Store {
     /// "these are the settings I want when it runs", not "run it twice".
     pub fn enqueue_start(&self, q: &QueuedStart) -> Result<()> {
         self.conn.lock().unwrap().execute(
-            r#"INSERT INTO queued_starts (id, task_id, agent, prompt, cols, rows, position, created_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            r#"INSERT INTO queued_starts (id, task_id, agent, prompt, mode, cols, rows, position, created_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                ON CONFLICT(task_id) DO UPDATE SET
                  agent  = excluded.agent,
                  prompt = excluded.prompt,
+                 mode   = excluded.mode,
                  cols   = excluded.cols,
                  rows   = excluded.rows"#,
             params![
@@ -712,6 +778,7 @@ impl Store {
                 q.task_id,
                 q.agent,
                 q.prompt,
+                q.mode.as_str(),
                 q.cols as i64,
                 q.rows as i64,
                 q.position,
@@ -724,20 +791,22 @@ impl Store {
     pub fn queue(&self) -> Result<Vec<QueuedStart>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, task_id, agent, prompt, cols, rows, position, created_at \
+            "SELECT id, task_id, agent, prompt, mode, cols, rows, position, created_at \
              FROM queued_starts ORDER BY position, created_at",
         )?;
         let rows = stmt
             .query_map([], |r| {
+                let mode: String = r.get(4)?;
                 Ok(QueuedStart {
                     id: r.get(0)?,
                     task_id: r.get(1)?,
                     agent: r.get(2)?,
                     prompt: r.get(3)?,
-                    cols: r.get::<_, i64>(4)? as u16,
-                    rows: r.get::<_, i64>(5)? as u16,
-                    position: r.get(6)?,
-                    created_at: r.get::<_, i64>(7)? as u64,
+                    mode: PermissionMode::parse(&mode),
+                    cols: r.get::<_, i64>(5)? as u16,
+                    rows: r.get::<_, i64>(6)? as u16,
+                    position: r.get(7)?,
+                    created_at: r.get::<_, i64>(8)? as u64,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -792,6 +861,8 @@ pub struct QueuedStart {
     /// The prompt as it was approved, kept so an auto-start sends exactly what
     /// the person saw rather than re-rendering a template that has moved on.
     pub prompt: String,
+    /// The permission mode as it was approved, for the same reason.
+    pub mode: PermissionMode,
     pub cols: u16,
     pub rows: u16,
     pub position: i64,
@@ -1125,6 +1196,7 @@ mod tests {
             worktree_path: format!("/tmp/wt/{id}"),
             branch: format!("agentdesk/login-{seq}"),
             base_sha: "2bc172c2deadbeef".into(),
+            mode: PermissionMode::default(),
             outcome: None,
             frozen_diff: None,
             created_at: 1000 + seq as u64,
@@ -1210,6 +1282,54 @@ mod tests {
         assert_eq!(s.next_attempt_seq("t2").unwrap(), 1);
     }
 
+    /// The mode is part of what was approved, so both the attempt and a
+    /// queued start have to carry it back out exactly.
+    #[test]
+    fn a_permission_mode_round_trips_on_attempts_and_the_queue() {
+        let s = Store::in_memory().unwrap();
+        s.upsert_task(&task("t1", Lifecycle::Running, 0)).unwrap();
+
+        let mut a = attempt("a1", "t1", 1);
+        a.mode = PermissionMode::Yolo;
+        s.insert_attempt(&a).unwrap();
+        assert_eq!(s.get_attempt("a1").unwrap().unwrap().mode, PermissionMode::Yolo);
+
+        let mut q = queued("t1", "claude", 0);
+        q.mode = PermissionMode::AcceptEdits;
+        s.enqueue_start(&q).unwrap();
+        assert_eq!(s.queue().unwrap()[0].mode, PermissionMode::AcceptEdits);
+    }
+
+    /// Rows written before the mode column existed must keep the behaviour
+    /// they always had: asking. An unknown mode string degrades the same way
+    /// — never towards not asking.
+    #[test]
+    fn a_v3_database_gains_the_mode_column_and_old_rows_keep_asking() {
+        let path = scratch("v3mode");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(Store::V1).unwrap();
+            conn.execute_batch(Store::V2).unwrap();
+            conn.execute_batch(Store::V3).unwrap();
+            conn.pragma_update(None, "user_version", 3i64).unwrap();
+            conn.execute(
+                "INSERT INTO attempts (id, task_id, seq, agent, worktree_path, branch, base_sha, created_at) \
+                 VALUES ('a1', 't1', 1, 'claude', '/wt/a1', 'agentdesk/x-1', 'abc', 1000)",
+                [],
+            )
+            .unwrap();
+        }
+
+        let store = Store::open(&path).expect("an M4-era database must still open");
+        assert_eq!(version_of(&path), Store::SCHEMA_VERSION);
+        assert_eq!(
+            store.get_attempt("a1").unwrap().unwrap().mode,
+            PermissionMode::Normal
+        );
+        assert_eq!(PermissionMode::parse("weaponized"), PermissionMode::Normal);
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// Setting an outcome removes the worktree, so the diff has to be captured
     /// in the same breath or the evidence goes with it.
     #[test]
@@ -1259,6 +1379,7 @@ mod tests {
             task_id: task_id.into(),
             agent: agent.into(),
             prompt: format!("prompt for {task_id}"),
+            mode: PermissionMode::default(),
             cols: 100,
             rows: 30,
             position,

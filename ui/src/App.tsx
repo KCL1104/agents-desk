@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type * as React from 'react';
 import { api, subscribe } from './api';
 import { useT } from './i18n';
-import type { BootStatus, Lifecycle, SessionMeta, Tab, Task } from './types';
+import type { BootStatus, Lifecycle, PermissionMode, SessionMeta, Tab, Task } from './types';
 import { BootGate } from './components/BootGate';
 import { SessionList } from './components/SessionList';
 import { EdgeDrop, EmptyGrid, Pane } from './components/Pane';
@@ -375,13 +375,14 @@ export default function App() {
    * only if you are already looking at it.
    */
   const onStartAttempt = useCallback(
-    async (task: Task, agent: string, prompt: string) => {
+    async (task: Task, agent: string, prompt: string, mode: PermissionMode) => {
       setDialogError(null);
       try {
         const result = await api.openAttempt(
           task.id,
           agent,
           prompt,
+          mode,
           INITIAL_COLS,
           INITIAL_ROWS,
         );
@@ -717,7 +718,7 @@ export default function App() {
           task={starting}
           error={dialogError}
           onCancel={() => setStarting(null)}
-          onStart={(agent, prompt) => void onStartAttempt(starting, agent, prompt)}
+          onStart={(agent, prompt, mode) => void onStartAttempt(starting, agent, prompt, mode)}
         />
       )}
       {showEnv && <EnvPanel boot={boot} onClose={() => setShowEnv(false)} />}

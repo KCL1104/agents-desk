@@ -269,13 +269,16 @@ fn preview_prompt(
         .map_err(|e| format!("{e:#}"))
 }
 
-/// Start an attempt, or queue it when every slot is taken.
+/// Start an attempt, or queue it when every slot is taken. `mode` is the
+/// permission mode the dialog offered — parsed leniently, because an unknown
+/// value must degrade to asking, never to not asking.
 #[tauri::command]
 fn open_attempt(
     state: State<'_, AppState>,
     task_id: String,
     agent: Option<String>,
     prompt: Option<String>,
+    mode: Option<String>,
     cols: u16,
     rows: u16,
 ) -> StdResult<crate::core::StartResult, String> {
@@ -285,6 +288,7 @@ fn open_attempt(
             &task_id,
             agent.unwrap_or_else(|| "claude".into()),
             prompt,
+            store::PermissionMode::parse(mode.as_deref().unwrap_or("")),
             cols,
             rows,
         )

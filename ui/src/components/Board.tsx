@@ -310,6 +310,18 @@ function Card({
         <span className={`dot ${liveTone(live)}`} />
         <span className="board-card-title">{task.title}</span>
         {agent && <span className="ov-agent mono">{agent}</span>}
+        {/* A session running with fewer prompts wears it openly. Quiet
+            autonomy that looks like ordinary supervision would be worse
+            than either. */}
+        {hasAttempt && live.attempt.mode !== 'normal' && (
+          <span
+            className={`mode-badge ${live.attempt.mode}`}
+            data-testid={`mode-${task.id}`}
+            title={t(live.attempt.mode === 'yolo' ? 'mode.yolo' : 'mode.accept_edits')}
+          >
+            {live.attempt.mode === 'yolo' ? '⚡' : '✎'}
+          </span>
+        )}
       </header>
 
       {/* Which codebase this card is about. Cards from different repos share

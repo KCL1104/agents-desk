@@ -60,6 +60,13 @@ export const en = {
   'attempt.copied': 'Copied',
   'attempt.copyPrompt': 'Copy prompt',
   'attempt.openNoPrompt': 'Open session (no prompt)',
+  'attempt.yoloHint':
+    'No permission prompts at all — the agent runs to the end of its own judgement. The risk stays inside this card: an attempt only ever touches its own worktree and branch, never your checkout.',
+
+  /* -------------------------- permission modes ------------------------- */
+  'mode.normal': 'Ask as usual',
+  'mode.accept_edits': 'Auto-accept edits',
+  'mode.yolo': 'Full auto (yolo)',
 
   /* ---------------------------- sidebar ------------------------------- */
   'sidebar.newSession': 'New session',
@@ -262,6 +269,13 @@ export const zhTW: Record<MessageKey, string> = {
   'attempt.copied': '已複製',
   'attempt.copyPrompt': '複製 prompt',
   'attempt.openNoPrompt': '開 session（不送 prompt）',
+  'attempt.yoloHint':
+    '完全不再詢問權限 —— agent 全憑自己的判斷跑到底。風險被關在這張卡裡：attempt 只碰得到自己的 worktree 與分支，碰不到你的 checkout。',
+
+  /* -------------------------- permission modes ------------------------- */
+  'mode.normal': '照常詢問',
+  'mode.accept_edits': '自動接受檔案編輯',
+  'mode.yolo': '全自動（yolo）',
 
   /* ---------------------------- sidebar ------------------------------- */
   'sidebar.newSession': '新 session',

@@ -624,6 +624,14 @@ textarea { resize: vertical; }
 }
 .board-card-branch { color: var(--fg-dim); }
 
+/* A session running with fewer prompts wears it openly. */
+.mode-badge {
+  font-size: 11px; line-height: 1.4; padding: 0 5px;
+  border-radius: 6px; border: 1px solid currentColor; flex: none;
+}
+.mode-badge.yolo { color: var(--warn); }
+.mode-badge.accept_edits { color: var(--accent); }
+
 .inspector-foot {
   border-top: 1px solid var(--line); padding: 9px 11px;
   display: flex; flex-direction: column; gap: 7px;

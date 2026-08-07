@@ -33,6 +33,10 @@ export type Lifecycle = 'backlog' | 'running' | 'review' | 'done' | 'abandoned';
 /** How an attempt ended. Setting one removes its worktree. */
 export type Outcome = 'merged' | 'discarded' | 'superseded';
 
+/** How much the agent may do without asking, chosen per attempt. The
+    worktree is the safety case: the attempt can only spend its own branch. */
+export type PermissionMode = 'normal' | 'accept_edits' | 'yolo';
+
 /** Mirrors core.rs AttemptView. */
 export interface Attempt {
   id: string;
@@ -43,6 +47,9 @@ export interface Attempt {
   worktree_path: string;
   branch: string;
   base_sha: string;
+  /** How much the agent may do without asking. Approved at start, kept for
+      every resume, worn as a badge while it runs. */
+  mode: PermissionMode;
   /** `null` while it is still going. */
   outcome: Outcome | null;
   /** The diff, captured before the worktree was removed. */

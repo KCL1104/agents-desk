@@ -46,6 +46,12 @@ App 提供的是終端機分頁給不了的：多 session 管理、跨重啟的�
   `$AGENTDESK_ROOT_PATH` —— worktree 是從哪個 repo 開出來的，`.env` 這類
   沒進版控但值得複製的檔案就在那。另外，一個看板本來就可以放多個 repo 的
   卡片，現在每張卡會標出自己的 repo 與 base 分支
+- **權限模式**（M7）：每個 attempt 可以選 Claude Code 要照常詢問、自動接受
+  檔案編輯（`--permission-mode acceptEdits`），或全自動不再詢問
+  （`--dangerously-skip-permissions`）。安全論證就是 worktree —— attempt
+  只花得掉自己的分支，碰不到你的 checkout —— 所以這個選項只存在於
+  attempt，臨時 session 永遠沒有。模式在開始對話框核准一次，排隊與
+  resume 都會沿用；session 全自動跑著的時候，卡片會掛 ⚡ 徽章
 - **中英雙語**：跟隨系統語言，也可以在環境面板手動切換。系統原生通知會跟著一起換
 
 尚未做：系統匣。

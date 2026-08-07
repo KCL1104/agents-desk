@@ -59,6 +59,14 @@ terminal's** (see below).
   `$AGENTDESK_ROOT_PATH` — the repository the worktree was opened from, where
   untracked files worth copying (`.env`) live. And since one board carries
   cards from many repositories, every card now names its repo and base branch
+- **Permission modes** (M7): per attempt, Claude Code can run asking as
+  usual, auto-accepting file edits (`--permission-mode acceptEdits`), or
+  fully unprompted (`--dangerously-skip-permissions`). The worktree is the
+  safety argument — an attempt can only spend its own branch, never your
+  checkout — which is why the choice exists for attempts and never for
+  ad-hoc sessions. The mode is approved once in the start dialog, survives
+  queueing and resumes, and the card wears a ⚡ badge while a session runs
+  unprompted
 - **English and 繁體中文**, following your system language and switchable from
   the environment panel. Native notifications follow the same setting
 

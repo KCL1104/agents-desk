@@ -132,6 +132,12 @@ export function AttemptInspector({ attempt, baseBranch, onClose, onDone, onRunSc
       <div className="inspector-meta mono small muted">
         <span>{attempt.branch}</span>
         <span title={attempt.base_sha}>base {attempt.base_sha.slice(0, 8)}</span>
+        {attempt.mode !== 'normal' && (
+          <span className={`mode-badge ${attempt.mode}`}>
+            {attempt.mode === 'yolo' ? '⚡ ' : '✎ '}
+            {t(attempt.mode === 'yolo' ? 'mode.yolo' : 'mode.accept_edits')}
+          </span>
+        )}
         {attempt.outcome && <span className="inspector-frozen">{t('inspector.frozen')}</span>}
       </div>
 

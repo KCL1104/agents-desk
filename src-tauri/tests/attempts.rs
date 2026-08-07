@@ -34,7 +34,7 @@ mod worktree;
 
 use crate::core::{Core, Status, UiSink};
 use crate::shell_env::ShellEnv;
-use crate::store::{Lifecycle, Outcome};
+use crate::store::{Lifecycle, Outcome, PermissionMode};
 
 #[derive(Default)]
 struct Events(Mutex<Vec<(String, serde_json::Value)>>);
@@ -162,7 +162,7 @@ impl Harness {
     /// default limit leaves room, so this never lands in the queue.
     fn start(&self, task_id: &str, agent: &str) -> crate::core::OpenedAttempt {
         self.core
-            .start_attempt(task_id, agent.into(), None, 100, 30)
+            .start_attempt(task_id, agent.into(), None, PermissionMode::Normal, 100, 30)
             .expect("start attempt")
             .attempt
             .expect("there was a free slot")
@@ -531,7 +531,7 @@ fn an_edited_prompt_is_what_gets_sent_and_what_gets_recorded() {
     let edited = "我改過的 prompt\n\n第二行".to_string();
     let opened = h
         .core
-        .start_attempt(&task, "claude".into(), Some(edited.clone()), 100, 30)
+        .start_attempt(&task, "claude".into(), Some(edited.clone()), PermissionMode::Normal, 100, 30)
         .unwrap()
         .attempt
         .unwrap();
@@ -561,13 +561,13 @@ fn a_start_over_the_limit_waits_its_turn_and_then_goes_by_itself() {
 
     let a = h
         .core
-        .start_attempt(&first, "claude".into(), None, 100, 30)
+        .start_attempt(&first, "claude".into(), None, PermissionMode::Normal, 100, 30)
         .unwrap();
     assert!(a.attempt.is_some(), "the first one had room");
 
     let b = h
         .core
-        .start_attempt(&second, "claude".into(), Some("我排隊的 prompt".into()), 100, 30)
+        .start_attempt(&second, "claude".into(), Some("我排隊的 prompt".into()), PermissionMode::Normal, 100, 30)
         .unwrap();
     assert!(b.attempt.is_none(), "the second should not have started");
     assert_eq!(b.queued_at, Some(1));
@@ -617,8 +617,8 @@ fn raising_the_limit_releases_what_was_waiting() {
 
     let first = h.card("First", "p");
     let second = h.card("Second", "p");
-    h.core.start_attempt(&first, "claude".into(), None, 100, 30).unwrap();
-    h.core.start_attempt(&second, "claude".into(), None, 100, 30).unwrap();
+    h.core.start_attempt(&first, "claude".into(), None, PermissionMode::Normal, 100, 30).unwrap();
+    h.core.start_attempt(&second, "claude".into(), None, PermissionMode::Normal, 100, 30).unwrap();
     assert_eq!(h.core.queue().len(), 1);
 
     h.core.set_max_concurrent(2).unwrap();
@@ -636,12 +636,12 @@ fn a_card_can_only_be_in_the_queue_once() {
 
     let first = h.card("First", "p");
     let second = h.card("Second", "p");
-    h.core.start_attempt(&first, "claude".into(), None, 100, 30).unwrap();
+    h.core.start_attempt(&first, "claude".into(), None, PermissionMode::Normal, 100, 30).unwrap();
     h.core
-        .start_attempt(&second, "claude".into(), Some("first try".into()), 100, 30)
+        .start_attempt(&second, "claude".into(), Some("first try".into()), PermissionMode::Normal, 100, 30)
         .unwrap();
     h.core
-        .start_attempt(&second, "codex".into(), Some("changed my mind".into()), 100, 30)
+        .start_attempt(&second, "codex".into(), Some("changed my mind".into()), PermissionMode::Normal, 100, 30)
         .unwrap();
 
     let queue = h.core.queue();
@@ -657,8 +657,8 @@ fn a_queued_card_can_be_taken_back_out() {
     h.core.set_max_concurrent(1).unwrap();
     let first = h.card("First", "p");
     let second = h.card("Second", "p");
-    h.core.start_attempt(&first, "claude".into(), None, 100, 30).unwrap();
-    h.core.start_attempt(&second, "claude".into(), None, 100, 30).unwrap();
+    h.core.start_attempt(&first, "claude".into(), None, PermissionMode::Normal, 100, 30).unwrap();
+    h.core.start_attempt(&second, "claude".into(), None, PermissionMode::Normal, 100, 30).unwrap();
 
     h.core.cancel_queued(&second).unwrap();
     assert!(h.core.queue().is_empty());
@@ -680,7 +680,7 @@ fn ad_hoc_sessions_do_not_use_up_the_limit() {
         .new_session(h.repo.to_string_lossy().into(), "claude".into(), vec![], 100, 30)
         .unwrap();
     let task = h.card("First", "p");
-    let r = h.core.start_attempt(&task, "claude".into(), None, 100, 30).unwrap();
+    let r = h.core.start_attempt(&task, "claude".into(), None, PermissionMode::Normal, 100, 30).unwrap();
     assert!(r.attempt.is_some(), "an ad-hoc session took the attempt's slot");
 }
 
@@ -873,6 +873,145 @@ fn an_empty_followup_is_not_sent() {
     assert!(h.core.send_followup(&a.session_id, "  \n").is_err());
 }
 
+/* --------------------------- permission modes -------------------------- */
+
+/// The auto-accept switch, with the worktree as the safety case: the attempt
+/// can only spend its own branch. Yolo adds Claude Code's own flag as an
+/// option — and the prompt still rides last, after it.
+#[test]
+fn a_yolo_attempt_launches_claude_with_the_skip_permissions_flag() {
+    let h = Harness::new("yolo");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+
+    let opened = h
+        .core
+        .start_attempt(&task, "claude".into(), None, PermissionMode::Yolo, 100, 30)
+        .unwrap()
+        .attempt
+        .unwrap();
+
+    let args = h.args_of(&opened.session_id);
+    assert!(
+        args.contains(&"--dangerously-skip-permissions".to_string()),
+        "yolo did not reach the command line: {args:?}"
+    );
+    assert_eq!(args.last(), Some(&opened.prompt));
+
+    // Recorded on the attempt: the card can say this one runs unprompted.
+    let attempt = h.core.task_board()[0].attempts[0].attempt.clone();
+    assert_eq!(attempt.mode, PermissionMode::Yolo);
+}
+
+#[test]
+fn accept_edits_maps_to_claudes_own_permission_mode_flag() {
+    let h = Harness::new("acceptedits");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+
+    let opened = h
+        .core
+        .start_attempt(&task, "claude".into(), None, PermissionMode::AcceptEdits, 100, 30)
+        .unwrap()
+        .attempt
+        .unwrap();
+
+    let args = h.args_of(&opened.session_id);
+    let pair = args
+        .windows(2)
+        .any(|w| w[0] == "--permission-mode" && w[1] == "acceptEdits");
+    assert!(pair, "acceptEdits did not reach the command line: {args:?}");
+}
+
+/// The mode was approved for the attempt, not for one launch: a resume after
+/// a restart runs with it again, alongside `--continue`.
+#[test]
+fn resuming_a_yolo_attempt_keeps_the_mode() {
+    let h = Harness::new("yoloresume");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h
+        .core
+        .start_attempt(&task, "claude".into(), None, PermissionMode::Yolo, 100, 30)
+        .unwrap()
+        .attempt
+        .unwrap();
+    h.launches(&a.session_id, 1);
+
+    h.core.close_session(&a.session_id).unwrap();
+    let session_id = h.core.reopen_attempt(&a.attempt_id, 100, 30).expect("reopen");
+
+    let second = h.launches(&session_id, 2).pop().unwrap();
+    assert!(second.args.iter().any(|x| x == "--continue"), "{:?}", second.args);
+    assert!(
+        second.args.iter().any(|x| x == "--dangerously-skip-permissions"),
+        "the resume dropped the approved mode: {:?}",
+        second.args
+    );
+}
+
+/// Only Claude Code's flags are measured. Another CLI launches without them
+/// no matter what the mode says — a flag guessed wrong can mean anything.
+#[test]
+fn another_cli_is_not_handed_claudes_permission_flags() {
+    let h = Harness::new("yolocodex");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+
+    let opened = h
+        .core
+        .start_attempt(&task, "codex".into(), None, PermissionMode::Yolo, 100, 30)
+        .unwrap()
+        .attempt
+        .unwrap();
+
+    assert!(
+        h.args_of(&opened.session_id).is_empty(),
+        "codex was handed flags that belong to claude"
+    );
+}
+
+/// What was approved is what runs, even from the queue.
+#[test]
+fn a_queued_start_keeps_its_mode_when_its_turn_comes() {
+    let h = Harness::new("yoloqueue");
+    let _guard = h.rt.enter();
+    h.core.set_max_concurrent(1).unwrap();
+    let first = h.card("First", "p");
+    let second = h.card("Second", "p");
+
+    let a = h
+        .core
+        .start_attempt(&first, "claude".into(), None, PermissionMode::Normal, 100, 30)
+        .unwrap();
+    h.core
+        .start_attempt(&second, "claude".into(), None, PermissionMode::Yolo, 100, 30)
+        .unwrap();
+
+    h.core.close_session(&a.attempt.unwrap().session_id).unwrap();
+    let started = wait_for(Duration::from_secs(10), || {
+        h.core
+            .task_board()
+            .into_iter()
+            .find(|t| t.task.id == second)
+            .map(|t| !t.attempts.is_empty())
+            .unwrap_or(false)
+    });
+    assert!(started, "the queue never moved");
+
+    let view = h
+        .core
+        .task_board()
+        .into_iter()
+        .find(|t| t.task.id == second)
+        .unwrap();
+    assert_eq!(view.attempts[0].attempt.mode, PermissionMode::Yolo);
+    let session = view.attempts[0].session_id.clone().unwrap();
+    assert!(h
+        .args_of(&session)
+        .contains(&"--dangerously-skip-permissions".to_string()));
+}
+
 /* --------------------------- workspace scripts ------------------------- */
 
 /// M6's core promise: a fresh worktree is made runnable before the agent
@@ -1010,7 +1149,7 @@ fn a_malformed_config_fails_the_start_where_the_person_can_see_it() {
 
     let err = h
         .core
-        .start_attempt(&task, "claude".into(), None, 100, 30)
+        .start_attempt(&task, "claude".into(), None, PermissionMode::Normal, 100, 30)
         .expect_err("a config typo must be an error someone sees");
     assert!(err.to_string().contains("config.json"), "unhelpful: {err}");
     // And the worktree it would have used was given back.
