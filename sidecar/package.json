@@ -1,0 +1,21 @@
+{
+  "name": "agentdesk-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/agent-host.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/agent-host.mjs --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "esbuild": "^0.24",
+    "typescript": "^5.6"
+  },
+  "allowScripts": {
+    "esbuild@0.24.2": true
+  }
+}

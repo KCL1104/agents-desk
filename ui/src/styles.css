@@ -1,0 +1,430 @@
+:root {
+  --bg: #131316;
+  --bg-2: #17171b;
+  --bg-3: #1d1d22;
+  --line: #2a2a31;
+  --fg: #e7e7ea;
+  --fg-dim: #9a9aa4;
+  --accent: #7aa2f7;
+  --ok: #79c08a;
+  --warn: #e0af68;
+  --err: #e06c75;
+  --radius: 8px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC",
+    "Noto Sans TC", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono { font-family: var(--mono); font-size: 12px; }
+.muted { color: var(--fg-dim); }
+.small { font-size: 11px; }
+.pad { padding: 12px; }
+.spacer { flex: 1; }
+
+button {
+  background: var(--bg-3);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: #26262d; }
+button:disabled { opacity: 0.4; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #0d1017; font-weight: 600; }
+button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+button.danger { border-color: #5c2f33; color: var(--err); }
+button.icon { padding: 2px 8px; font-size: 15px; line-height: 1; }
+
+input, textarea, select {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  width: 100%;
+}
+textarea { resize: vertical; }
+
+/* ---------- layout ---------- */
+
+.app {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  height: 100%;
+}
+
+.sidebar {
+  border-right: 1px solid var(--line);
+  background: var(--bg-2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px;
+  font-size: 11px; letter-spacing: 0.08em; color: var(--fg-dim);
+  border-bottom: 1px solid var(--line);
+}
+.waiting-banner {
+  margin: 8px; border-color: #4a3a1c; color: var(--warn);
+  background: #241d10; text-align: left;
+}
+.session-groups { overflow-y: auto; flex: 1; }
+.group { margin-bottom: 10px; }
+.group-head { padding: 6px 12px 2px; color: var(--fg-dim); font-size: 11px; }
+.session-row {
+  display: flex; align-items: center; gap: 8px;
+  width: calc(100% - 12px); margin: 1px 6px;
+  background: transparent; border: none; border-radius: 6px;
+  padding: 6px 8px; text-align: left;
+}
+.session-row.active { background: var(--bg-3); }
+.session-title { flex: 1; font-size: 12px; }
+.badge {
+  background: var(--warn); color: #221a08;
+  border-radius: 9px; padding: 0 6px; font-size: 10px; font-weight: 700;
+}
+
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-dim); flex: none; }
+.dot.running { background: var(--accent); }
+.dot.starting { background: var(--accent); opacity: 0.5; }
+.dot.waiting_permission { background: var(--warn); }
+.dot.idle { background: var(--ok); }
+.dot.error { background: var(--err); }
+.dot.closed { background: #4a4a52; }
+
+.main { display: flex; flex-direction: column; overflow: hidden; }
+
+.topbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px; border-bottom: 1px solid var(--line);
+  background: var(--bg-2); font-size: 12px;
+}
+.topbar .mono { max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- modal / boot ---------- */
+
+.modal-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; }
+.modal { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; width: 520px; max-width: 92vw; }
+.modal h2 { margin: 0 0 14px; font-size: 15px; }
+.modal label { display: block; font-size: 11px; color: var(--fg-dim); margin: 12px 0 4px; }
+.modal .row { display: flex; gap: 7px; }
+.modal .row button { flex: none; }
+.recents { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+.boot { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 40px; text-align: center; }
+.boot h1 { margin: 0; font-size: 20px; letter-spacing: 0.02em; }
+.boot-error { color: var(--err); max-width: 620px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; }
+.boot ul { text-align: left; font-size: 12px; line-height: 1.9; }
+.boot code { background: var(--bg-3); padding: 1px 5px; border-radius: 4px; }
+
+/* ---------- terminal ---------- */
+
+/* The scroll container. Auto mode gives its rows a minimum height, so a wall
+   of panes grows past the viewport and scrolls rather than squeezing every
+   terminal below what a TUI can use. */
+.term-stack {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  background: var(--bg); padding: 5px;
+}
+
+/* The layout itself. `min-height` rather than `height` so it is exactly the
+   viewport when everything fits and taller when it does not.
+   `position: relative` anchors manual mode's absolute panes and splitters. */
+.term-grid { position: relative; min-height: 100%; }
+
+/* The pane is padded, not the terminal itself: xterm measures its host to
+   pick cols/rows, so padding inside would make it miscount.
+   min-* 0 lets a grid cell actually shrink instead of overflowing. */
+.term-host {
+  min-width: 0; min-height: 0; overflow: hidden;
+  padding: 5px 4px 5px 7px;
+  border: 1px solid transparent; border-radius: 6px;
+}
+.term-host.focused { border-color: #2f3f63; }
+
+.term-host .xterm { height: 100%; }
+.term-host .xterm-viewport::-webkit-scrollbar { width: 9px; }
+.term-host .xterm-viewport::-webkit-scrollbar-thumb { background: #34343d; border-radius: 5px; }
+
+.term-empty {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px dashed var(--line); border-radius: 6px;
+}
+.term-empty.drop-over { border-style: solid; border-color: var(--accent); background: #171d2b; }
+
+.session-row { cursor: pointer; }
+.row-action {
+  background: transparent; border: none; color: var(--fg-dim);
+  padding: 0 4px; font-size: 14px; line-height: 1; opacity: 0;
+}
+.session-row:hover .row-action { opacity: 1; }
+.row-action:hover { color: var(--err); background: transparent; }
+
+.sidebar-foot {
+  margin: 8px; border: none; background: transparent; color: var(--fg-dim);
+  text-align: left; font-size: 11px;
+}
+.sidebar-foot:hover { color: var(--fg); background: transparent; }
+
+.dot.saved { background: #4a4a52; }
+.dot.exited { background: var(--fg-dim); }
+
+.modal label { margin-top: 14px; }
+.modal .stat { padding: 5px 0; border-bottom: 1px solid var(--line); }
+.modal .chips { max-height: 150px; overflow-y: auto; margin-top: 6px; }
+
+.dot.starting { background: var(--accent); opacity: 0.5; }
+.dot.waiting_permission { background: var(--warn); }
+.dot.waiting_input { background: var(--warn); opacity: 0.7; }
+.dot.idle { background: var(--ok); }
+
+.waiting-banner {
+  margin: 8px; border-color: #4a3a1c; color: var(--warn);
+  background: #241d10; text-align: left; font-size: 12px;
+}
+.waiting-banner:hover { background: #2e2413; }
+
+.toast {
+  position: fixed; z-index: 200; left: 50%; bottom: 22px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px; max-width: 70vw;
+  padding: 9px 12px; border-radius: 8px; font-size: 12px;
+  background: var(--bg-3); border: 1px solid var(--line);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+}
+.toast.error { border-color: #5c2f33; color: var(--err); }
+.toast button { background: transparent; border: none; color: inherit; padding: 0 2px; }
+
+/* ---------- sidebar sections ---------- */
+
+.section { margin-bottom: 4px; }
+.section-head {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  background: transparent; border: none; border-radius: 0;
+  padding: 7px 12px 5px; text-align: left;
+  font-size: 11px; letter-spacing: 0.05em; color: var(--fg-dim);
+}
+.section-head:hover { background: transparent; color: var(--fg); }
+.section-caret { width: 9px; }
+.section-count {
+  margin-left: auto; background: var(--bg-3); border-radius: 8px;
+  padding: 0 6px; font-size: 10px;
+}
+
+.session-row {
+  display: block; width: calc(100% - 12px); margin: 1px 6px;
+  background: transparent; border: none; border-radius: 6px;
+  padding: 5px 8px; text-align: left; cursor: pointer;
+  /* Sections move rows when status settles; animate so it reads as a move
+     rather than a flicker. */
+  transition: background 120ms ease;
+}
+.session-row.active { background: var(--bg-3); }
+.session-row:hover { background: #1f1f25; }
+
+.row-top { display: flex; align-items: center; gap: 7px; }
+.row-title { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-actions { display: flex; gap: 2px; opacity: 0; }
+.session-row:hover .row-actions { opacity: 1; }
+.row-action {
+  background: transparent; border: none; color: var(--fg-dim);
+  padding: 0 3px; font-size: 11px; line-height: 1;
+}
+.row-action:hover { color: var(--fg); background: transparent; }
+
+.row-sub {
+  display: flex; align-items: baseline; gap: 6px;
+  margin-left: 14px; font-size: 11px; color: var(--fg-dim);
+  overflow: hidden; white-space: nowrap;
+}
+.row-tool { color: var(--accent); flex: none; }
+.row-detail { overflow: hidden; text-overflow: ellipsis; }
+.row-elapsed { margin-left: auto; flex: none; opacity: 0.7; }
+
+/* ---------- view toggle ---------- */
+
+.view-toggle { display: flex; gap: 1px; background: var(--line); border-radius: 6px; padding: 1px; }
+.view-toggle button {
+  border: none; border-radius: 5px; background: var(--bg-2);
+  padding: 3px 11px; font-size: 11px; color: var(--fg-dim);
+}
+.view-toggle button.active { background: var(--bg-3); color: var(--fg); }
+
+/* ---------- overview ---------- */
+
+.overview { flex: 1; overflow-y: auto; padding: 16px 18px 24px; }
+.overview.empty { display: flex; align-items: center; justify-content: center; }
+
+.ov-section + .ov-section { margin-top: 22px; }
+.ov-section-head {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 10px; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em; color: var(--fg-dim);
+}
+
+.ov-grid {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.ov-card {
+  display: flex; flex-direction: column; gap: 7px;
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: 8px; padding: 10px 12px;
+}
+/* Blocked sessions are the ones that cost you time; make them findable at a
+   glance without having to read every card. */
+.ov-card.waiting_permission { border-left-color: var(--warn); background: #1e1a12; }
+.ov-card.waiting_input { border-left-color: var(--warn); opacity: 0.95; }
+.ov-card.running, .ov-card.starting { border-left-color: var(--accent); }
+.ov-card.idle { border-left-color: var(--ok); }
+.ov-card.exited, .ov-card.saved { opacity: 0.65; }
+
+.ov-card-head { display: flex; align-items: center; gap: 7px; }
+.ov-title { flex: 1; font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-agent { color: var(--fg-dim); font-size: 11px; }
+.ov-status { font-size: 11px; color: var(--fg-dim); }
+
+.ov-activity { display: flex; flex-direction: column; gap: 2px; min-height: 30px; }
+.ov-detail {
+  color: var(--fg); font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.ov-card-foot {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 2px; padding-top: 7px; border-top: 1px solid var(--line);
+}
+.ov-actions { margin-left: auto; display: flex; gap: 5px; }
+.ov-actions button { padding: 3px 9px; font-size: 11px; }
+
+/* ---------- tab strip ---------- */
+
+.tab-strip {
+  display: flex; align-items: stretch; gap: 1px;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+  padding: 0 6px; overflow-x: auto;
+}
+.tab {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 10px 6px; cursor: pointer;
+  font-size: 12px; color: var(--fg-dim);
+  border-bottom: 2px solid transparent;
+  max-width: 220px; white-space: nowrap;
+}
+.tab:hover { color: var(--fg); }
+.tab.active { color: var(--fg); border-bottom-color: var(--accent); background: var(--bg-2); }
+.tab-name { overflow: hidden; text-overflow: ellipsis; }
+.tab-badge { font-size: 10px; flex: none; }
+.tab-badge.waiting { color: var(--warn); font-weight: 700; }
+.tab-badge.busy { color: var(--accent); }
+.tab-close {
+  background: transparent; border: none; color: var(--fg-dim);
+  padding: 0 2px; font-size: 10px; line-height: 1; opacity: 0;
+}
+.tab:hover .tab-close { opacity: 1; }
+.tab-close:hover { color: var(--err); background: transparent; }
+.tab-rename { width: 130px; padding: 1px 4px; font-size: 12px; }
+.tab-add {
+  align-self: center; margin-left: 4px;
+  background: transparent; border: none; color: var(--fg-dim);
+  padding: 2px 8px; font-size: 15px; line-height: 1;
+}
+.tab-add:hover { color: var(--fg); background: transparent; }
+
+/* ---------- panes ---------- */
+
+.pane {
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg);
+}
+.pane.focused { border-color: #2f3f63; }
+.pane.drop-over { border-color: var(--accent); background: #171d2b; }
+
+.pane-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 6px 3px 8px; font-size: 11px;
+  background: var(--bg-2); border-bottom: 1px solid var(--line);
+  cursor: grab; user-select: none; flex: none;
+}
+.pane-head:active { cursor: grabbing; }
+.pane.focused .pane-head { background: #1b2130; }
+.pane-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-agent { color: var(--fg-dim); font-size: 10px; }
+.pane-eject {
+  background: transparent; border: none; color: var(--fg-dim);
+  padding: 0 2px; font-size: 10px; line-height: 1; opacity: 0;
+}
+.pane:hover .pane-eject { opacity: 1; }
+.pane-eject:hover { color: var(--err); background: transparent; }
+
+/* The terminal fills what the header leaves. min-height 0 lets it shrink
+   inside the flex column instead of pushing the pane taller than its cell. */
+.term-host { flex: 1; min-height: 0; padding: 4px 4px 4px 7px; border: none; }
+
+.session-row[draggable='true'] { cursor: grab; }
+
+/* ---------- drop preview ---------- */
+
+/* Which half lights up is the whole signal: it says "this pane will be cut
+   here" as against "these two will trade places". */
+.drop-preview {
+  position: absolute; pointer-events: none; z-index: 3;
+  background: rgba(122, 162, 247, 0.22);
+  border: 1px solid var(--accent); border-radius: 4px;
+}
+.drop-preview.swap { background: rgba(122, 162, 247, 0.1); border-style: dashed; }
+
+/* Only present while a drag is in flight, so they never sit in front of a
+   terminal you are trying to click. */
+.edge-drop { position: absolute; z-index: 6; border-radius: 4px; }
+.edge-drop.top { left: 0; right: 0; top: 0; height: 16px; }
+.edge-drop.bottom { left: 0; right: 0; bottom: 0; height: 16px; }
+.edge-drop.left { top: 0; bottom: 0; left: 0; width: 16px; }
+.edge-drop.right { top: 0; bottom: 0; right: 0; width: 16px; }
+.edge-drop.drop-over { background: rgba(122, 162, 247, 0.35); box-shadow: 0 0 0 1px var(--accent); }
+
+/* ---------- splitters ---------- */
+
+.splitter { position: absolute; z-index: 4; background: transparent; }
+.splitter.row { cursor: col-resize; }
+.splitter.col { cursor: row-resize; }
+/* Invisible until aimed at: a wall of terminals does not need grid lines
+   drawn over it, but the handle has to be findable. */
+.splitter:hover, .splitter:active { background: rgba(122, 162, 247, 0.35); border-radius: 3px; }
+
+/* ---------- column picker ---------- */
+
+.col-picker { display: flex; align-items: center; gap: 6px; }
+.col-picker select {
+  background: var(--bg-3); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 5px;
+  font-size: 11px; padding: 2px 4px;
+}
+
+.pane-zoom {
+  background: transparent; border: none; color: var(--fg-dim);
+  padding: 0 2px; font-size: 11px; line-height: 1; opacity: 0;
+}
+.pane:hover .pane-zoom { opacity: 1; }
+.pane-zoom:hover { color: var(--fg); background: transparent; }
+.pane.zoomed { border-color: var(--accent); }
