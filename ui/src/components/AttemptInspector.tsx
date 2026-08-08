@@ -19,6 +19,8 @@ interface Props {
   onClose: () => void;
   /** The attempt ended: nothing is left to inspect here. */
   onDone: () => void;
+  /** The merge landed — the one outcome worth saying out loud. */
+  onMerged?: (branch: string) => void;
   /** Start one of the repo's run scripts in this attempt's worktree. */
   onRunScript: (name: string) => void;
 }
@@ -47,7 +49,14 @@ interface Picked {
  * The terminal is still the place for conversation; this is for the review
  * that reads the diff line by line.
  */
-export function AttemptInspector({ attempt, baseBranch, onClose, onDone, onRunScript }: Props) {
+export function AttemptInspector({
+  attempt,
+  baseBranch,
+  onClose,
+  onDone,
+  onMerged,
+  onRunScript,
+}: Props) {
   const t = useT();
   const [pane, setPane] = useState<Pane>('diff');
   const [diff, setDiff] = useState<string | null>(null);
@@ -184,7 +193,7 @@ export function AttemptInspector({ attempt, baseBranch, onClose, onDone, onRunSc
       )}
 
       {attempt.outcome === null && (
-        <Finish attempt={attempt} baseBranch={baseBranch} onDone={onDone} />
+        <Finish attempt={attempt} baseBranch={baseBranch} onDone={onDone} onMerged={onMerged} />
       )}
     </aside>
   );
@@ -359,10 +368,12 @@ function Finish({
   attempt,
   baseBranch,
   onDone,
+  onMerged,
 }: {
   attempt: Attempt;
   baseBranch: string;
   onDone: () => void;
+  onMerged?: (branch: string) => void;
 }) {
   const t = useT();
   const [busy, setBusy] = useState<string | null>(null);
@@ -375,6 +386,7 @@ function Finish({
     void fn()
       .then((r) => {
         if (what === 'pr' && typeof r === 'string') setPrUrl(r);
+        if (what === 'merge') onMerged?.(baseBranch);
         if (what === 'merge' || what === 'discard') onDone();
       })
       // Every refusal here is one that would otherwise lose work quietly —
@@ -465,6 +477,19 @@ function DiffPane({
             .filter(Boolean)
             .join(' ')}
           title={commentable(l) ? t('review.hint') : undefined}
+          // The review loop is the flagship; it cannot be mouse-only.
+          role={commentable(l) ? 'button' : undefined}
+          tabIndex={commentable(l) ? 0 : undefined}
+          onKeyDown={
+            commentable(l)
+              ? (e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onPick({ file: l.file, line: l.line, excerpt: l.text });
+                  }
+                }
+              : undefined
+          }
           onClick={
             commentable(l)
               ? () => onPick({ file: l.file, line: l.line, excerpt: l.text })

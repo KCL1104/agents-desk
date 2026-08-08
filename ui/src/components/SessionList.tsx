@@ -135,6 +135,17 @@ function Row({
       className={`session-row${active ? ' active' : ''}`}
       onClick={() => onSelect(s.id)}
       data-testid={`session-${s.id}`}
+      // A div wearing button semantics, because a real <button> cannot hold
+      // the inner action buttons — but it owes the keyboard everything a
+      // button gives: focus, Enter, Space.
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(s.id);
+        }
+      }}
       // Dragging a row into the grid is the direct way to say which sessions
       // the layout should hold.
       draggable

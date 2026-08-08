@@ -67,10 +67,13 @@ test.describe('concurrency queue', () => {
       ).__TAURI_INTERNALS__.invoke('close_session', { id: 's1' });
     });
 
-    // And the queue moves without anybody pressing anything.
+    // And the queue moves without anybody pressing anything. The closed s1
+    // files itself under 已完成 — which starts collapsed — so the visible
+    // rows are s2's, and s1 shows up in the section's count.
     await expect(page.getByTestId('state-k2')).toHaveText(/等你確認資料夾/);
     await expect(page.getByTestId('queue-count')).toHaveCount(0);
-    await expect(page.locator('.session-row')).toHaveCount(2);
+    await expect(page.locator('.session-row')).toHaveCount(1);
+    await expect(page.locator('[data-section="done"] .section-count')).toHaveText('1');
   });
 
   test('the running count and the limit are both on screen', async ({ page }) => {

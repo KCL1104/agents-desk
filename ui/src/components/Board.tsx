@@ -249,6 +249,28 @@ function Concurrency({ running, tasks }: { running: number; tasks: Task[] }) {
   );
 }
 
+/**
+ * Deleting a card takes a task's prompt, branch, and attempt record with it,
+ * and on a board you drag cards across, a stray click on a 12px ✕ is routine.
+ * So the ✕ arms instead of firing: the second click, on the now-named button,
+ * is the one that deletes. Walking away disarms it.
+ */
+function useArmedDelete(onDelete: () => void) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  return {
+    armed,
+    fire: () => {
+      if (armed) onDelete();
+      else setArmed(true);
+    },
+  };
+}
+
 function Card({
   task,
   live,
@@ -284,6 +306,7 @@ function Card({
   const waiting = live.kind === 'session' && needsYou(live.status);
   const hasAttempt = live.kind !== 'none' && live.kind !== 'queued';
   const agent = hasAttempt ? live.attempt.agent : null;
+  const del = useArmedDelete(onDelete);
 
   // The whole card is the target when there is a session behind it: getting
   // into the TUI is the common act, and making people find a small button
@@ -304,6 +327,22 @@ function Card({
       data-testid={`task-${task.id}`}
       data-lifecycle={task.lifecycle}
       data-live={live.kind}
+      // Enterable cards act like buttons, so they owe the keyboard a way in.
+      // The label is the title alone — without it, the computed name would
+      // recite the whole card, inner buttons included, at every focus.
+      role={enter ? 'button' : undefined}
+      tabIndex={enter ? 0 : undefined}
+      aria-label={enter ? task.title : undefined}
+      onKeyDown={
+        enter
+          ? (e) => {
+              if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+                e.preventDefault();
+                enter();
+              }
+            }
+          : undefined
+      }
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -411,9 +450,24 @@ function Card({
           </button>
         )}
         <span className="spacer" />
-        <button className="icon" onClick={stop(onDelete)} title={t('board.deleteCard')} aria-label={t('board.deleteCard')}>
-          ✕
-        </button>
+        {del.armed ? (
+          <button
+            className="confirm-delete"
+            onClick={stop(del.fire)}
+            data-testid={`confirm-delete-${task.id}`}
+          >
+            {t('board.confirmDelete')}
+          </button>
+        ) : (
+          <button
+            className="icon"
+            onClick={stop(del.fire)}
+            title={t('board.deleteCard')}
+            aria-label={t('board.deleteCard')}
+          >
+            ✕
+          </button>
+        )}
       </footer>
     </article>
   );

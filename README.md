@@ -166,6 +166,22 @@ permanent, add this to `~/.zshrc`:
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
+### Keyboard
+
+The high-frequency loop — an agent waits, you authorize, you move on — can be
+driven without the mouse:
+
+| Keys | Does |
+|---|---|
+| `⌘/Ctrl+E` | Jump to the session that is waiting on you |
+| `⌘/Ctrl+1` / `2` / `3` | Terminal wall · board · overview |
+| `Esc` | Close the open dialog |
+| `Tab` / `Enter` | Session rows, board cards, and diff lines are all focusable; Enter acts |
+
+A dialog holding typed text ignores backdrop clicks (Escape still closes it),
+and deleting a card takes two clicks — the second one names what it is about
+to do.
+
 ## Testing
 
 ```bash

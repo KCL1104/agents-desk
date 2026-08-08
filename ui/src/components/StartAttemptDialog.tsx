@@ -3,6 +3,7 @@ import { api } from '../api';
 import { useT } from '../i18n';
 import type { PermissionMode, Task } from '../types';
 import { useLaunchers } from './launchers';
+import { Modal } from './Modal';
 
 interface Props {
   task: Task;
@@ -74,8 +75,7 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
   const [warnBefore, warnAfter] = t('attempt.unmeasuredHint').split('{agent}');
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal wide" onClick={(e) => e.stopPropagation()}>
+    <Modal onCancel={onCancel} dirty={edited} wide>
         <h2>{t('attempt.startTitle', { title: task.title })}</h2>
 
         <label>{t('attempt.agent')}</label>
@@ -169,7 +169,6 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
             {willSend ? t('common.start') : t('attempt.openNoPrompt')}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

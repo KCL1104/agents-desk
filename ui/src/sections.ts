@@ -126,6 +126,21 @@ export function useSections(
           continue;
         }
 
+        // A session with no terminal left has nothing to flap: its state is
+        // final, so neither the pin nor the settle window earns its keep.
+        // Without this, closing the selected session leaves an 已關閉 row
+        // pinned under 等待輸入 for as long as it stays selected.
+        if (!s.live && target === 'done') {
+          next[s.id] = target;
+          changed = true;
+          const t = pending.get(s.id);
+          if (t) {
+            clearTimeout(t);
+            pending.delete(s.id);
+          }
+          continue;
+        }
+
         // Rule 2: pinned while selected.
         if (s.id === activeId) {
           const t = pending.get(s.id);

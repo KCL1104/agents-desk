@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useT } from '../i18n';
+import { Modal } from './Modal';
 
 interface Props {
   onCancel: () => void;
@@ -45,10 +46,10 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
   };
 
   const ready = title.trim() !== '' && prompt.trim() !== '' && repo.trim() !== '';
+  const dirty = title.trim() !== '' || prompt.trim() !== '';
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <Modal onCancel={onCancel} dirty={dirty}>
         <h2>{t('newTask.title')}</h2>
 
         <label>{t('newTask.titleLabel')}</label>
@@ -118,7 +119,6 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
             {t('common.create')}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

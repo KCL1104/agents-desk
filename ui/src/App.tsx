@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type * as React from 'react';
 import { api, subscribe } from './api';
 import { useT } from './i18n';
+import { needsYou } from './types';
 import type { BootStatus, Lifecycle, PermissionMode, SessionMeta, Tab, Task } from './types';
 import { BootGate } from './components/BootGate';
 import { SessionList } from './components/SessionList';
@@ -92,7 +93,10 @@ export default function App() {
   const [renameTabId, setRenameTabId] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [showEnv, setShowEnv] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /** Errors stack instead of overwriting: parallel agents fail in parallel,
+   *  and the second failure must not eat the first. Good news dismisses
+   *  itself; a problem waits to be read. */
+  const [toasts, setToasts] = useState<{ id: number; kind: 'error' | 'ok'; text: string }[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [showNewTask, setShowNewTask] = useState(false);
   /** The card whose start dialog is open. */
@@ -108,6 +112,20 @@ export default function App() {
   const [inspectId, setInspectId] = useState<string | null>(null);
 
   const [gridRef, size] = useSize<HTMLDivElement>();
+
+  const pushToast = useCallback((kind: 'error' | 'ok', text: string) => {
+    const id = Date.now() + Math.random();
+    setToasts((cur) => [...cur.slice(-2), { id, kind, text }]);
+    if (kind === 'ok') {
+      setTimeout(() => setToasts((cur) => cur.filter((t) => t.id !== id)), 4000);
+    }
+  }, []);
+  const setError = useCallback(
+    (text: string | null) => {
+      if (text !== null) pushToast('error', text);
+    },
+    [pushToast],
+  );
 
   useEffect(() => {
     localStorage.setItem(VIEW_KEY, view);
@@ -349,6 +367,36 @@ export default function App() {
     [onSelect],
   );
 
+  /**
+   * The whole point of clicking a session is to look at it, so the sidebar
+   * goes through `onOpen`, not bare `onSelect`. From the board or overview a
+   * bare select would put the session into a layout that is not on screen —
+   * the app's most urgent affordance answering its click with nothing.
+   */
+  const onOpenFromSidebar = useCallback((id: string) => void onOpen(id), [onOpen]);
+
+  // The authorize-and-move-on loop is the product's highest-frequency
+  // gesture, so it gets keys: ⌘/Ctrl+E lands on the session that is waiting,
+  // ⌘/Ctrl+1/2/3 switch views. Terminals never see these — xterm ignores
+  // modifier chords it does not own, and the listener runs on the window.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (e.key === '1' || e.key === '2' || e.key === '3') {
+        e.preventDefault();
+        setView((['terminal', 'board', 'overview'] as const)[Number(e.key) - 1]);
+      } else if (e.key === 'e' || e.key === 'E') {
+        const waiting = sessions.find((s) => needsYou(s.status));
+        if (waiting) {
+          e.preventDefault();
+          void onOpen(waiting.id);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sessions, onOpen]);
+
   /* ------------------------------ board ----------------------------- */
 
   const onCreateTask = useCallback(
@@ -471,7 +519,7 @@ export default function App() {
       <SessionList
         sessions={sessions}
         activeId={focusedId}
-        onSelect={onSelect}
+        onSelect={onOpenFromSidebar}
         onNew={() => setShowNew(true)}
         onClose={(id) => void api.closeSession(id)}
         onArchive={(id) => void api.archiveSession(id)}
@@ -530,11 +578,25 @@ export default function App() {
             </button>
           )}
           {view === 'terminal' && <ColumnPicker layout={layout} onPick={onPickCols} />}
-          <div className="view-toggle" role="tablist">
+          <div
+            className="view-toggle"
+            role="tablist"
+            // role="tab" promises arrow keys, so the promise is kept.
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+              e.preventDefault();
+              const order: View[] = ['terminal', 'board', 'overview'];
+              const i = order.indexOf(view);
+              const next = order[(i + (e.key === 'ArrowRight' ? 1 : 2)) % 3];
+              setView(next);
+              (e.currentTarget.children[order.indexOf(next)] as HTMLElement)?.focus();
+            }}
+          >
             <button
               role="tab"
               aria-selected={view === 'terminal'}
               className={view === 'terminal' ? 'active' : ''}
+              title={`${t('view.terminal')} (⌘/Ctrl+1)`}
               onClick={() => setView('terminal')}
             >
               {t('view.terminal')}
@@ -544,6 +606,7 @@ export default function App() {
               aria-selected={view === 'board'}
               className={view === 'board' ? 'active' : ''}
               data-testid="view-board"
+              title={`${t('view.board')} (⌘/Ctrl+2)`}
               onClick={() => setView('board')}
             >
               {t('view.board')}
@@ -552,6 +615,7 @@ export default function App() {
               role="tab"
               aria-selected={view === 'overview'}
               className={view === 'overview' ? 'active' : ''}
+              title={`${t('view.overview')} (⌘/Ctrl+3)`}
               onClick={() => setView('overview')}
             >
               {t('view.overview')}
@@ -615,7 +679,9 @@ export default function App() {
               );
             })}
 
-            {members.length === 0 && <EmptyGrid onDrop={onDropOnGrid} />}
+            {members.length === 0 && (
+              <EmptyGrid onDrop={onDropOnGrid} anySessions={sessions.length > 0} />
+            )}
 
             {/* A pane-relative drop always splits below the pane it landed on,
                 so without these there is no gesture that makes something span
@@ -662,6 +728,9 @@ export default function App() {
             }
             onClose={() => setInspectId(null)}
             onDone={() => setInspectId(null)}
+            // The loop's peak action gets its confirmation moment: the drawer
+            // closing alone reads as "gone", not "landed".
+            onMerged={(branch) => pushToast('ok', t('inspector.merged', { branch }))}
             onRunScript={(name) => void onRunScript(inspected.id, name)}
           />
         )}
@@ -698,10 +767,23 @@ export default function App() {
         )}
       </main>
 
-      {error && (
-        <div className="toast error" role="alert">
-          <span>{error}</span>
-          <button onClick={() => setError(null)}>✕</button>
+      {toasts.length > 0 && (
+        <div className="toast-stack">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`toast ${toast.kind === 'error' ? 'error' : 'ok'}`}
+              role={toast.kind === 'error' ? 'alert' : 'status'}
+            >
+              <span>{toast.text}</span>
+              <button
+                aria-label={t('common.close')}
+                onClick={() => setToasts((cur) => cur.filter((x) => x.id !== toast.id))}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
         </div>
       )}
 

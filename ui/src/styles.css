@@ -5,6 +5,10 @@
   --line: #2a2a31;
   --fg: #e7e7ea;
   --fg-dim: #9a9aa4;
+  /* The quietest text that still clears 4.5:1 on every surface tier. For
+     de-emphasis, use this — never opacity on a container, which drags the
+     buttons and data inside it below AA with it. */
+  --fg-faint: #85858f;
   --accent: #7aa2f7;
   --ok: #79c08a;
   --warn: #e0af68;
@@ -14,6 +18,14 @@
 }
 
 * { box-sizing: border-box; }
+
+/* One focus voice for everything the keyboard can land on. The custom
+   button-shaped elements (session rows, board cards, diff lines) get the
+   same ring real buttons do, so tab order is always visible. */
+:where(button, select, input, textarea, [role='button'], [role='tab'], [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
 
 html, body, #root { height: 100%; margin: 0; }
 
@@ -86,26 +98,13 @@ textarea { resize: vertical; }
 .session-groups { overflow-y: auto; flex: 1; }
 .group { margin-bottom: 10px; }
 .group-head { padding: 6px 12px 2px; color: var(--fg-dim); font-size: 11px; }
-.session-row {
-  display: flex; align-items: center; gap: 8px;
-  width: calc(100% - 12px); margin: 1px 6px;
-  background: transparent; border: none; border-radius: 6px;
-  padding: 6px 8px; text-align: left;
-}
-.session-row.active { background: var(--bg-3); }
-.session-title { flex: 1; font-size: 12px; }
-.badge {
-  background: var(--warn); color: #221a08;
-  border-radius: 9px; padding: 0 6px; font-size: 10px; font-weight: 700;
-}
-
+/* Every status dot, in one place. */
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-dim); flex: none; }
 .dot.running { background: var(--accent); }
 .dot.starting { background: var(--accent); opacity: 0.5; }
 .dot.waiting_permission { background: var(--warn); }
+.dot.waiting_input { background: var(--warn); opacity: 0.7; }
 .dot.idle { background: var(--ok); }
-.dot.error { background: var(--err); }
-.dot.closed { background: #4a4a52; }
 
 .main { display: flex; flex-direction: column; overflow: hidden; }
 
@@ -115,6 +114,8 @@ textarea { resize: vertical; }
   background: var(--bg-2); font-size: 12px;
 }
 .topbar .mono { max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The inspector toggle is a pressed/unpressed control; pressed has to show. */
+.topbar button.active { background: var(--bg-3); color: var(--fg); border-color: var(--accent); }
 
 /* ---------- modal / boot ---------- */
 
@@ -173,14 +174,6 @@ textarea { resize: vertical; }
 }
 .term-empty.drop-over { border-style: solid; border-color: var(--accent); background: #171d2b; }
 
-.session-row { cursor: pointer; }
-.row-action {
-  background: transparent; border: none; color: var(--fg-dim);
-  padding: 0 4px; font-size: 14px; line-height: 1; opacity: 0;
-}
-.session-row:hover .row-action { opacity: 1; }
-.row-action:hover { color: var(--err); background: transparent; }
-
 .sidebar-foot {
   margin: 8px; border: none; background: transparent; color: var(--fg-dim);
   text-align: left; font-size: 11px;
@@ -201,25 +194,26 @@ textarea { resize: vertical; }
 .stat-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modal .chips { max-height: 150px; overflow-y: auto; margin-top: 6px; }
 
-.dot.starting { background: var(--accent); opacity: 0.5; }
-.dot.waiting_permission { background: var(--warn); }
-.dot.waiting_input { background: var(--warn); opacity: 0.7; }
-.dot.idle { background: var(--ok); }
-
 .waiting-banner {
   margin: 8px; border-color: #4a3a1c; color: var(--warn);
   background: #241d10; text-align: left; font-size: 12px;
 }
 .waiting-banner:hover { background: #2e2413; }
 
-.toast {
+/* Toasts stack — parallel agents fail in parallel, and the second problem
+   must not eat the first. */
+.toast-stack {
   position: fixed; z-index: 200; left: 50%; bottom: 22px; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.toast {
   display: flex; align-items: center; gap: 12px; max-width: 70vw;
   padding: 9px 12px; border-radius: 8px; font-size: 12px;
   background: var(--bg-3); border: 1px solid var(--line);
   box-shadow: 0 6px 24px rgba(0,0,0,0.45);
 }
 .toast.error { border-color: #5c2f33; color: var(--err); }
+.toast.ok { border-color: #2e4633; color: var(--ok); }
 .toast button { background: transparent; border: none; color: inherit; padding: 0 2px; }
 
 /* ---------- sidebar sections ---------- */
@@ -251,8 +245,11 @@ textarea { resize: vertical; }
 
 .row-top { display: flex; align-items: center; gap: 7px; }
 .row-title { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Hidden until pointed at — or tabbed into. Focus landing on an invisible
+   button is the worst of both: the reveal has to follow the keyboard too. */
 .row-actions { display: flex; gap: 2px; opacity: 0; }
-.session-row:hover .row-actions { opacity: 1; }
+.session-row:hover .row-actions,
+.session-row:focus-within .row-actions { opacity: 1; }
 .row-action {
   background: transparent; border: none; color: var(--fg-dim);
   padding: 0 3px; font-size: 11px; line-height: 1;
@@ -266,7 +263,9 @@ textarea { resize: vertical; }
 }
 .row-tool { color: var(--accent); flex: none; }
 .row-detail { overflow: hidden; text-overflow: ellipsis; }
-.row-elapsed { margin-left: auto; flex: none; opacity: 0.7; }
+/* The number you scan to pick which stalled agent to check first — quiet,
+   but never below AA. A token, not opacity: 0.7 over fg-dim lands ~3.8:1. */
+.row-elapsed { margin-left: auto; flex: none; color: var(--fg-faint); }
 
 /* ---------- view toggle ---------- */
 
@@ -297,16 +296,25 @@ textarea { resize: vertical; }
 .ov-card {
   display: flex; flex-direction: column; gap: 7px;
   background: var(--bg-2); border: 1px solid var(--line);
+  /* The status edge: the second axis of the board, worn by every card.
+     A deliberate signature, not decoration — the color IS the data. */
+  /* impeccable-disable-next-line side-tab -- the 3px status edge is the product's state language */
   border-left: 3px solid var(--line);
   border-radius: 8px; padding: 10px 12px;
 }
 /* Blocked sessions are the ones that cost you time; make them findable at a
    glance without having to read every card. */
 .ov-card.waiting_permission { border-left-color: var(--warn); background: #1e1a12; }
-.ov-card.waiting_input { border-left-color: var(--warn); opacity: 0.95; }
+.ov-card.waiting_input { border-left-color: var(--warn); }
 .ov-card.running, .ov-card.starting { border-left-color: var(--accent); }
 .ov-card.idle { border-left-color: var(--ok); }
-.ov-card.exited, .ov-card.saved { opacity: 0.65; }
+/* Closed cards recede by losing their fill and edge, not by fading their
+   text: the 開啟 button on them is still an action at full strength. */
+.ov-card.exited, .ov-card.saved {
+  background: var(--bg);
+  border-left-color: var(--line);
+  color: var(--fg-dim);
+}
 
 .ov-card-head { display: flex; align-items: center; gap: 7px; }
 .ov-title { flex: 1; font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -343,14 +351,15 @@ textarea { resize: vertical; }
 .tab:hover { color: var(--fg); }
 .tab.active { color: var(--fg); border-bottom-color: var(--accent); background: var(--bg-2); }
 .tab-name { overflow: hidden; text-overflow: ellipsis; }
-.tab-badge { font-size: 10px; flex: none; }
+.tab-badge { font-size: 11px; flex: none; }
 .tab-badge.waiting { color: var(--warn); font-weight: 700; }
 .tab-badge.busy { color: var(--accent); }
 .tab-close {
   background: transparent; border: none; color: var(--fg-dim);
   padding: 0 2px; font-size: 10px; line-height: 1; opacity: 0;
 }
-.tab:hover .tab-close { opacity: 1; }
+.tab:hover .tab-close,
+.tab:focus-within .tab-close { opacity: 1; }
 .tab-close:hover { color: var(--err); background: transparent; }
 .tab-rename { width: 130px; padding: 1px 4px; font-size: 12px; }
 .tab-add {
@@ -380,12 +389,13 @@ textarea { resize: vertical; }
 .pane-head:active { cursor: grabbing; }
 .pane.focused .pane-head { background: #1b2130; }
 .pane-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pane-agent { color: var(--fg-dim); font-size: 10px; }
+.pane-agent { color: var(--fg-dim); font-size: 11px; }
 .pane-eject {
   background: transparent; border: none; color: var(--fg-dim);
   padding: 0 2px; font-size: 10px; line-height: 1; opacity: 0;
 }
-.pane:hover .pane-eject { opacity: 1; }
+.pane:hover .pane-eject,
+.pane:focus-within .pane-eject { opacity: 1; }
 .pane-eject:hover { color: var(--err); background: transparent; }
 
 /* The terminal fills what the header leaves. min-height 0 lets it shrink
@@ -438,7 +448,8 @@ textarea { resize: vertical; }
   background: transparent; border: none; color: var(--fg-dim);
   padding: 0 2px; font-size: 11px; line-height: 1; opacity: 0;
 }
-.pane:hover .pane-zoom { opacity: 1; }
+.pane:hover .pane-zoom,
+.pane:focus-within .pane-zoom { opacity: 1; }
 .pane-zoom:hover { color: var(--fg); background: transparent; }
 .pane.zoomed { border-color: var(--accent); }
 
@@ -478,6 +489,8 @@ textarea { resize: vertical; }
 .board-card {
   display: flex; flex-direction: column; gap: 6px;
   background: var(--bg-3); border: 1px solid var(--line);
+  /* The status edge again — same signature as .ov-card, same reason. */
+  /* impeccable-disable-next-line side-tab -- the 3px status edge is the product's state language */
   border-left: 3px solid var(--line);
   border-radius: 8px; padding: 9px 11px;
   cursor: grab;
@@ -504,12 +517,22 @@ textarea { resize: vertical; }
 
 .board-card[data-live='session'] { border-left-color: var(--accent); }
 .board-card[data-live='stopped'] { border-left-color: #4a4a52; }
-.board-card[data-live='finished'] { opacity: 0.62; }
+/* Finished cards recede the same way closed overview cards do: by fill and
+   edge. Their 再試一次 button is still a live action, so no container
+   opacity — it would fade the button and the text below AA together. */
+.board-card[data-live='finished'] {
+  background: var(--bg-2);
+  border-left-color: var(--line);
+}
+.board-card[data-live='finished'] .board-card-title { color: var(--fg-dim); }
 
 .board-card-head { display: flex; align-items: center; gap: 7px; }
+/* Two lines before truncating: zh-TW titles say less per character-width,
+   and the title is the one thing a card exists to show. */
 .board-card-title {
   flex: 1; font-weight: 600; font-size: 13px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .board-card-state { font-size: 11px; color: var(--fg-dim); }
 .board-card.needs-you .board-card-state { color: var(--warn); font-weight: 600; }
@@ -633,7 +656,15 @@ textarea { resize: vertical; }
 }
 .board-limit .icon { padding: 0 6px; }
 
-.board-card[data-live='queued'] { border-left-color: var(--warn); opacity: 0.85; }
+.board-card[data-live='queued'] { border-left-color: var(--warn); }
+
+/* The armed state of the card's ✕: the second click is the one that
+   deletes, and it says so in words, in the color of consequence. */
+.confirm-delete {
+  background: transparent; border: 1px solid var(--err); color: var(--err);
+  font-size: 11px; padding: 1px 8px; border-radius: 5px; flex: none;
+}
+.confirm-delete:hover { background: #2a1a1c; }
 
 /* Which codebase the card is about — cards from different repos share the
    board, so each names its repo and base branch. */
@@ -652,7 +683,10 @@ textarea { resize: vertical; }
 .profile-row { display: flex; gap: 6px; align-items: center; }
 .profile-row input, .profile-row select { min-width: 0; }
 .profile-row input:first-child { flex: 0 0 140px; }
-.profile-row select { flex: none; }
+/* width: auto matters: the global `select { width: 100% }` plus flex: none
+   would otherwise hand the dropdown the whole row and crush the args field
+   to a sliver. */
+.profile-row select { flex: none; width: auto; }
 .profile-row .profile-args { flex: 1 1 120px; }
 
 /* A session running with fewer prompts wears it openly. */

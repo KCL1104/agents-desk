@@ -3,6 +3,7 @@ import { LOCALE_NAME, LOCALES, useI18n, type Locale } from '../i18n';
 import { api } from '../api';
 import { joinArgs, splitArgs } from '../profiles';
 import type { BootStatus } from '../types';
+import { Modal } from './Modal';
 
 /**
  * Shows what environment the agents actually get. A GUI process inherits a
@@ -17,8 +18,7 @@ import type { BootStatus } from '../types';
 export function EnvPanel({ boot, onClose }: { boot: BootStatus; onClose: () => void }) {
   const { t, locale, setLocale } = useI18n();
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <Modal onCancel={onClose}>
         <h2>{t('common.env')}</h2>
 
         <label htmlFor="locale-select">{t('env.language')}</label>
@@ -76,8 +76,7 @@ export function EnvPanel({ boot, onClose }: { boot: BootStatus; onClose: () => v
             {t('common.close')}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

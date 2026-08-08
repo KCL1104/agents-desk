@@ -136,6 +136,20 @@ cargo run --manifest-path src-tauri/Cargo.toml
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
+### 鍵盤
+
+最高頻的迴圈 —— agent 等你、你授權、繼續下一個 —— 不用碰滑鼠：
+
+| 按鍵 | 動作 |
+|---|---|
+| `⌘/Ctrl+E` | 跳到正在等你的 session |
+| `⌘/Ctrl+1` / `2` / `3` | 終端機牆 · 看板 · 總覽 |
+| `Esc` | 關閉打開的對話框 |
+| `Tab` / `Enter` | session 列、看板卡片、diff 行都可聚焦；Enter 執行 |
+
+已輸入文字的對話框會忽略誤點 backdrop（Escape 仍然關得掉）；刪除卡片要按
+兩下 —— 第二下會用文字說明它要做什麼。
+
 ## 測試
 
 ```bash

@@ -126,7 +126,13 @@ export function Pane({
         title={t('pane.dragHint')}
       >
         <span className={`dot ${session.status}`} />
-        <span className="pane-title">{basename(session.cwd)}</span>
+        {/* The session's title — for an attempt, its card's name. One session,
+            one name, in the sidebar, on the board, and here; the directory
+            stays a hover away. Three attempts on one card's worktrees would
+            all read the same cwd basename. */}
+        <span className="pane-title" title={session.cwd}>
+          {session.title}
+        </span>
         <span className="pane-agent mono">{session.agent}</span>
         <button
           className="pane-zoom"
@@ -194,7 +200,15 @@ export function EdgeDrop({
 }
 
 /** The whole grid when a tab holds nothing yet, and a drop target for it. */
-export function EmptyGrid({ onDrop }: { onDrop: (payload: DragPayload) => void }) {
+export function EmptyGrid({
+  onDrop,
+  anySessions,
+}: {
+  onDrop: (payload: DragPayload) => void;
+  /** With no sessions at all, "drag one from the sidebar" would point at
+   *  nothing. First run gets told where sessions come from instead. */
+  anySessions: boolean;
+}) {
   const t = useT();
   const { zone, handlers } = useDropTarget((p) => onDrop(p), false);
 
@@ -204,12 +218,7 @@ export function EmptyGrid({ onDrop }: { onDrop: (payload: DragPayload) => void }
       data-testid="empty-grid"
       {...handlers}
     >
-      <p className="muted small">{t('pane.empty')}</p>
+      <p className="muted small">{t(anySessions ? 'pane.empty' : 'pane.emptyFirstRun')}</p>
     </div>
   );
-}
-
-function basename(p: string): string {
-  const parts = p.split('/').filter(Boolean);
-  return parts[parts.length - 1] ?? p;
 }

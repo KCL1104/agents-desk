@@ -93,6 +93,7 @@ export const en = {
   'pane.zoom': 'Zoom to full',
   'pane.remove': 'Remove from layout (the session keeps running)',
   'pane.empty': 'Drag a session in from the left, or just click one',
+  'pane.emptyFirstRun': 'Press ＋ at the top left to open a session, or create a card on the board',
   'splitter.hint': 'Drag to resize; double-click to reset to equal',
 
   /* ------------------------------ tabs -------------------------------- */
@@ -130,6 +131,7 @@ export const en = {
   'board.switchAgent': 'Switch agent',
   'board.retryHint': 'Open another attempt with a different agent',
   'board.deleteCard': 'Delete card',
+  'board.confirmDelete': 'Delete for good?',
 
   /* ---------------------------- lifecycle ----------------------------- */
   'lifecycle.backlog': 'Backlog',
@@ -171,6 +173,7 @@ export const en = {
   'inspector.closeView': 'Close inspector',
   'inspector.frozen': 'Frozen',
   'inspector.mergeInto': 'Merge into {branch}',
+  'inspector.merged': 'Merged into {branch}',
   'inspector.openPr': 'Push + open PR',
   'inspector.discard': 'Discard',
   'inspector.discardHint':
@@ -317,6 +320,7 @@ export const zhTW: Record<MessageKey, string> = {
   'pane.zoom': '放大到滿版',
   'pane.remove': '從佈局移除（session 繼續執行）',
   'pane.empty': '把 session 從左側拖進來，或直接點選',
+  'pane.emptyFirstRun': '按左上角的＋開新 session，或到看板開一張卡片',
   'splitter.hint': '拖曳調整比例；雙擊還原等分',
 
   /* ------------------------------ tabs -------------------------------- */
@@ -353,6 +357,7 @@ export const zhTW: Record<MessageKey, string> = {
   'board.switchAgent': '換 agent',
   'board.retryHint': '用另一個 agent 再開一個 attempt',
   'board.deleteCard': '刪除卡片',
+  'board.confirmDelete': '確定刪除？',
 
   /* ---------------------------- lifecycle ----------------------------- */
   'lifecycle.backlog': '待辦',
@@ -394,6 +399,7 @@ export const zhTW: Record<MessageKey, string> = {
   'inspector.closeView': '關閉檢視',
   'inspector.frozen': '已凍結',
   'inspector.mergeInto': '合併回 {branch}',
+  'inspector.merged': '已合併回 {branch}',
   'inspector.openPr': 'push + 開 PR',
   'inspector.discard': '丟棄',
   'inspector.discardHint': '關掉這個 attempt 並收回 worktree。變更會凍結保留。',

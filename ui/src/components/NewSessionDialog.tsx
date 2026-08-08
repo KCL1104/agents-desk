@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useT } from '../i18n';
 import { splitArgs } from '../profiles';
 import { useLaunchers } from './launchers';
+import { Modal } from './Modal';
 
 interface Props {
   onCancel: () => void;
@@ -49,8 +50,7 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
   const [hintBefore, hintAfter] = t('newSession.cwdHint').split('{cd}');
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <Modal onCancel={onCancel} dirty={args.trim() !== ''}>
         <h2>{t('newSession.title')}</h2>
 
         <label>{t('newSession.cwd')}</label>
@@ -105,7 +105,6 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
             {t('newSession.submit')}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
