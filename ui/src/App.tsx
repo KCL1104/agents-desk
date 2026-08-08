@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as React from 'react';
 import { api, subscribe } from './api';
 import { useT } from './i18n';
 import { needsYou } from './types';
 import type { BootStatus, Lifecycle, PermissionMode, SessionMeta, Tab, Task } from './types';
+import { STATUS_KEY } from './sections';
 import { BootGate } from './components/BootGate';
 import { SessionList } from './components/SessionList';
 import { EdgeDrop, EmptyGrid, Pane } from './components/Pane';
@@ -113,6 +114,22 @@ export default function App() {
   const [inspectId, setInspectId] = useState<string | null>(null);
   /** The shortcuts cheat sheet (⌘/Ctrl+/). */
   const [showKeys, setShowKeys] = useState(false);
+  /** What the screen reader hears when an agent starts waiting. The whole
+   *  in-app signal chain is otherwise visual — a breathing card is silence
+   *  to AT, and the OS notification only fires while the window is away. */
+  const [announce, setAnnounce] = useState('');
+  const wasWaiting = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const waiting = new Set(sessions.filter((s) => needsYou(s.status)).map((s) => s.id));
+    for (const s of sessions) {
+      if (waiting.has(s.id) && !wasWaiting.current.has(s.id)) {
+        setAnnounce(`${s.title} ${t(STATUS_KEY[s.status])}`);
+        break;
+      }
+    }
+    wasWaiting.current = waiting;
+  }, [sessions, t]);
 
   const [gridRef, size] = useSize<HTMLDivElement>();
 
@@ -423,10 +440,13 @@ export default function App() {
         e.preventDefault();
         setView((['terminal', 'board', 'overview'] as const)[Number(e.key) - 1]);
       } else if ((e.key === 'e' || e.key === 'E') && !shellsOwn) {
-        const waiting = sessions.find((s) => needsYou(s.status));
-        if (waiting) {
+        // Cycles, not jumps: with three blocked agents, each press lands on
+        // the next one, so answering them all is E, answer, E, answer, E.
+        const waiting = sessions.filter((s) => needsYou(s.status));
+        if (waiting.length > 0) {
           e.preventDefault();
-          void onOpen(waiting.id);
+          const i = waiting.findIndex((s) => s.id === focusedId);
+          void onOpen(waiting[(i + 1) % waiting.length].id);
         }
       } else if ((e.key === 'i' || e.key === 'I') && !shellsOwn) {
         if (view === 'terminal' && (inspectId || activeAttemptId)) {
@@ -816,6 +836,10 @@ export default function App() {
           />
         )}
       </main>
+
+      <div className="visually-hidden" aria-live="polite" data-testid="live-announce">
+        {announce}
+      </div>
 
       {toasts.length > 0 && (
         <div className="toast-stack">

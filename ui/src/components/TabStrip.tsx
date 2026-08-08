@@ -56,6 +56,29 @@ export function TabStrip({
             onDoubleClick={() => setEditing(t.id)}
             title={tr('tabs.rename', { name: t.name })}
             data-testid={`tab-${t.id}`}
+            // Roving tabindex: the strip is one tab stop, arrows move within
+            // it, Enter or F2 renames — the whole contract role="tab" makes.
+            tabIndex={t.id === activeId ? 0 : -1}
+            onKeyDown={(e) => {
+              // Only when the tab itself has focus — keys typed into the
+              // rename input bubble through here and belong to it.
+              if (e.target !== e.currentTarget) return;
+              if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                e.preventDefault();
+                const i = tabs.findIndex((x) => x.id === t.id);
+                const step = e.key === 'ArrowRight' ? 1 : -1;
+                const next = tabs[(i + step + tabs.length) % tabs.length];
+                onSelect(next.id);
+                (
+                  e.currentTarget.parentElement?.querySelector(
+                    `[data-testid="tab-${next.id}"]`,
+                  ) as HTMLElement | null
+                )?.focus();
+              } else if (e.key === 'Enter' || e.key === 'F2') {
+                e.preventDefault();
+                setEditing(t.id);
+              }
+            }}
           >
             {active === t.id ? (
               <input

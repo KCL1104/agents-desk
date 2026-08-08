@@ -102,6 +102,10 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
             <select
               value={mode}
               data-testid="attempt-mode"
+              // The one control here that decides whether the agent runs
+              // unattended; it cannot be an anonymous dropdown to AT.
+              aria-label={t('attempt.modeLabel')}
+              title={t('attempt.modeLabel')}
               onChange={(e) => setMode(e.target.value as PermissionMode)}
             >
               {MODES.map((m) => (
@@ -112,6 +116,11 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
             </select>
           )}
         </div>
+        {modeChoice && mode === 'accept_edits' && (
+          <p className="muted small" data-testid="accept-hint">
+            {t('attempt.acceptHint')}
+          </p>
+        )}
         {modeChoice && mode === 'yolo' && (
           <p className="dialog-warn small" data-testid="yolo-hint">
             {t('attempt.yoloHint')}

@@ -107,6 +107,9 @@ export const en = {
   'keys.sheet': 'This list',
   'keys.shellNote':
     'Typing in a terminal? Ctrl+letter belongs to the shell there — add Shift (Ctrl+Shift+E), the same way Ctrl+Shift+C copies.',
+  'attempt.modeLabel': 'Permission mode',
+  'attempt.acceptHint':
+    'File edits are accepted without asking; every other action still checks with you. Only this attempt’s own worktree is touched.',
   'splitter.hint': 'Drag to resize; double-click to reset to equal',
 
   /* ------------------------------ tabs -------------------------------- */
@@ -187,6 +190,9 @@ export const en = {
   'inspector.frozen': 'Frozen',
   'inspector.mergeInto': 'Merge into {branch}',
   'inspector.merged': 'Merged into {branch}',
+  'inspector.confirmDiscard': 'Discard for good?',
+  'inspector.frozenHint':
+    'This attempt has ended. Its changes are frozen and kept; nothing here can modify them anymore.',
   'inspector.openPr': 'Push + open PR',
   'inspector.discard': 'Discard',
   'inspector.discardHint':
@@ -234,7 +240,7 @@ export const en = {
   'view.overview': 'Overview',
   'view.board': 'Board',
   'view.noSession': 'No sessions yet',
-  'view.inspector': 'Changes / activity',
+  'view.inspector': 'Inspector',
   'view.terminal': 'Terminal',
 
   /* ------------------------------ errors ------------------------------ */
@@ -347,6 +353,8 @@ export const zhTW: Record<MessageKey, string> = {
   'keys.sheet': '這份清單',
   'keys.shellNote':
     '正在終端機裡打字？Ctrl+字母屬於 shell —— 加上 Shift（Ctrl+Shift+E），就像 Ctrl+Shift+C 是複製一樣。',
+  'attempt.modeLabel': '權限模式',
+  'attempt.acceptHint': '檔案編輯不再逐次詢問；其他動作照樣先問你。只會動到這個 attempt 自己的 worktree。',
   'splitter.hint': '拖曳調整比例；雙擊還原等分',
 
   /* ------------------------------ tabs -------------------------------- */
@@ -426,6 +434,8 @@ export const zhTW: Record<MessageKey, string> = {
   'inspector.frozen': '已凍結',
   'inspector.mergeInto': '合併回 {branch}',
   'inspector.merged': '已合併回 {branch}',
+  'inspector.confirmDiscard': '確定丟棄？',
+  'inspector.frozenHint': '這個 attempt 已結束。變更凍結保留，這裡不會再改動它。',
   'inspector.openPr': 'push + 開 PR',
   'inspector.discard': '丟棄',
   'inspector.discardHint': '關掉這個 attempt 並收回 worktree。變更會凍結保留。',
@@ -472,7 +482,7 @@ export const zhTW: Record<MessageKey, string> = {
   'view.overview': '總覽',
   'view.board': '看板',
   'view.noSession': '尚無 session',
-  'view.inspector': '變更／活動',
+  'view.inspector': '檢視器',
   'view.terminal': '終端機',
 
   /* ------------------------------ errors ------------------------------ */

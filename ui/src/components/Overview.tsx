@@ -123,7 +123,9 @@ function Card({
             {s.completed ? t('overview.unmarkDone') : t('overview.markDone')}
           </button>
           {s.live && <button onClick={() => onClose(s.id)}>{t('common.close')}</button>}
-          <button className="primary" onClick={() => onOpen(s.id)}>
+          {/* Primary only while there is a live terminal to look at. On a
+              closed card, "reopen" is an option, not the thing 已完成 is for. */}
+          <button className={s.live ? 'primary' : ''} onClick={() => onOpen(s.id)}>
             {t('common.open')}
           </button>
         </span>

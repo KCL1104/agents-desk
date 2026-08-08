@@ -263,6 +263,76 @@ test.describe('the keyboard can drive', () => {
   });
 });
 
+test.describe('signals reach everyone', () => {
+  test('an agent starting to wait is announced to assistive tech', async ({ page }) => {
+    await boot(page);
+    await toBoard(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await toBoard(page);
+
+    // Starting an attempt already announces once: the folder-trust prompt is
+    // itself a human being waited on.
+    await expect(page.getByTestId('live-announce')).toContainText('等你確認資料夾');
+    await page.evaluate(() => window.__mock.report('s1', 'running'));
+    await page.evaluate(() => window.__mock.report('s1', 'waiting_permission'));
+    await expect(page.getByTestId('live-announce')).toContainText('等你授權');
+    await expect(page.getByTestId('live-announce')).toHaveAttribute('aria-live', 'polite');
+  });
+
+  test('⌘/Ctrl+E cycles through everything that waits', async ({ page }) => {
+    await boot(page);
+    await toBoard(page);
+    await newCard(page, '第一張');
+    await newCard(page, '第二張');
+    await start(page, 'k1');
+    await toBoard(page);
+    await start(page, 'k2');
+    await toBoard(page);
+    await page.evaluate(() => {
+      window.__mock.report('s1', 'waiting_permission');
+      window.__mock.report('s2', 'waiting_permission');
+    });
+
+    await page.keyboard.press('ControlOrMeta+e');
+    await expect(page.locator('.pane.focused')).toHaveAttribute('data-session-id', 's1');
+    // Focus is now inside s1's terminal, where plain Ctrl+E belongs to
+    // readline — the documented in-terminal variant carries Shift.
+    await page.keyboard.press('ControlOrMeta+Shift+E');
+    await expect(page.locator('.pane.focused')).toHaveAttribute('data-session-id', 's2');
+    await page.keyboard.press('ControlOrMeta+Shift+E');
+    await expect(page.locator('.pane.focused')).toHaveAttribute('data-session-id', 's1');
+  });
+
+  test('workspace tabs answer the keyboard', async ({ page }) => {
+    await boot(page);
+    await page.locator('.tab-add').click();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.tab.active')).toContainText('工作 2');
+
+    // The strip is one tab stop; arrows move the selection.
+    await page.locator('[data-testid="tab-t2"]').focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('.tab.active')).toContainText('工作區');
+
+    // Enter on the focused tab opens rename.
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.tab-rename')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.tab-rename')).toHaveCount(0);
+  });
+
+  test('the PATH renders as separate chips, not one fused path', async ({ page }) => {
+    await boot(page);
+    await page.locator('.sidebar-foot').click();
+    await expect(page.locator('.modal .chips .chip')).toHaveCount(3);
+    await expect(page.locator('.modal .chips .chip').first()).toHaveCSS(
+      'border-radius',
+      '5px',
+    );
+  });
+});
+
 test.describe('outcomes say so', () => {
   test('merging an attempt gets its confirmation toast', async ({ page }) => {
     await boot(page);

@@ -189,6 +189,7 @@ test.describe('finishing an attempt', () => {
       window.__mock.diffs.set('k1-a1', 'diff --git a/x b/x\n+half done\n'),
     );
     await page.getByTestId('discard-attempt').click();
+    await page.getByTestId('confirm-discard').click();
 
     await page.getByTestId('view-board').click();
     await expect(page.getByTestId('state-k1')).toHaveText(/已丟棄/);
@@ -202,6 +203,7 @@ test.describe('finishing an attempt', () => {
   test('the finishing buttons are gone once an attempt has ended', async ({ page }) => {
     await withAttempt(page);
     await page.getByTestId('discard-attempt').click();
+    await page.getByTestId('confirm-discard').click();
     await page.getByTestId('view-board').click();
     await page.getByTestId('inspect-k1').click();
 

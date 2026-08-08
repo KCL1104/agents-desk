@@ -173,7 +173,7 @@ driven without the mouse. `⌘/Ctrl+/` shows this list in the app:
 
 | Keys | Does |
 |---|---|
-| `⌘/Ctrl+E` | Jump to the session that is waiting on you |
+| `⌘/Ctrl+E` | Cycle through the sessions waiting on you |
 | `⌘/Ctrl+1` / `2` / `3` | Terminal wall · board · overview |
 | `⌘/Ctrl+Alt+←` / `→` | Focus the next / previous pane |
 | `Ctrl+PgDn` / `PgUp` | Next / previous tab |

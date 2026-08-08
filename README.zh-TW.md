@@ -143,7 +143,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 | 按鍵 | 動作 |
 |---|---|
-| `⌘/Ctrl+E` | 跳到正在等你的 session |
+| `⌘/Ctrl+E` | 在等你的 session 之間循環 |
 | `⌘/Ctrl+1` / `2` / `3` | 終端機牆 · 看板 · 總覽 |
 | `⌘/Ctrl+Alt+←` / `→` | 聚焦下一個 / 上一個 pane |
 | `Ctrl+PgDn` / `PgUp` | 下一個 / 上一個分頁 |

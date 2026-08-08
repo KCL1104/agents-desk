@@ -147,7 +147,11 @@ export function AttemptInspector({
             {t(attempt.mode === 'yolo' ? 'mode.yolo' : 'mode.accept_edits')}
           </span>
         )}
-        {attempt.outcome && <span className="inspector-frozen">{t('inspector.frozen')}</span>}
+        {attempt.outcome && (
+          <span className="inspector-frozen" title={t('inspector.frozenHint')}>
+            {t('inspector.frozen')}
+          </span>
+        )}
       </div>
 
       {/* The repo's run scripts: a dev server or test watcher, one click,
@@ -379,6 +383,15 @@ function Finish({
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [prUrl, setPrUrl] = useState<string | null>(null);
+  /** Discard arms like the card's ✕ does: it ends an attempt and reclaims
+   *  the worktree, a heavier consequence than deleting a card, and it sits
+   *  90px from the PR button. Same guard, same color of consequence. */
+  const [armedDiscard, setArmedDiscard] = useState(false);
+  useEffect(() => {
+    if (!armedDiscard) return;
+    const timer = setTimeout(() => setArmedDiscard(false), 4000);
+    return () => clearTimeout(timer);
+  }, [armedDiscard]);
 
   const run = (what: string, fn: () => Promise<unknown>) => () => {
     setBusy(what);
@@ -426,13 +439,17 @@ function Finish({
         </button>
         <span className="spacer" />
         <button
-          className="danger"
+          className={armedDiscard ? 'confirm-delete' : 'danger'}
           disabled={busy !== null}
-          data-testid="discard-attempt"
+          data-testid={armedDiscard ? 'confirm-discard' : 'discard-attempt'}
           title={t('inspector.discardHint')}
-          onClick={run('discard', () => api.finishAttempt(attempt.id, 'discarded'))}
+          onClick={
+            armedDiscard
+              ? run('discard', () => api.finishAttempt(attempt.id, 'discarded'))
+              : () => setArmedDiscard(true)
+          }
         >
-          {t('inspector.discard')}
+          {armedDiscard ? t('inspector.confirmDiscard') : t('inspector.discard')}
         </button>
       </div>
     </footer>
@@ -560,7 +577,10 @@ function Timeline({ events }: { events: AttemptEvent[] }) {
           {e.kind === 'tool' ? (
             <>
               <span className="tl-tool mono">{e.tool}</span>
-              <span className="tl-detail mono small muted">{e.detail}</span>
+              {/* One truncated line in the list; the full command a hover away. */}
+              <span className="tl-detail mono small muted" title={e.detail ?? undefined}>
+                {e.detail}
+              </span>
             </>
           ) : e.kind === 'status' ? (
             <span className="tl-status">
