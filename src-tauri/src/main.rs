@@ -12,24 +12,50 @@ mod store;
 mod worktree;
 
 use ::core::result::Result as StdResult;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::core::{Core, SessionMeta, UiSink};
 
+/// Whether the main window has the user's eyes. One window, one flag; written
+/// by the window-event handler, read on the notification path.
+static FOCUSED: AtomicBool = AtomicBool::new(true);
+
 /// Bridges the transport-agnostic core onto Tauri. Most events go straight to
-/// the webview; `notify` is handled natively because the OS is the right
-/// renderer for a desktop notification.
+/// the webview; `notify` and `badge` are handled natively because the OS is
+/// the right renderer for both — they are exactly the signals that must reach
+/// someone who is not looking at the app.
 struct TauriSink(AppHandle);
 
 impl UiSink for TauriSink {
     fn emit(&self, event: &str, payload: serde_json::Value) {
         if event == "notify" {
-            let title = payload["title"].as_str().unwrap_or("AgentDesk");
-            let body = payload["body"].as_str().unwrap_or_default();
-            if let Err(e) = self.0.notification().builder().title(title).body(body).show() {
-                eprintln!("[tauri] notification failed: {e}");
+            // Only when the window is unfocused: with the app in front of
+            // you, the in-app banner already says it, and an OS notification
+            // on top would just be an echo.
+            if !FOCUSED.load(Ordering::Relaxed) {
+                let title = payload["title"].as_str().unwrap_or("AgentDesk");
+                let body = payload["body"].as_str().unwrap_or_default();
+                if let Err(e) = self.0.notification().builder().title(title).body(body).show() {
+                    eprintln!("[tauri] notification failed: {e}");
+                }
+            }
+        }
+        if event == "badge" {
+            // The dock/taskbar wears the waiting count, so "how many agents
+            // need me" survives minimising the window. macOS and Unity
+            // launchers render it; elsewhere the call is a harmless no-op.
+            let count = payload["count"].as_i64().unwrap_or(0);
+            let app = self.0.clone();
+            let run = self.0.run_on_main_thread(move || {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.set_badge_count((count > 0).then_some(count));
+                }
+            });
+            if let Err(e) = run {
+                eprintln!("[tauri] badge update failed: {e}");
             }
         }
         if let Err(e) = self.0.emit(event, payload) {
@@ -458,6 +484,11 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|_, event| {
+            if let tauri::WindowEvent::Focused(focused) = event {
+                FOCUSED.store(*focused, Ordering::Relaxed);
+            }
+        })
         .manage(AppState::default())
         .setup(|app| {
             let handle = app.handle().clone();

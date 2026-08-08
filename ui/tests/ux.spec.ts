@@ -157,6 +157,98 @@ test.describe('the keyboard can drive', () => {
     await expect(page.locator('.pane:visible')).toHaveCount(1);
   });
 
+  test('⌘/Ctrl+Alt+arrows cycle the focused pane', async ({ page }) => {
+    await boot(page);
+    // Two ad-hoc sessions straight into the wall.
+    for (const dir of ['/Users/test/repo-one', '/Users/test/repo-two']) {
+      await page.locator('.sidebar-head button.icon').click();
+      await page.locator('.modal input.mono').first().fill(dir);
+      await page.locator('.modal button.primary').click();
+    }
+    await expect(page.locator('.pane:visible')).toHaveCount(2);
+    await expect(page.locator('.pane.focused')).toHaveAttribute('data-session-id', 's2');
+
+    await page.keyboard.press('ControlOrMeta+Alt+ArrowRight');
+    await expect(page.locator('.pane.focused')).toHaveAttribute('data-session-id', 's1');
+    await page.keyboard.press('ControlOrMeta+Alt+ArrowLeft');
+    await expect(page.locator('.pane.focused')).toHaveAttribute('data-session-id', 's2');
+  });
+
+  test('Ctrl+PgDn / PgUp cycle tabs', async ({ page }) => {
+    await boot(page);
+    await page.locator('.tab-add').click();
+    await expect(page.locator('.tab')).toHaveCount(2);
+    // A fresh tab opens in rename mode; keep the offered name and move on.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.tab.active')).toContainText('工作 2');
+
+    await page.keyboard.press('Control+PageDown');
+    await expect(page.locator('.tab.active')).toContainText('工作區');
+    await page.keyboard.press('Control+PageUp');
+    await expect(page.locator('.tab.active')).toContainText('工作 2');
+  });
+
+  test('⌘/Ctrl+I toggles the inspector beside the terminal', async ({ page }) => {
+    await boot(page);
+    await toBoard(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await expect(page.locator('.pane:visible')).toHaveCount(1);
+
+    // From outside the terminal the plain chord works; inside it, readline
+    // owns Ctrl+I (it is Tab), so the Shift variant is the one that fires.
+    await page.locator('.topbar').click();
+    await page.keyboard.press('ControlOrMeta+i');
+    await expect(page.getByTestId('inspector')).toBeVisible();
+    await page.keyboard.press('ControlOrMeta+i');
+    await expect(page.getByTestId('inspector')).toHaveCount(0);
+
+    await page.locator('.term-host').first().click();
+    await page.keyboard.press('ControlOrMeta+Shift+I');
+    await expect(page.getByTestId('inspector')).toBeVisible();
+  });
+
+  test('⌘/Ctrl+/ shows the cheat sheet and Escape puts it away', async ({ page }) => {
+    await boot(page);
+    await page.keyboard.press('ControlOrMeta+/');
+    await expect(page.getByTestId('shortcuts')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('shortcuts')).toHaveCount(0);
+  });
+
+  test('j and k walk the commentable diff lines', async ({ page }) => {
+    await boot(page);
+    await toBoard(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await toBoard(page);
+    await page.evaluate(() => {
+      window.__mock.diffs.set('k1-a1', [
+        'diff --git a/src/auth.py b/src/auth.py',
+        '--- a/src/auth.py',
+        '+++ b/src/auth.py',
+        '@@ -10,3 +10,4 @@',
+        ' def login(request):',
+        '+    session = make_session(user)',
+        '+    return session',
+      ].join('\n'));
+    });
+    await page.getByTestId('inspect-k1').click();
+    await expect(page.getByTestId('diff-body')).toBeVisible();
+
+    await page.getByTestId('diff-body').focus();
+    await page.keyboard.press('j');
+    await expect(page.locator('.diff-line.commentable').first()).toBeFocused();
+    await page.keyboard.press('j');
+    await expect(page.locator('.diff-line.commentable').nth(1)).toBeFocused();
+    await page.keyboard.press('k');
+    await expect(page.locator('.diff-line.commentable').first()).toBeFocused();
+
+    // Enter on the focused line opens the composer for exactly that line.
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('review-note')).toBeVisible();
+  });
+
   test('a board card is enterable with Enter', async ({ page }) => {
     await boot(page);
     await toBoard(page);

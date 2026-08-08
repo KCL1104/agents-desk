@@ -169,18 +169,34 @@ export PATH="$HOME/.cargo/bin:$PATH"
 ### Keyboard
 
 The high-frequency loop — an agent waits, you authorize, you move on — can be
-driven without the mouse:
+driven without the mouse. `⌘/Ctrl+/` shows this list in the app:
 
 | Keys | Does |
 |---|---|
 | `⌘/Ctrl+E` | Jump to the session that is waiting on you |
 | `⌘/Ctrl+1` / `2` / `3` | Terminal wall · board · overview |
+| `⌘/Ctrl+Alt+←` / `→` | Focus the next / previous pane |
+| `Ctrl+PgDn` / `PgUp` | Next / previous tab |
+| `⌘/Ctrl+I` | Open or close the inspector |
+| `J` / `K` | Walk the diff lines; `Enter` comments on one |
 | `Esc` | Close the open dialog |
 | `Tab` / `Enter` | Session rows, board cards, and diff lines are all focusable; Enter acts |
+
+While typing in a terminal, `Ctrl+letter` belongs to the shell (`Ctrl+E` is
+end-of-line); add `Shift` there — `Ctrl+Shift+E` — the same way
+`Ctrl+Shift+C` copies.
 
 A dialog holding typed text ignores backdrop clicks (Escape still closes it),
 and deleting a card takes two clicks — the second one names what it is about
 to do.
+
+### Notifications
+
+When a session starts waiting on you — a permission prompt, a folder-trust
+question — and the window is not focused, the OS shows a notification (in the
+app's language), and the dock/taskbar icon wears the waiting count on macOS
+and Linux. With the window focused the in-app banner already says it, so the
+OS stays quiet.
 
 ## Testing
 

@@ -138,17 +138,31 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 ### 鍵盤
 
-最高頻的迴圈 —— agent 等你、你授權、繼續下一個 —— 不用碰滑鼠：
+最高頻的迴圈 —— agent 等你、你授權、繼續下一個 —— 不用碰滑鼠。
+`⌘/Ctrl+/` 會在 app 裡顯示這份清單：
 
 | 按鍵 | 動作 |
 |---|---|
 | `⌘/Ctrl+E` | 跳到正在等你的 session |
 | `⌘/Ctrl+1` / `2` / `3` | 終端機牆 · 看板 · 總覽 |
+| `⌘/Ctrl+Alt+←` / `→` | 聚焦下一個 / 上一個 pane |
+| `Ctrl+PgDn` / `PgUp` | 下一個 / 上一個分頁 |
+| `⌘/Ctrl+I` | 開關檢視器 |
+| `J` / `K` | 在 diff 行之間移動；`Enter` 對該行留言 |
 | `Esc` | 關閉打開的對話框 |
 | `Tab` / `Enter` | session 列、看板卡片、diff 行都可聚焦；Enter 執行 |
 
+在終端機裡打字時，`Ctrl+字母` 屬於 shell（`Ctrl+E` 是移到行尾）；在那裡加上
+`Shift` —— `Ctrl+Shift+E` —— 就像 `Ctrl+Shift+C` 是複製一樣。
+
 已輸入文字的對話框會忽略誤點 backdrop（Escape 仍然關得掉）；刪除卡片要按
 兩下 —— 第二下會用文字說明它要做什麼。
+
+### 通知
+
+session 開始等你（權限確認、資料夾信任）而視窗不在前景時，OS 會跳出通知
+（用 app 的語言），dock／工作列圖示會掛上等待數（macOS 與 Linux）。視窗在
+前景時 app 內的 banner 已經說了，OS 就保持安靜。
 
 ## 測試
 

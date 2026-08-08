@@ -45,6 +45,7 @@ import {
 } from './layout';
 import { ColumnPicker } from './components/ColumnPicker';
 import { EnvPanel } from './components/EnvPanel';
+import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { useSize } from './useSize';
 
 /** Terminals start at a sane size; the pane refits within a frame of mounting. */
@@ -110,6 +111,8 @@ export default function App() {
    *  derived from the focused session, because a finished attempt has no
    *  session left and is exactly the thing you most want to read. */
   const [inspectId, setInspectId] = useState<string | null>(null);
+  /** The shortcuts cheat sheet (⌘/Ctrl+/). */
+  const [showKeys, setShowKeys] = useState(false);
 
   const [gridRef, size] = useSize<HTMLDivElement>();
 
@@ -375,27 +378,73 @@ export default function App() {
    */
   const onOpenFromSidebar = useCallback((id: string) => void onOpen(id), [onOpen]);
 
-  // The authorize-and-move-on loop is the product's highest-frequency
-  // gesture, so it gets keys: ⌘/Ctrl+E lands on the session that is waiting,
-  // ⌘/Ctrl+1/2/3 switch views. Terminals never see these — xterm ignores
-  // modifier chords it does not own, and the listener runs on the window.
+  /**
+   * The keyboard set. Every chord is one a shell does not own — the bindings
+   * follow the terminal-app convention (gnome-terminal, VS Code): letters on
+   * ⌘/Ctrl, but a Ctrl+letter pressed *inside* a terminal belongs to readline
+   * (Ctrl+E is end-of-line, Ctrl+I is Tab, Ctrl+[ is Esc), so from in there
+   * you add Shift, exactly as Ctrl+Shift+C copies. Panes cycle on
+   * ⌘/Ctrl+Alt+arrows and tabs on Ctrl+PgDn/PgUp, which no shell uses at all.
+   *
+   * An open dialog owns the keyboard outright; nothing here fires past a
+   * backdrop.
+   */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
-      if (e.key === '1' || e.key === '2' || e.key === '3') {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (document.querySelector('.modal-backdrop')) return;
+      const inTerminal =
+        e.target instanceof Element && e.target.closest('.term-host') !== null;
+      const shellsOwn = inTerminal && e.ctrlKey && !e.metaKey && !e.shiftKey;
+
+      if (e.altKey) {
+        if (
+          (e.key === 'ArrowLeft' || e.key === 'ArrowRight') &&
+          view === 'terminal' &&
+          members.length > 1
+        ) {
+          e.preventDefault();
+          const step = e.key === 'ArrowRight' ? 1 : -1;
+          const i = Math.max(0, members.indexOf(focusedId ?? ''));
+          setFocused(members[(i + step + members.length) % members.length]);
+        }
+        return;
+      }
+
+      if (e.key === 'PageDown' || e.key === 'PageUp') {
+        // Tabs wrap around; a cycle with a dead end is a list.
+        if (tabs.length > 1 && activeTab) {
+          e.preventDefault();
+          const step = e.key === 'PageDown' ? 1 : -1;
+          const i = tabs.findIndex((t) => t.id === activeTab.id);
+          setActiveTabId(tabs[(i + step + tabs.length) % tabs.length].id);
+        }
+      } else if (!e.shiftKey && (e.key === '1' || e.key === '2' || e.key === '3')) {
         e.preventDefault();
         setView((['terminal', 'board', 'overview'] as const)[Number(e.key) - 1]);
-      } else if (e.key === 'e' || e.key === 'E') {
+      } else if ((e.key === 'e' || e.key === 'E') && !shellsOwn) {
         const waiting = sessions.find((s) => needsYou(s.status));
         if (waiting) {
           e.preventDefault();
           void onOpen(waiting.id);
         }
+      } else if ((e.key === 'i' || e.key === 'I') && !shellsOwn) {
+        if (view === 'terminal' && (inspectId || activeAttemptId)) {
+          e.preventDefault();
+          setInspectId(inspectId ? null : activeAttemptId);
+        }
+      } else if (e.key === '/' && !shellsOwn) {
+        e.preventDefault();
+        setShowKeys((v) => !v);
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [sessions, onOpen]);
+    // Capture phase: xterm stops propagation on keys it maps (modified
+    // arrows, Ctrl+[), so a bubble listener would never hear our chords from
+    // inside a terminal. Capturing runs first; anything we do not
+    // preventDefault still reaches the terminal untouched.
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [sessions, onOpen, view, inspectId, activeAttemptId, tabs, activeTab, members, focusedId]);
 
   /* ------------------------------ board ----------------------------- */
 
@@ -572,6 +621,7 @@ export default function App() {
               className={inspectId ? 'active' : ''}
               data-testid="toggle-inspector"
               aria-pressed={inspectId !== null}
+              title={`${t('view.inspector')} (⌘/Ctrl+I)`}
               onClick={() => setInspectId(inspectId ? null : activeAttemptId)}
             >
               {t('view.inspector')}
@@ -804,6 +854,7 @@ export default function App() {
         />
       )}
       {showEnv && <EnvPanel boot={boot} onClose={() => setShowEnv(false)} />}
+      {showKeys && <ShortcutsDialog onClose={() => setShowKeys(false)} />}
     </div>
   );
 }

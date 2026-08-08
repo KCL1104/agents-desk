@@ -463,8 +463,27 @@ function DiffPane({
   const noted = (l: DiffLine) =>
     comments.some((c) => c.file === l.file && c.line === l.line && c.excerpt === l.text);
 
+  /**
+   * j/k walk the commentable lines, Enter (per line) opens the comment.
+   * Plain letters are safe here: the diff is not a text field, and the
+   * review textarea lives outside this element, so typing never collides.
+   */
+  const onDiffKeys = (e: React.KeyboardEvent<HTMLPreElement>) => {
+    if (e.key !== 'j' && e.key !== 'k') return;
+    const lines = [...e.currentTarget.querySelectorAll<HTMLElement>('.diff-line.commentable')];
+    if (lines.length === 0) return;
+    e.preventDefault();
+    const at = lines.indexOf(document.activeElement as HTMLElement);
+    const next =
+      at < 0
+        ? lines[0]
+        : lines[Math.min(lines.length - 1, Math.max(0, at + (e.key === 'j' ? 1 : -1)))];
+    next.focus();
+    next.scrollIntoView({ block: 'nearest' });
+  };
+
   return (
-    <pre className="diff mono" data-testid="diff-body">
+    <pre className="diff mono" data-testid="diff-body" tabIndex={0} onKeyDown={onDiffKeys}>
       {lines.map((l, i) => (
         <span
           key={i}

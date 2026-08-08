@@ -194,6 +194,16 @@ textarea { resize: vertical; }
 .stat-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modal .chips { max-height: 150px; overflow-y: auto; margin-top: 6px; }
 
+/* The cheat sheet: combos on the left, meanings on the right. */
+.keys { border-collapse: collapse; width: 100%; margin-top: 4px; }
+.keys td { padding: 5px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+.keys td:first-child { width: 45%; }
+.keys kbd {
+  font-family: var(--mono); font-size: 11px; color: var(--fg);
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 5px;
+  padding: 1px 6px; white-space: nowrap;
+}
+
 .waiting-banner {
   margin: 8px; border-color: #4a3a1c; color: var(--warn);
   background: #241d10; text-align: left; font-size: 12px;

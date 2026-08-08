@@ -94,6 +94,19 @@ export const en = {
   'pane.remove': 'Remove from layout (the session keeps running)',
   'pane.empty': 'Drag a session in from the left, or just click one',
   'pane.emptyFirstRun': 'Press ＋ at the top left to open a session, or create a card on the board',
+
+  /* --------------------------- shortcuts ------------------------------ */
+  'keys.title': 'Keyboard shortcuts',
+  'keys.jump': 'Jump to the session waiting on you',
+  'keys.views': 'Terminal wall · board · overview',
+  'keys.cyclePanes': 'Focus the next / previous pane',
+  'keys.cycleTabs': 'Next / previous tab',
+  'keys.inspector': 'Open or close the inspector',
+  'keys.diff': 'Walk the diff lines; Enter comments on one',
+  'keys.escape': 'Close the open dialog',
+  'keys.sheet': 'This list',
+  'keys.shellNote':
+    'Typing in a terminal? Ctrl+letter belongs to the shell there — add Shift (Ctrl+Shift+E), the same way Ctrl+Shift+C copies.',
   'splitter.hint': 'Drag to resize; double-click to reset to equal',
 
   /* ------------------------------ tabs -------------------------------- */
@@ -321,6 +334,19 @@ export const zhTW: Record<MessageKey, string> = {
   'pane.remove': '從佈局移除（session 繼續執行）',
   'pane.empty': '把 session 從左側拖進來，或直接點選',
   'pane.emptyFirstRun': '按左上角的＋開新 session，或到看板開一張卡片',
+
+  /* --------------------------- shortcuts ------------------------------ */
+  'keys.title': '鍵盤快捷鍵',
+  'keys.jump': '跳到正在等你的 session',
+  'keys.views': '終端機牆 · 看板 · 總覽',
+  'keys.cyclePanes': '聚焦下一個 / 上一個 pane',
+  'keys.cycleTabs': '下一個 / 上一個分頁',
+  'keys.inspector': '開關檢視器',
+  'keys.diff': '在 diff 行之間移動；Enter 對該行留言',
+  'keys.escape': '關閉打開的對話框',
+  'keys.sheet': '這份清單',
+  'keys.shellNote':
+    '正在終端機裡打字？Ctrl+字母屬於 shell —— 加上 Shift（Ctrl+Shift+E），就像 Ctrl+Shift+C 是複製一樣。',
   'splitter.hint': '拖曳調整比例；雙擊還原等分',
 
   /* ------------------------------ tabs -------------------------------- */

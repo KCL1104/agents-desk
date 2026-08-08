@@ -68,7 +68,12 @@ export function TabStrip({
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') e.currentTarget.blur();
-                  if (e.key === 'Escape') setEditing(null);
+                  if (e.key === 'Escape') {
+                    // Put the old name back, then leave through blur — the
+                    // one path that also clears an app-driven rename.
+                    e.currentTarget.value = t.name;
+                    e.currentTarget.blur();
+                  }
                 }}
                 onClick={(e) => e.stopPropagation()}
               />
