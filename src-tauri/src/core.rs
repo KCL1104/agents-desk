@@ -18,7 +18,8 @@ use crate::prompt::{self, Delivery};
 use crate::pty::{PtyRegistry, PtySink};
 use crate::shell_env::{self, ShellEnv};
 use crate::store::{
-    Lifecycle, Outcome, PermissionMode, Store, StoredAttempt, StoredSession, StoredTab, StoredTask,
+    Lifecycle, Outcome, PermissionMode, Profile, Store, StoredAttempt, StoredSession, StoredTab,
+    StoredTask,
 };
 use crate::worktree::{self, Worktrees};
 
@@ -202,6 +203,24 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// The CLIs whose names the dialogs always offer, profile or no profile.
+///
+/// A profile may not take one of these names: "claude" meaning something
+/// other than `claude` is exactly the confusion names exist to prevent.
+const BARE_AGENTS: [&str; 4] = ["claude", "codex", "gemini", "aider"];
+
+/// One entry in a launch dialog's list: a bare agent, or a named profile.
+#[derive(Debug, Clone, Serialize)]
+pub struct Launcher {
+    /// What the person picks — a bare agent's own name, or a profile's.
+    pub name: String,
+    /// The CLI it resolves to, so the dialog knows which conventions apply
+    /// (prompt delivery, permission modes) without resolving anything itself.
+    pub agent: String,
+    /// True for a profile, so the list can say which entries are yours.
+    pub profile: bool,
 }
 
 /// A setup script waiting to wrap a launch. See `Core::launch`.
@@ -796,12 +815,15 @@ impl Core {
     pub fn preview_prompt(&self, task_id: &str, agent: &str) -> Result<serde_json::Value> {
         let task = self.task(task_id)?;
         let text = self.render_prompt(&task, None)?;
+        // A profile resolves before the question is asked: what matters is
+        // the CLI underneath, not what the person calls it.
+        let (agent, _) = self.resolve_launcher(agent);
         Ok(serde_json::json!({
             "prompt": text,
             // So the dialog can say plainly that this one will not be sent
             // for you, rather than letting you press a button that quietly
             // does nothing.
-            "willSend": prompt::delivery_for(agent) == Delivery::Positional,
+            "willSend": prompt::delivery_for(&agent) == Delivery::Positional,
         }))
     }
 
@@ -991,6 +1013,10 @@ impl Core {
         cols: u16,
         rows: u16,
     ) -> Result<OpenedAttempt> {
+        // The picked launcher becomes an actual CLI here — a queued start
+        // carries the profile's *name* and resolves only now, so it runs
+        // whatever the profile says at the moment it actually starts.
+        let (agent, profile_args) = self.resolve_launcher(&agent);
         let attempt_id = uuid::Uuid::new_v4().to_string();
         let cwd = wt.path.to_string_lossy().to_string();
 
@@ -1060,14 +1086,15 @@ impl Core {
             .unwrap()
             .insert(session_id.clone(), meta.clone());
 
-        // The mode's flags are measured for Claude Code only; any other CLI
-        // launches without them rather than being handed a guess. The mode is
-        // still recorded either way — it is what the person approved.
-        let opts: Vec<String> = if agent == "claude" {
-            mode.claude_args().iter().map(|s| s.to_string()).collect()
-        } else {
-            Vec::new()
-        };
+        // The profile's standing arguments first, then the mode's flags —
+        // all options, ahead of `--plugin-dir` and the prompt. The mode's
+        // flags are measured for Claude Code only; any other CLI launches
+        // without them rather than being handed a guess. The mode is still
+        // recorded either way — it is what the person approved.
+        let mut opts = profile_args;
+        if agent == "claude" {
+            opts.extend(mode.claude_args().iter().map(|s| s.to_string()));
+        }
 
         // `--continue` is deliberately absent: this worktree has no history
         // for it to continue, and the prompt is what starts the work.
@@ -1291,6 +1318,75 @@ impl Core {
 
     pub fn attempt_events(&self, attempt_id: &str) -> Result<Vec<crate::store::AttemptEvent>> {
         self.store.list_events(attempt_id)
+    }
+
+    /* --------------------------- profiles --------------------------- */
+
+    /// Everything a launch dialog can offer: the bare agents, then the
+    /// person's profiles. The dialogs render this instead of carrying their
+    /// own list, so a new profile — or one day a new agent — is data, not a
+    /// frontend change.
+    pub fn launchers(&self) -> Result<Vec<Launcher>> {
+        let mut list: Vec<Launcher> = BARE_AGENTS
+            .iter()
+            .map(|a| Launcher {
+                name: a.to_string(),
+                agent: a.to_string(),
+                profile: false,
+            })
+            .collect();
+        for p in self.store.profiles()? {
+            list.push(Launcher {
+                name: p.name,
+                agent: p.agent,
+                profile: true,
+            });
+        }
+        Ok(list)
+    }
+
+    pub fn profiles(&self) -> Result<Vec<Profile>> {
+        self.store.profiles()
+    }
+
+    /// Replace the profiles, after checking they can actually be offered:
+    /// every name says something, no two say the same thing, and none of
+    /// them says "claude" while meaning something else.
+    pub fn set_profiles(&self, profiles: Vec<Profile>) -> Result<()> {
+        let mut seen = std::collections::HashSet::new();
+        for p in &profiles {
+            let name = p.name.trim();
+            if name.is_empty() {
+                return Err(anyhow!("a profile needs a name"));
+            }
+            if p.agent.trim().is_empty() {
+                return Err(anyhow!("profile `{name}` names no agent CLI"));
+            }
+            if BARE_AGENTS.contains(&name) {
+                return Err(anyhow!(
+                    "`{name}` is an agent's own name; a profile may not shadow it"
+                ));
+            }
+            if !seen.insert(name.to_string()) {
+                return Err(anyhow!("two profiles are both called `{name}`"));
+            }
+        }
+        self.store.set_profiles(&profiles)
+    }
+
+    /// What a picked launcher name means: a profile's agent and standing
+    /// arguments, or — for any other string — a bare binary with none. The
+    /// fallback is today's semantics kept honest: `agent` has always been a
+    /// binary resolved on the login-shell PATH, so a profile deleted while a
+    /// card sat in the queue degrades to a name the spawn will report as not
+    /// found, rather than to a silent guess.
+    fn resolve_launcher(&self, name: &str) -> (String, Vec<String>) {
+        if let Ok(profiles) = self.store.profiles() {
+            if let Some(p) = profiles.into_iter().find(|p| p.name == name) {
+                return (p.agent, p.args);
+            }
+        }
+        (name.to_string(), Vec::new())
     }
 
     /// The names of the repository's run scripts, for the drawer's buttons.
@@ -1581,6 +1677,13 @@ impl Core {
         cols: u16,
         rows: u16,
     ) -> Result<String> {
+        // A profile name resolves to its CLI and standing arguments; the
+        // person's own arguments come after, so they can override. The row
+        // remembers the resolved CLI — reopening runs `claude`, whatever the
+        // profile was called.
+        let (agent, mut opts) = self.resolve_launcher(&agent);
+        opts.extend(extra_args);
+        let extra_args = opts;
         let id = uuid::Uuid::new_v4().to_string();
         let title = std::path::Path::new(&cwd)
             .file_name()

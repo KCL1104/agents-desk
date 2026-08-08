@@ -67,6 +67,13 @@ terminal's** (see below).
   ad-hoc sessions. The mode is approved once in the start dialog, survives
   queueing and resumes, and the card wears a ⚡ badge while a session runs
   unprompted
+- **Named profiles** (M8): a profile is a name for "this CLI, with these
+  flags, every time" — `opus 版` for `claude --model opus`. Made in the
+  environment panel, offered in both launch dialogs beside the bare agents,
+  applied ahead of everything else on the command line. What is recorded and
+  resumed is the CLI underneath, so prompt delivery, status hooks and
+  permission modes all behave by what actually ran. A queued card carries
+  the profile's *name* and resolves it when its slot frees
 - **English and 繁體中文**, following your system language and switchable from
   the environment panel. Native notifications follow the same setting
 

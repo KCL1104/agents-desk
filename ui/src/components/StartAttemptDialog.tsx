@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useT } from '../i18n';
 import type { PermissionMode, Task } from '../types';
+import { useLaunchers } from './launchers';
 
 interface Props {
   task: Task;
@@ -9,8 +10,6 @@ interface Props {
   onStart: (agent: string, prompt: string, mode: PermissionMode) => void;
   error: string | null;
 }
-
-const AGENTS = ['claude', 'codex', 'gemini', 'aider'];
 
 /** Offered in this order: each step down asks less. */
 const MODES: readonly PermissionMode[] = ['normal', 'accept_edits', 'yolo'];
@@ -38,12 +37,17 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
   const [willSend, setWillSend] = useState(true);
   const [edited, setEdited] = useState(false);
   const [copied, setCopied] = useState(false);
+  const launchers = useLaunchers();
+
+  // What the picked launcher runs underneath — a profile of claude is still
+  // claude for every convention that matters here.
+  const resolved = launchers.find((l) => l.name === agent)?.agent ?? agent;
 
   // Only Claude Code's permission flags are measured, so only its sessions
   // get the choice. This dialog is also the safety gate's shape: modes exist
   // for attempts alone, never for ad-hoc sessions — an attempt can only
   // spend its own worktree and branch.
-  const modeChoice = agent === 'claude';
+  const modeChoice = resolved === 'claude';
 
   // Re-render the preview when the agent changes, unless it has been edited —
   // silently discarding someone's typing to refresh a template is worse than
@@ -80,15 +84,17 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
             value={agent}
             data-testid="attempt-agent"
             onChange={(e) => {
-              setAgent(e.target.value);
+              const next = e.target.value;
+              setAgent(next);
               // A mode chosen for claude must not ride silently into a CLI
               // it was never measured against.
-              if (e.target.value !== 'claude') setMode('normal');
+              const nextAgent = launchers.find((l) => l.name === next)?.agent ?? next;
+              if (nextAgent !== 'claude') setMode('normal');
             }}
           >
-            {AGENTS.map((a) => (
-              <option key={a} value={a}>
-                {a}
+            {launchers.map((l) => (
+              <option key={l.name} value={l.name}>
+                {l.profile ? `${l.name} · ${l.agent}` : l.name}
               </option>
             ))}
           </select>
@@ -129,7 +135,9 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
         ) : (
           <p className="dialog-warn small" data-testid="attempt-manual">
             {warnBefore}
-            <strong>{agent}</strong>
+            {/* The CLI underneath, not the profile's nickname — the warning
+                is about the binary's conventions. */}
+            <strong>{resolved}</strong>
             {warnAfter}
             <button
               className="chip"

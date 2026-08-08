@@ -88,6 +88,8 @@ declare global {
       dirtyWorktrees: Set<string>;
       /** The repo's `.agentdesk/config.json` run script names. */
       runScripts: string[];
+      /** Named launch profiles, as the settings table holds them. */
+      profiles: Array<{ name: string; agent: string; args: string[] }>;
       maxConcurrent: number;
       /** How many attempts hold a terminal right now. */
       running(): number;
@@ -148,6 +150,7 @@ export function installMock(): void {
     pendingStarts: new Map<string, { agent: string; prompt: string; mode: string }>(),
     dirtyWorktrees: new Set<string>(),
     runScripts: [] as string[],
+    profiles: [] as Array<{ name: string; agent: string; args: string[] }>,
     calls: [] as Array<{ cmd: string; args: unknown }>,
     listeners: new Map<string, number[]>(),
     cbSeq: 0,
@@ -261,6 +264,11 @@ export function installMock(): void {
 
   const now = () => Date.now();
 
+  /** A profile name resolves to its CLI; anything else is a binary name —
+      the core's own semantics. */
+  const resolveAgent = (name: string) =>
+    mock.profiles.find((p) => p.name === name)?.agent ?? name;
+
   const makeSession = (cwd: string, agent: string): MockSession => {
     const id = `s${mock.sessions.length + 1}`;
     return {
@@ -347,7 +355,7 @@ export function installMock(): void {
     },
 
     new_session: (args) => {
-      const s = makeSession(String(args.cwd), String(args.agent ?? 'claude'));
+      const s = makeSession(String(args.cwd), resolveAgent(String(args.agent ?? 'claude')));
       mock.sessions.push(s);
       if (!mock.snapshots.has(s.id)) mock.snapshots.set(s.id, { data: '', seq: 0 });
       // The real core broadcasts the new list; the pane mounts on the render
@@ -471,8 +479,10 @@ export function installMock(): void {
           `[AgentDesk 任務] ${t?.title ?? ''}\n\n` +
           `你在一個專為這張卡開的 git worktree：分支 agentdesk/card-${seq}，` +
           `從 ${t?.base_branch ?? 'main'} @ abcd1234 開出。\n\n---\n\n${t?.prompt ?? ''}\n`,
-        // Only Claude Code's argument conventions have been measured.
-        willSend: String(args.agent) === 'claude',
+        // Only Claude Code's argument conventions have been measured. A
+        // profile resolves to the CLI underneath before the question is
+        // asked.
+        willSend: resolveAgent(String(args.agent)) === 'claude',
       };
     },
 
@@ -542,8 +552,10 @@ export function installMock(): void {
     },
   };
 
-  /** Open an attempt now. Shared by the button and the queue, as in the core. */
-  function startAttempt(taskId: string, agent: string, prompt: string, mode = 'normal') {
+  /** Open an attempt now. Shared by the button and the queue, as in the core.
+      The launcher name resolves here — a queued start carries the name. */
+  function startAttempt(taskId: string, launcher: string, prompt: string, mode = 'normal') {
+      const agent = resolveAgent(launcher);
       const t = mock.tasks.find((x) => x.id === taskId)!;
       const seq = t.attempts.length + 1;
       const attemptId = `${t.id}-a${seq}`;
@@ -633,6 +645,35 @@ export function installMock(): void {
     },
 
     attempt_events: (args) => mock.events.get(String(args.attemptId)) ?? [],
+
+    list_launchers: () =>
+      [
+        ...['claude', 'codex', 'gemini', 'aider'].map((a) => ({
+          name: a,
+          agent: a,
+          profile: false,
+        })),
+        ...mock.profiles.map((p) => ({ name: p.name, agent: p.agent, profile: true })),
+      ],
+
+    list_profiles: () => mock.profiles,
+
+    save_profiles: (args) => {
+      const profiles = args.profiles as Array<{ name: string; agent: string; args: string[] }>;
+      // The core's validation, mirrored: every name says something, no two
+      // say the same thing, none shadows an agent's own name.
+      const seen = new Set<string>();
+      for (const p of profiles) {
+        if (p.name.trim() === '') throw new Error('a profile needs a name');
+        if (['claude', 'codex', 'gemini', 'aider'].includes(p.name.trim())) {
+          throw new Error(`\`${p.name}\` is an agent's own name; a profile may not shadow it`);
+        }
+        if (seen.has(p.name.trim())) throw new Error(`two profiles are both called \`${p.name}\``);
+        seen.add(p.name.trim());
+      }
+      mock.profiles = profiles;
+      return null;
+    },
 
     list_run_scripts: () => mock.runScripts,
 

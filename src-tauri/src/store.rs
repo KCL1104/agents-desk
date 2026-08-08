@@ -736,6 +736,25 @@ impl Store {
         Ok(())
     }
 
+    /* --------------------------- profiles -------------------------- */
+
+    /// The stored profiles, oldest first. No row is not a condition — most
+    /// installs will never make one — but a row that cannot be parsed is an
+    /// error: it was written by this app, so it being unreadable is a bug to
+    /// surface, not a preference to shrug off.
+    pub fn profiles(&self) -> Result<Vec<Profile>> {
+        match self.setting(PROFILES_KEY)? {
+            None => Ok(Vec::new()),
+            Some(json) => serde_json::from_str(&json).context("parsing stored profiles"),
+        }
+    }
+
+    /// Replace the whole set. Validation lives in the core — this is just
+    /// persistence, and it stores what it was given.
+    pub fn set_profiles(&self, profiles: &[Profile]) -> Result<()> {
+        self.set_setting(PROFILES_KEY, &serde_json::to_string(profiles)?)
+    }
+
     /* --------------------------- settings -------------------------- */
 
     pub fn setting(&self, key: &str) -> Result<Option<String>> {
@@ -851,6 +870,25 @@ impl Store {
         Ok(rows)
     }
 }
+
+/// A named way to launch an agent: which CLI, and the flags it always gets.
+///
+/// A profile is mechanics — binary and arguments — and nothing else. The
+/// permission mode deliberately does not live here: it is approved per
+/// attempt, in the dialog, and letting a profile smuggle `yolo` in under a
+/// friendly name would turn choosing a profile into an approval nobody read.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Profile {
+    /// What the dialogs show. Must not shadow a bare agent's own name.
+    pub name: String,
+    /// The CLI it launches — `claude`, `codex`, anything on the PATH.
+    pub agent: String,
+    /// Options this profile always passes, before anything else.
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
+const PROFILES_KEY: &str = "profiles";
 
 /// A start that is waiting for a slot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1434,6 +1472,29 @@ mod tests {
         s.enqueue_start(&queued("t1", "claude", 0)).unwrap();
         s.delete_task("t1").unwrap();
         assert!(s.queue().unwrap().is_empty());
+    }
+
+    #[test]
+    fn profiles_round_trip_and_absence_is_just_empty() {
+        let s = Store::in_memory().unwrap();
+        assert!(s.profiles().unwrap().is_empty());
+
+        let mine = vec![Profile {
+            name: "opus 版".into(),
+            agent: "claude".into(),
+            args: vec!["--model".into(), "opus".into()],
+        }];
+        s.set_profiles(&mine).unwrap();
+        assert_eq!(s.profiles().unwrap(), mine);
+    }
+
+    /// Profiles are written only by this app, so an unreadable row is a bug
+    /// to surface — not a preference to quietly drop.
+    #[test]
+    fn an_unreadable_profiles_row_is_an_error_not_an_empty_list() {
+        let s = Store::in_memory().unwrap();
+        s.set_setting("profiles", "not json").unwrap();
+        assert!(s.profiles().is_err());
     }
 
     #[test]

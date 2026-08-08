@@ -419,6 +419,32 @@ fn run_script(
         .map_err(|e| format!("{e:#}"))
 }
 
+/* ---------------------------- profiles ----------------------------- */
+
+/// Everything a launch dialog can offer: bare agents, then profiles.
+#[tauri::command]
+fn list_launchers(state: State<'_, AppState>) -> StdResult<Vec<crate::core::Launcher>, String> {
+    state.core()?.launchers().map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn list_profiles(state: State<'_, AppState>) -> StdResult<Vec<store::Profile>, String> {
+    state.core()?.profiles().map_err(|e| format!("{e:#}"))
+}
+
+/// Replace the profiles wholesale — there are few enough that the editor
+/// works on the whole list.
+#[tauri::command]
+fn save_profiles(
+    state: State<'_, AppState>,
+    profiles: Vec<store::Profile>,
+) -> StdResult<(), String> {
+    state
+        .core()?
+        .set_profiles(profiles)
+        .map_err(|e| format!("{e:#}"))
+}
+
 /* ------------------------------------------------------------------ */
 /* Main                                                                */
 /* ------------------------------------------------------------------ */
@@ -483,6 +509,9 @@ fn main() {
             send_followup,
             list_run_scripts,
             run_script,
+            list_launchers,
+            list_profiles,
+            save_profiles,
             cancel_queued,
             concurrency,
             set_concurrency,

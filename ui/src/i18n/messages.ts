@@ -197,6 +197,16 @@ export const en = {
   'env.degraded':
     'Could not read the login shell environment, so this process’s own was used instead. npx-style MCP servers may fail to start.',
   'env.language': 'Language',
+  'env.profiles': 'Agent profiles',
+  'env.profilesHint':
+    'A named way to launch an agent — the CLI plus the flags it always gets. Profiles appear in both launch dialogs.',
+
+  /* ----------------------------- profiles ------------------------------ */
+  'profile.namePlaceholder': 'opus, quiet claude, …',
+  'profile.add': 'Add profile',
+  'profile.remove': 'Remove this profile',
+  'profile.save': 'Save profiles',
+  'profile.saved': 'Saved ✓',
 
   /* ------------------------------ views ------------------------------- */
   'view.overview': 'Overview',
@@ -403,6 +413,16 @@ export const zhTW: Record<MessageKey, string> = {
   'env.degraded':
     '無法從 login shell 取得環境，已退回本行程的環境。npx 型的 MCP server 可能起不來。',
   'env.language': '語言',
+  'env.profiles': 'Agent 設定檔',
+  'env.profilesHint':
+    '具名的啟動方式 —— 哪個 CLI、加上它每次都帶的參數。設定檔會出現在兩個啟動對話框裡。',
+
+  /* ----------------------------- profiles ------------------------------ */
+  'profile.namePlaceholder': 'opus、安靜的 claude、…',
+  'profile.add': '新增設定檔',
+  'profile.remove': '移除這個設定檔',
+  'profile.save': '儲存設定檔',
+  'profile.saved': '已儲存 ✓',
 
   /* ------------------------------ views ------------------------------- */
   'view.overview': '總覽',

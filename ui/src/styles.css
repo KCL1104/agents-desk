@@ -624,6 +624,12 @@ textarea { resize: vertical; }
 }
 .board-card-branch { color: var(--fg-dim); }
 
+/* The profile editor: one row per profile, the whole list saved at once. */
+.profiles { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
+.profile-row { display: flex; gap: 6px; align-items: center; }
+.profile-row input, .profile-row select { min-width: 0; }
+.profile-row .profile-args { flex: 1; }
+
 /* A session running with fewer prompts wears it openly. */
 .mode-badge {
   font-size: 11px; line-height: 1.4; padding: 0 5px;

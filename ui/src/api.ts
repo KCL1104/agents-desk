@@ -3,9 +3,11 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
   AttemptEvent,
   BootStatus,
+  Launcher,
   Lifecycle,
   Outcome,
   PermissionMode,
+  Profile,
   SessionMeta,
   Tab,
   Task,
@@ -100,6 +102,12 @@ export const api = {
       message. Only for CLIs whose input conventions are measured. */
   sendFollowup: (id: string, text: string) =>
     invoke<void>('send_followup', { id, text }),
+
+  /** Everything a launch dialog can offer: bare agents, then profiles. */
+  listLaunchers: () => invoke<Launcher[]>('list_launchers'),
+  listProfiles: () => invoke<Profile[]>('list_profiles'),
+  /** Replace the profiles wholesale; the backend validates the set. */
+  saveProfiles: (profiles: Profile[]) => invoke<void>('save_profiles', { profiles }),
 
   /** The repository's run scripts (`.agentdesk/config.json`), by name. */
   listRunScripts: (attemptId: string) =>

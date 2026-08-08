@@ -873,6 +873,154 @@ fn an_empty_followup_is_not_sent() {
     assert!(h.core.send_followup(&a.session_id, "  \n").is_err());
 }
 
+/* ------------------------------ profiles ------------------------------- */
+
+/// A profile is a name for "this CLI, with these flags, every time". Picking
+/// it launches the real agent with the standing arguments first — and the
+/// prompt still last — while the attempt records the CLI underneath, so
+/// delivery, hooks and resume all behave by what actually ran.
+#[test]
+fn a_profile_launches_its_agent_with_its_standing_arguments() {
+    let h = Harness::new("profile");
+    let _guard = h.rt.enter();
+    h.core
+        .set_profiles(vec![crate::store::Profile {
+            name: "opus 版".into(),
+            agent: "claude".into(),
+            args: vec!["--model".into(), "opus".into()],
+        }])
+        .unwrap();
+    let task = h.card("Fix login", "make it work");
+
+    let opened = h
+        .core
+        .start_attempt(&task, "opus 版".into(), None, PermissionMode::Normal, 100, 30)
+        .unwrap()
+        .attempt
+        .unwrap();
+
+    let args = h.args_of(&opened.session_id);
+    let pair = args.windows(2).any(|w| w[0] == "--model" && w[1] == "opus");
+    assert!(pair, "the profile's arguments never arrived: {args:?}");
+    assert_eq!(args.last(), Some(&opened.prompt), "the prompt must stay last");
+    assert!(
+        args.iter().any(|a| a == "--plugin-dir"),
+        "a claude profile still reports status: {args:?}"
+    );
+    assert!(opened.prompt_sent, "a claude profile still sends the prompt");
+
+    // The record names the CLI, not the nickname.
+    assert_eq!(h.core.task_board()[0].attempts[0].attempt.agent, "claude");
+}
+
+#[test]
+fn an_ad_hoc_session_can_start_from_a_profile_and_own_args_come_after() {
+    let h = Harness::new("profileadhoc");
+    let _guard = h.rt.enter();
+    h.core
+        .set_profiles(vec![crate::store::Profile {
+            name: "opus 版".into(),
+            agent: "claude".into(),
+            args: vec!["--model".into(), "opus".into()],
+        }])
+        .unwrap();
+
+    let id = h
+        .core
+        .new_session(
+            h.repo.to_string_lossy().into(),
+            "opus 版".into(),
+            vec!["--verbose".into()],
+            100,
+            30,
+        )
+        .unwrap();
+
+    let args = h.args_of(&id);
+    let model = args.iter().position(|a| a == "--model").expect("profile args present");
+    let verbose = args.iter().position(|a| a == "--verbose").expect("own args present");
+    assert!(model < verbose, "the person's own arguments must come after, so they can override: {args:?}");
+    // The row remembers the resolved CLI, so reopening runs `claude`.
+    let session = h.core.sessions().into_iter().find(|s| s.id == id).unwrap();
+    assert_eq!(session.agent, "claude");
+}
+
+/// The queue stores the profile's *name*; what runs is whatever the profile
+/// says when the slot finally frees.
+#[test]
+fn a_queued_start_resolves_its_profile_when_its_turn_comes() {
+    let h = Harness::new("profilequeue");
+    let _guard = h.rt.enter();
+    h.core
+        .set_profiles(vec![crate::store::Profile {
+            name: "opus 版".into(),
+            agent: "claude".into(),
+            args: vec!["--model".into(), "opus".into()],
+        }])
+        .unwrap();
+    h.core.set_max_concurrent(1).unwrap();
+    let first = h.card("First", "p");
+    let second = h.card("Second", "p");
+
+    let a = h.start(&first, "claude");
+    h.core
+        .start_attempt(&second, "opus 版".into(), None, PermissionMode::Normal, 100, 30)
+        .unwrap();
+    h.core.close_session(&a.session_id).unwrap();
+
+    let started = wait_for(Duration::from_secs(10), || {
+        h.core
+            .task_board()
+            .into_iter()
+            .find(|t| t.task.id == second)
+            .map(|t| !t.attempts.is_empty())
+            .unwrap_or(false)
+    });
+    assert!(started, "the queue never moved");
+    let view = h
+        .core
+        .task_board()
+        .into_iter()
+        .find(|t| t.task.id == second)
+        .unwrap();
+    assert_eq!(view.attempts[0].attempt.agent, "claude");
+    let session = view.attempts[0].session_id.clone().unwrap();
+    let args = h.args_of(&session);
+    assert!(args.windows(2).any(|w| w[0] == "--model" && w[1] == "opus"), "{args:?}");
+}
+
+/// Names have to mean one thing: no empties, no repeats, and none of them
+/// may be an agent's own name while meaning something else.
+#[test]
+fn profiles_that_could_not_be_offered_are_refused() {
+    let h = Harness::new("profilebad");
+    let _guard = h.rt.enter();
+    let profile = |name: &str, agent: &str| crate::store::Profile {
+        name: name.into(),
+        agent: agent.into(),
+        args: Vec::new(),
+    };
+
+    assert!(h.core.set_profiles(vec![profile("", "claude")]).is_err());
+    assert!(h.core.set_profiles(vec![profile("x", " ")]).is_err());
+    assert!(
+        h.core.set_profiles(vec![profile("claude", "codex")]).is_err(),
+        "a profile shadowing an agent's own name is the confusion names exist to prevent"
+    );
+    assert!(h
+        .core
+        .set_profiles(vec![profile("mine", "claude"), profile("mine", "codex")])
+        .is_err());
+
+    // And nothing broken was stored along the way.
+    assert!(h.core.profiles().unwrap().is_empty());
+
+    // The launcher list is the four bare agents plus whatever is stored.
+    h.core.set_profiles(vec![profile("mine", "claude")]).unwrap();
+    let names: Vec<String> = h.core.launchers().unwrap().into_iter().map(|l| l.name).collect();
+    assert_eq!(names, vec!["claude", "codex", "gemini", "aider", "mine"]);
+}
+
 /* --------------------------- permission modes -------------------------- */
 
 /// The auto-accept switch, with the worktree as the safety case: the attempt

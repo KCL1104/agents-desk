@@ -112,6 +112,25 @@ export interface SessionMeta {
   attempt_id: string | null;
 }
 
+/** A named way to launch an agent. Mirrors store.rs Profile. */
+export interface Profile {
+  name: string;
+  /** The CLI it launches — `claude`, `codex`, anything on the PATH. */
+  agent: string;
+  /** Options this profile always passes, before anything else. */
+  args: string[];
+}
+
+/** One entry in a launch dialog's list. Mirrors core.rs Launcher. */
+export interface Launcher {
+  /** What the person picks — a bare agent's name, or a profile's. */
+  name: string;
+  /** The CLI it resolves to, so the dialog knows which conventions apply. */
+  agent: string;
+  /** True for a profile, so the list can say which entries are yours. */
+  profile: boolean;
+}
+
 export interface BootStatus {
   ready: boolean;
   error?: string | null;

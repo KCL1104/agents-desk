@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useT } from '../i18n';
+import { splitArgs } from '../profiles';
+import { useLaunchers } from './launchers';
 
 interface Props {
   onCancel: () => void;
   onCreate: (cwd: string, agent: string, args: string[]) => void;
 }
 
-const AGENTS = ['claude', 'codex', 'gemini', 'aider'];
 const RECENT_KEY = 'agentdesk.recentCwds';
 
 function recents(): string[] {
@@ -23,20 +24,12 @@ function remember(cwd: string) {
   localStorage.setItem(RECENT_KEY, JSON.stringify(next));
 }
 
-/** Split a flag string the way a shell would, honouring quotes. */
-function splitArgs(raw: string): string[] {
-  const out: string[] = [];
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(raw)) !== null) out.push(m[1] ?? m[2] ?? m[3]);
-  return out;
-}
-
 export function NewSessionDialog({ onCancel, onCreate }: Props) {
   const t = useT();
   const [cwd, setCwd] = useState(recents()[0] ?? '');
   const [agent, setAgent] = useState('claude');
   const [args, setArgs] = useState('');
+  const launchers = useLaunchers();
   const list = recents();
 
   const pick = async () => {
@@ -89,9 +82,9 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
         <label>Agent</label>
         <div className="row">
           <select value={agent} onChange={(e) => setAgent(e.target.value)}>
-            {AGENTS.map((a) => (
-              <option key={a} value={a}>
-                {a}
+            {launchers.map((l) => (
+              <option key={l.name} value={l.name}>
+                {l.profile ? `${l.name} · ${l.agent}` : l.name}
               </option>
             ))}
           </select>
