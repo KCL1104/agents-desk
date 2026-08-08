@@ -58,7 +58,11 @@ test.describe('attempt inspector', () => {
     // not mistaken for them.
     await expect(page.locator('.diff-line.add')).toHaveCount(1);
     await expect(page.locator('.diff-line.del')).toHaveCount(1);
-    await expect(page.locator('.diff-line.meta')).toHaveCount(4);
+    // The +++/--- plumbing folds into the file chip: name, weight, and the
+    // raw header a hover away — four rows of a 460px drawer say it in one.
+    await expect(page.locator('.diff-line.meta')).toHaveCount(0);
+    await expect(page.locator('.diff-file')).toContainText('src/auth.py');
+    await expect(page.locator('.diff-file')).toHaveAttribute('title', /diff --git/);
 
     // What it did.
     await page.getByTestId('inspector-timeline-tab').click();

@@ -83,9 +83,10 @@ test.describe('named profiles', () => {
     expect(stored).toEqual([]);
   });
 
-  /** Removing a profile is a decision, not a draft: it leaves the dialogs
-      at once. */
-  test('a removed profile is gone from the dialogs immediately', async ({ page }) => {
+  /** One save contract for the whole list: removal is a draft like any
+      other edit, so a mis-clicked ✕ commits nothing until 儲存設定檔 —
+      and until then, a stray backdrop click cannot discard the change. */
+  test('a removed profile leaves when the list is saved, not before', async ({ page }) => {
     await appWithMock(page);
     await page.evaluate(() => {
       window.__mock.profiles = [{ name: 'opus 版', agent: 'claude', args: [] }];
@@ -95,7 +96,16 @@ test.describe('named profiles', () => {
     await page.getByRole('button', { name: '移除這個設定檔' }).click();
     await expect(page.getByTestId('profiles')).not.toContainText('opus 版');
 
-    const stored = await page.evaluate(() => window.__mock.profiles);
-    expect(stored).toEqual([]);
+    // Still a draft: nothing persisted, and the dirty panel refuses the
+    // backdrop the same way a typed dialog does.
+    expect(await page.evaluate(() => window.__mock.profiles)).toEqual([
+      { name: 'opus 版', agent: 'claude', args: [] },
+    ]);
+    await page.locator('.modal-backdrop').click({ position: { x: 5, y: 5 } });
+    await expect(page.locator('.modal')).toBeVisible();
+
+    await page.getByTestId('profile-save').click();
+    await expect(page.getByTestId('profile-save')).toHaveText('已儲存 ✓');
+    expect(await page.evaluate(() => window.__mock.profiles)).toEqual([]);
   });
 });

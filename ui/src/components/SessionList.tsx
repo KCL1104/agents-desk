@@ -137,9 +137,12 @@ function Row({
       data-testid={`session-${s.id}`}
       // A div wearing button semantics, because a real <button> cannot hold
       // the inner action buttons — but it owes the keyboard everything a
-      // button gives: focus, Enter, Space.
+      // button gives: focus, Enter, Space. The label carries the status so
+      // AT hears which row is the one waiting, and keeps the inner ✓/✕
+      // glyphs out of the computed name.
       role="button"
       tabIndex={0}
+      aria-label={`${s.title}，${t(STATUS_KEY[s.status])}`}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();

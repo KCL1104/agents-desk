@@ -138,6 +138,13 @@ textarea { resize: vertical; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; }
 .modal { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; width: 520px; max-width: 92vw; }
 .modal h2 { margin: 0 0 14px; font-size: 16px; }
+/* Section heads inside a modal that holds more than one concern: the env
+   panel is settings on top, diagnostics below, and the seam should show. */
+.modal-section {
+  margin: 18px 0 2px; padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px; font-weight: 600;
+}
 .modal label { display: block; font-size: 11px; color: var(--fg-dim); margin: 12px 0 4px; }
 .modal .row { display: flex; gap: 7px; }
 .modal .row button { flex: none; }
@@ -572,6 +579,8 @@ textarea { resize: vertical; }
 }
 .board-card-state { font-size: 12px; color: var(--fg-dim); }
 .board-card.needs-you .board-card-state { color: var(--warn); font-weight: 600; }
+/* Quiet beside the warning it qualifies, and exempt from its weight. */
+.card-elapsed { color: var(--fg-faint); font-weight: 400; }
 .board-card-activity { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 
 .board-card-foot { display: flex; align-items: center; gap: 6px; padding-top: 5px; }
@@ -634,6 +643,21 @@ textarea { resize: vertical; }
 .diff-line.del { color: var(--err); }
 .diff-line.hunk { color: var(--accent); }
 .diff-line.meta { color: var(--fg-dim); }
+
+.diff-section { display: block; }
+/* Each file's name rides the top of the scroll while its hunks pass. */
+.diff-file {
+  position: sticky; top: -8px; z-index: 1;
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 0 -10px; padding: 5px 10px 4px;
+  background: var(--bg-2); border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+.diff-section + .diff-section .diff-file { margin-top: 10px; }
+.diff-file-name { overflow: hidden; text-overflow: ellipsis; }
+.diff-count { font-weight: 400; font-size: 11px; }
+.diff-count.add { color: var(--ok); }
+.diff-count.del { color: var(--err); }
 
 /* The repo's run scripts: one chip per script, under the branch line. */
 .inspector-run {

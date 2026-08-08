@@ -155,6 +155,7 @@ export const en = {
   'err.notGitRepo': 'That folder is not a git repository. Point the card at the repo root — the folder holding .git.',
   'err.noBranch': 'The repository has no branch named "{branch}". Check the base branch name — it is often main or master.',
   'err.details': 'Details',
+  'env.diagnostics': 'Diagnostics',
 
   /* ---------------------------- lifecycle ----------------------------- */
   'lifecycle.backlog': 'Backlog',
@@ -408,6 +409,7 @@ export const zhTW: Record<MessageKey, string> = {
   'err.notGitRepo': '這個資料夾不是 git repository。請指向 repo 根目錄 —— 也就是有 .git 的那層。',
   'err.noBranch': 'Repository 裡沒有叫「{branch}」的分支。確認 base 分支名稱 —— 通常是 main 或 master。',
   'err.details': '詳細',
+  'env.diagnostics': '診斷',
 
   /* ---------------------------- lifecycle ----------------------------- */
   'lifecycle.backlog': '待辦',

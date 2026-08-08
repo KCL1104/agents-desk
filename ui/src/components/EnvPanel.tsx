@@ -17,8 +17,12 @@ import { Modal } from './Modal';
  */
 export function EnvPanel({ boot, onClose }: { boot: BootStatus; onClose: () => void }) {
   const { t, locale, setLocale } = useI18n();
+  /** Unsaved profile edits guard the backdrop, exactly as a typed prompt
+   *  does — the panel mixes settings and diagnostics, and losing the one
+   *  to a stray click aimed at the other is the mix's worst failure. */
+  const [dirty, setDirty] = useState(false);
   return (
-    <Modal onCancel={onClose}>
+    <Modal onCancel={onClose} dirty={dirty}>
         <h2>{t('common.env')}</h2>
 
         <label htmlFor="locale-select">{t('env.language')}</label>
@@ -35,8 +39,10 @@ export function EnvPanel({ boot, onClose }: { boot: BootStatus; onClose: () => v
           ))}
         </select>
 
-        <Profiles />
+        <Profiles onDirty={setDirty} />
 
+        {/* The doctor half: what the agents actually inherit. */}
+        <h3 className="modal-section">{t('env.diagnostics')}</h3>
         <Stat label={t('env.shell')} value={boot.shell ?? '—'} />
         <Stat
           label={t('env.source')}
@@ -96,7 +102,7 @@ const AGENTS = ['claude', 'codex', 'gemini', 'aider'];
  * empty names, repeats, an agent's own name — and its refusal is shown
  * verbatim, because it names the exact row that cannot be offered.
  */
-function Profiles() {
+function Profiles({ onDirty }: { onDirty: (dirty: boolean) => void }) {
   const { t } = useI18n();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -116,6 +122,7 @@ function Profiles() {
 
   const edit = (i: number, patch: Partial<Row>) => {
     setSaved(false);
+    onDirty(true);
     setRows((cur) => (cur ? cur.map((r, j) => (j === i ? { ...r, ...patch } : r)) : cur));
   };
 
@@ -126,7 +133,10 @@ function Profiles() {
       .saveProfiles(
         next.map((r) => ({ name: r.name.trim(), agent: r.agent, args: splitArgs(r.args) })),
       )
-      .then(() => setSaved(true))
+      .then(() => {
+        setSaved(true);
+        onDirty(false);
+      })
       .catch((e) => setProblem(String(e)));
   };
 
@@ -134,7 +144,7 @@ function Profiles() {
 
   return (
     <div className="profiles" data-testid="profiles">
-      <label>{t('env.profiles')}</label>
+      <h3 className="modal-section">{t('env.profiles')}</h3>
       <p className="muted small">{t('env.profilesHint')}</p>
 
       {rows.map((r, i) => (
@@ -168,12 +178,13 @@ function Profiles() {
             aria-label={t('profile.remove')}
             title={t('profile.remove')}
             onClick={() => {
-              const next = rows.filter((_, j) => j !== i);
-              setRows(next);
-              // Removal is a decision, not a draft: it saves at once, so a
-              // deleted profile is gone from the dialogs and not just from
-              // this screen.
-              save(next);
+              // A draft like every other change here: one save contract for
+              // the whole list. Instant-persist deletes next to explicit-save
+              // edits meant a mis-clicked ✕ committed while a finished edit
+              // silently didn't.
+              setSaved(false);
+              onDirty(true);
+              setRows(rows.filter((_, j) => j !== i));
             }}
           >
             ✕
@@ -186,16 +197,17 @@ function Profiles() {
           data-testid="profile-add"
           onClick={() => {
             setSaved(false);
+            onDirty(true);
             setRows([...rows, { name: '', agent: 'claude', args: '' }]);
           }}
         >
           {t('profile.add')}
         </button>
-        {rows.length > 0 && (
-          <button className="primary" data-testid="profile-save" onClick={() => save(rows)}>
-            {saved ? t('profile.saved') : t('profile.save')}
-          </button>
-        )}
+        {/* Always offered: with deletion a draft like any other edit, an
+            emptied list still needs its save. */}
+        <button className="primary" data-testid="profile-save" onClick={() => save(rows)}>
+          {saved ? t('profile.saved') : t('profile.save')}
+        </button>
       </div>
 
       {problem && (

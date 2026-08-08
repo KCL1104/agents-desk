@@ -18,6 +18,7 @@ import {
   TASK_MIME,
   type Live,
 } from '../board';
+import { elapsed } from '../sections';
 
 interface Props {
   tasks: Task[];
@@ -94,6 +95,15 @@ export function Board({
 
   const adHoc = sessions.filter((s) => s.attempt_id === null);
   const running = sessions.filter((s) => s.live && s.attempt_id !== null).length;
+
+  // One timer drives every blocked card's elapsed readout, same as the
+  // sidebar's — triage is the board's whole job, and "how long has this one
+  // been stuck" is the number triage runs on.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   /**
    * Which card moved, and where it lands.
@@ -186,6 +196,7 @@ export function Board({
                     onCancelQueued={onCancelQueued}
                     onDelete={() => onDeleteTask(task.id)}
                     onMoveByKey={(step) => moveByKey(task, step)}
+                    now={now}
                   />
                 ))}
                 {cards.length === 0 && (
@@ -297,6 +308,7 @@ function Card({
   onCancelQueued,
   onDelete,
   onMoveByKey,
+  now,
 }: {
   task: Task;
   live: Live;
@@ -313,6 +325,7 @@ function Card({
   onCancelQueued: (taskId: string) => void;
   onDelete: () => void;
   onMoveByKey: (step: 1 | -1) => void;
+  now: number;
 }) {
   const t = useT();
   const waiting = live.kind === 'session' && needsYou(live.status);
@@ -340,12 +353,12 @@ function Card({
       data-lifecycle={task.lifecycle}
       data-live={live.kind}
       // Every card is focusable — moving it between columns is a keyboard
-      // act now, not only entering it. The label is the title alone: without
-      // it, the computed name would recite the whole card, inner buttons
-      // included, at every focus.
+      // act now, not only entering it. The label is title plus state: a
+      // bare title would strip ⚠ 等你授權 from the accessible name, and the
+      // one thing the breathing card shouts must not be silent to AT.
       role={enter ? 'button' : undefined}
       tabIndex={0}
-      aria-label={task.title}
+      aria-label={`${task.title}，${waiting ? '⚠ ' : ''}${liveLabel(live, t)}`}
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
           e.preventDefault();
@@ -402,6 +415,12 @@ function Card({
         {waiting && <span aria-hidden="true">⚠ </span>}
         {liveLabel(live, t)}
         {hasAttempt && <span className="muted small mono"> #{live.attempt.seq}</span>}
+        {/* How long it has been stuck — the number triage runs on, on the
+            surface triage happens on, not only in the sidebar. Based on the
+            last report, which for a blocked card is the moment it blocked. */}
+        {waiting && live.kind === 'session' && elapsed(live.session.last_active_at, now) && (
+          <span className="card-elapsed"> · {elapsed(live.session.last_active_at, now)}</span>
+        )}
       </div>
 
       {live.kind === 'session' && live.session.activity && (

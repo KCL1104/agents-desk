@@ -451,6 +451,46 @@ function Finish({
   );
 }
 
+/** One file's slice of the diff: its lines, its counts, and the raw header
+ *  lines the display no longer spends four rows of a 460px drawer on. */
+interface FileSection {
+  file: string | null;
+  meta: string[];
+  lines: { l: DiffLine; i: number }[];
+  adds: number;
+  dels: number;
+}
+
+/** The header lines every diff viewer folds away. Only what is recognized
+ *  is folded — unrecognized text outside a hunk stays on screen, because a
+ *  quietly hidden line is worse than an ugly one. */
+const PLUMBING =
+  /^(diff |index |--- |\+\+\+ |old mode|new mode|deleted file|new file|similarity |rename |copy |\\)/;
+
+function groupByFile(lines: DiffLine[]): FileSection[] {
+  const out: FileSection[] = [];
+  let cur: FileSection | null = null;
+  lines.forEach((l, i) => {
+    if (l.kind === 'meta' && (PLUMBING.test(l.text) || l.text.trim() === '')) {
+      if (l.text.startsWith('diff ') || cur === null) {
+        cur = { file: null, meta: [], lines: [], adds: 0, dels: 0 };
+        out.push(cur);
+      }
+      if (l.text.trim() !== '') cur.meta.push(l.text);
+      return;
+    }
+    if (cur === null) {
+      cur = { file: null, meta: [], lines: [], adds: 0, dels: 0 };
+      out.push(cur);
+    }
+    cur.file ??= l.file;
+    if (l.kind === 'add') cur.adds += 1;
+    if (l.kind === 'del') cur.dels += 1;
+    cur.lines.push({ l, i });
+  });
+  return out.filter((s) => s.lines.length > 0);
+}
+
 function DiffPane({
   diff,
   comments,
@@ -462,6 +502,7 @@ function DiffPane({
 }) {
   const t = useT();
   const lines = useMemo(() => (diff === null ? [] : parseDiff(diff)), [diff]);
+  const sections = useMemo(() => groupByFile(lines), [lines]);
 
   if (diff === null) return <p className="muted small pad">{t('common.loading')}</p>;
   if (diff.trim() === '') {
@@ -496,39 +537,55 @@ function DiffPane({
 
   return (
     <pre className="diff mono" data-testid="diff-body" tabIndex={0} onKeyDown={onDiffKeys}>
-      {lines.map((l, i) => (
-        <span
-          key={i}
-          className={[
-            'diff-line',
-            classOf(l),
-            commentable(l) ? 'commentable' : '',
-            noted(l) ? 'noted' : '',
-          ]
-            .filter(Boolean)
-            .join(' ')}
-          title={commentable(l) ? t('review.hint') : undefined}
-          // The review loop is the flagship; it cannot be mouse-only.
-          role={commentable(l) ? 'button' : undefined}
-          tabIndex={commentable(l) ? 0 : undefined}
-          onKeyDown={
-            commentable(l)
-              ? (e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    onPick({ file: l.file, line: l.line, excerpt: l.text });
-                  }
-                }
-              : undefined
-          }
-          onClick={
-            commentable(l)
-              ? () => onPick({ file: l.file, line: l.line, excerpt: l.text })
-              : undefined
-          }
-        >
-          {l.text}
-          {'\n'}
+      {sections.map((s, si) => (
+        <span key={si} className="diff-section">
+          {/* The plumbing (`index 1111111..`, `---/+++`) said nothing a
+              reviewer acts on and cost four rows per file in a 460px
+              drawer. The filename and its weight say it all; the raw
+              header is a hover away. */}
+          <span className="diff-file" title={s.meta.join('\n') || undefined}>
+            <span className="diff-file-name">{s.file ?? '—'}</span>
+            {s.adds > 0 && <span className="diff-count add">+{s.adds}</span>}
+            {s.dels > 0 && <span className="diff-count del">−{s.dels}</span>}
+          </span>
+          {s.lines.map(({ l, i }) => (
+            <span
+              key={i}
+              className={[
+                'diff-line',
+                classOf(l),
+                commentable(l) ? 'commentable' : '',
+                noted(l) ? 'noted' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              title={commentable(l) ? t('review.hint') : undefined}
+              // The review loop is the flagship; it cannot be mouse-only.
+              // Roving focus: the <pre> is the single tab stop and j/k move
+              // within it — per-line tabstops made a 300-line diff a
+              // 300-stop wall between the header and the merge button.
+              role={commentable(l) ? 'button' : undefined}
+              tabIndex={commentable(l) ? -1 : undefined}
+              onKeyDown={
+                commentable(l)
+                  ? (e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        onPick({ file: l.file, line: l.line, excerpt: l.text });
+                      }
+                    }
+                  : undefined
+              }
+              onClick={
+                commentable(l)
+                  ? () => onPick({ file: l.file, line: l.line, excerpt: l.text })
+                  : undefined
+              }
+            >
+              {l.text}
+              {'\n'}
+            </span>
+          ))}
         </span>
       ))}
     </pre>

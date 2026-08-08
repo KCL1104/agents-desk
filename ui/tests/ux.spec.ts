@@ -415,6 +415,46 @@ test.describe('outcomes say so', () => {
     await expect(page.locator('.pane:visible')).toHaveCount(1);
   });
 
+  test('diff lines are one tab stop, and the state reaches AT labels', async ({ page }) => {
+    await boot(page);
+    await toBoard(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await toBoard(page);
+    await page.evaluate(() => {
+      window.__mock.report('s1', 'waiting_permission');
+      window.__mock.diffs.set('k1-a1', [
+        'diff --git a/src/auth.py b/src/auth.py',
+        'index 1111111..2222222 100644',
+        '--- a/src/auth.py',
+        '+++ b/src/auth.py',
+        '@@ -10,3 +10,4 @@',
+        ' def login(request):',
+        '+    session = make_session(user)',
+        '+    return session',
+      ].join('\n'));
+    });
+
+    // The card's accessible name carries its blocked state — the one thing
+    // the breathing card shouts must not be silent to AT.
+    await expect(page.getByTestId('task-k1')).toHaveAttribute('aria-label', /等你授權/);
+    // And the number triage runs on is on the card itself.
+    await expect(page.getByTestId('state-k1')).toContainText('·');
+
+    await page.getByTestId('inspect-k1').click();
+    await expect(page.getByTestId('diff-body')).toBeVisible();
+    // Roving focus: lines are reachable by j/k, never by Tab — a 300-line
+    // diff must not be 300 tab stops in front of the merge button.
+    await expect(page.locator('.diff-line.commentable').first()).toHaveAttribute(
+      'tabindex',
+      '-1',
+    );
+    // The plumbing is a chip now: filename + weights, sticky over its hunks.
+    await expect(page.locator('.diff-file')).toContainText('src/auth.py');
+    await expect(page.locator('.diff-file .diff-count.add')).toHaveText('+2');
+    await expect(page.getByTestId('diff-body')).not.toContainText('index 1111111');
+  });
+
   test('a closed session does not sit in 等待輸入', async ({ page }) => {
     await boot(page);
     await toBoard(page);
