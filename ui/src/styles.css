@@ -43,6 +43,26 @@ body {
 .pad { padding: 12px; }
 .spacer { flex: 1; }
 
+/* The door: rows and cards used to be clickable containers wearing
+   role="button" around real buttons — the one nesting ARIA forbids. Now the
+   title is the button, stretched over its whole container by the overlay,
+   so pointers keep click-anywhere while the accessibility tree tells the
+   truth: one door, then the side actions. */
+.row-door, .card-door {
+  background: none; border: none; padding: 0; margin: 0;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.row-door::after, .card-door::after {
+  content: ''; position: absolute; inset: 0; border-radius: 6px;
+}
+.card-door::after { border-radius: 8px; }
+.row-door:focus-visible, .card-door:focus-visible { outline: none; }
+.row-door:focus-visible::after, .card-door:focus-visible::after {
+  outline: 2px solid var(--accent); outline-offset: -2px;
+}
+/* Everything beside the door rises above its overlay to stay clickable. */
+.row-actions, .board-card-foot button, .ov-actions button { position: relative; z-index: 1; }
+
 /* A chip is a chip whatever element carries it — the PATH entries in the
    env panel are spans, and unstyled they fuse into one bogus path. */
 .chip {
@@ -148,6 +168,9 @@ textarea { resize: vertical; }
 .modal label { display: block; font-size: 11px; color: var(--fg-dim); margin: 12px 0 4px; }
 .modal .row { display: flex; gap: 7px; }
 .modal .row button { flex: none; }
+/* Side-by-side labeled fields inside a dialog row. */
+.modal .fields .field { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.modal .fields .field label { margin-top: 0; }
 .recents { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 
@@ -250,6 +273,7 @@ textarea { resize: vertical; }
 }
 .toast.error { border-color: #5c2f33; color: var(--err); }
 .toast.ok { border-color: #2e4633; color: var(--ok); }
+.toast-more { color: var(--fg-dim); font-size: 11px; padding: 4px 10px; }
 .toast button { background: transparent; border: none; color: inherit; padding: 0 2px; }
 
 /* ---------- sidebar sections ---------- */
@@ -269,6 +293,7 @@ textarea { resize: vertical; }
 }
 
 .session-row {
+  position: relative;
   display: block; width: calc(100% - 12px); margin: 1px 6px;
   background: transparent; border: none; border-radius: 6px;
   padding: 5px 8px; text-align: left; cursor: pointer;
@@ -333,6 +358,7 @@ textarea { resize: vertical; }
 }
 
 .ov-card {
+  position: relative;
   display: flex; flex-direction: column; gap: 7px;
   background: var(--bg-2); border: 1px solid var(--line);
   /* The status edge: the second axis of the board, worn by every card.
@@ -527,6 +553,7 @@ textarea { resize: vertical; }
 }
 
 .board-card {
+  position: relative;
   display: flex; flex-direction: column; gap: 6px;
   background: var(--bg-3); border: 1px solid var(--line);
   /* The status edge again — same signature as .ov-card, same reason. */

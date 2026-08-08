@@ -79,42 +79,48 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
     <Modal onCancel={onCancel} dirty={edited} wide>
         <h2>{t('attempt.startTitle', { title: task.title })}</h2>
 
-        <label>{t('attempt.agent')}</label>
-        <div className="row">
-          <select
-            value={agent}
-            data-testid="attempt-agent"
-            onChange={(e) => {
-              const next = e.target.value;
-              setAgent(next);
-              // A mode chosen for claude must not ride silently into a CLI
-              // it was never measured against.
-              const nextAgent = launchers.find((l) => l.name === next)?.agent ?? next;
-              if (nextAgent !== 'claude') setMode('normal');
-            }}
-          >
-            {launchers.map((l) => (
-              <option key={l.name} value={l.name}>
-                {l.profile ? `${l.name} · ${l.agent}` : l.name}
-              </option>
-            ))}
-          </select>
-          {modeChoice && (
+        {/* Two labeled columns: the mode select decides whether the agent
+            runs unattended, and unlabeled it read as a second agent picker
+            — anonymous to everyone, not only to AT. */}
+        <div className="row fields">
+          <div className="field">
+            <label htmlFor="attempt-agent">{t('attempt.agent')}</label>
             <select
-              value={mode}
-              data-testid="attempt-mode"
-              // The one control here that decides whether the agent runs
-              // unattended; it cannot be an anonymous dropdown to AT.
-              aria-label={t('attempt.modeLabel')}
-              title={t('attempt.modeLabel')}
-              onChange={(e) => setMode(e.target.value as PermissionMode)}
+              id="attempt-agent"
+              value={agent}
+              data-testid="attempt-agent"
+              onChange={(e) => {
+                const next = e.target.value;
+                setAgent(next);
+                // A mode chosen for claude must not ride silently into a CLI
+                // it was never measured against.
+                const nextAgent = launchers.find((l) => l.name === next)?.agent ?? next;
+                if (nextAgent !== 'claude') setMode('normal');
+              }}
             >
-              {MODES.map((m) => (
-                <option key={m} value={m}>
-                  {t(MODE_KEY[m])}
+              {launchers.map((l) => (
+                <option key={l.name} value={l.name}>
+                  {l.profile ? `${l.name} · ${l.agent}` : l.name}
                 </option>
               ))}
             </select>
+          </div>
+          {modeChoice && (
+            <div className="field">
+              <label htmlFor="attempt-mode">{t('attempt.modeLabel')}</label>
+              <select
+                id="attempt-mode"
+                value={mode}
+                data-testid="attempt-mode"
+                onChange={(e) => setMode(e.target.value as PermissionMode)}
+              >
+                {MODES.map((m) => (
+                  <option key={m} value={m}>
+                    {t(MODE_KEY[m])}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
         </div>
         {modeChoice && mode === 'accept_edits' && (

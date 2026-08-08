@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import type * as React from 'react';
 
 interface Props {
@@ -28,10 +28,14 @@ export function Modal({ onCancel, dirty = false, wide = false, children }: Props
   const box = useRef<HTMLDivElement>(null);
   const cancel = useRef(onCancel);
   cancel.current = onCancel;
+  const titleId = useId();
 
   useEffect(() => {
     const el = box.current;
     if (!el) return;
+    // Every dialog opens with an <h2>; wiring it up is what turns an
+    // anonymous "dialog" announcement into "開始 attempt, dialog".
+    el.querySelector('h2')?.setAttribute('id', titleId);
     const before = document.activeElement as HTMLElement | null;
     // Land on the first control unless something inside (autoFocus) beat us.
     if (!el.contains(document.activeElement)) {
@@ -78,6 +82,7 @@ export function Modal({ onCancel, dirty = false, wide = false, children }: Props
         className={`modal${wide ? ' wide' : ''}`}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={titleId}
         onClick={(e) => e.stopPropagation()}
       >
         {children}

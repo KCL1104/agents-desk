@@ -156,6 +156,8 @@ export const en = {
   'err.noBranch': 'The repository has no branch named "{branch}". Check the base branch name — it is often main or master.',
   'err.details': 'Details',
   'env.diagnostics': 'Diagnostics',
+  'sidebar.title': 'Sessions',
+  'toast.more': '{count} earlier — clear all',
 
   /* ---------------------------- lifecycle ----------------------------- */
   'lifecycle.backlog': 'Backlog',
@@ -410,6 +412,8 @@ export const zhTW: Record<MessageKey, string> = {
   'err.noBranch': 'Repository 裡沒有叫「{branch}」的分支。確認 base 分支名稱 —— 通常是 main 或 master。',
   'err.details': '詳細',
   'env.diagnostics': '診斷',
+  'sidebar.title': 'Sessions',
+  'toast.more': '還有 {count} 則較早的 — 全部清除',
 
   /* ---------------------------- lifecycle ----------------------------- */
   'lifecycle.backlog': '待辦',

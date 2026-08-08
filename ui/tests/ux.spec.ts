@@ -115,7 +115,8 @@ test.describe('the keyboard can drive', () => {
     await start(page, 'k1');
     await toBoard(page);
 
-    await page.locator('[data-testid="session-s1"]').focus();
+    // The door is the row's one honest tab stop.
+    await page.locator('[data-testid="session-s1"] .row-door').focus();
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('board')).toHaveCount(0);
     await expect(page.locator('.pane:visible')).toHaveCount(1);
@@ -256,7 +257,8 @@ test.describe('the keyboard can drive', () => {
     await start(page, 'k1');
     await toBoard(page);
 
-    await page.locator('[data-testid="task-k1"]').focus();
+    // The card's title is the door — a real button, not a clickable article.
+    await page.locator('[data-testid="task-k1"] .card-door').focus();
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('board')).toHaveCount(0);
     await expect(page.locator('.pane:visible')).toHaveCount(1);
@@ -330,6 +332,70 @@ test.describe('signals reach everyone', () => {
       'border-radius',
       '5px',
     );
+  });
+});
+
+test.describe('the accessibility tree tells the truth', () => {
+  test('dialogs carry their own names', async ({ page }) => {
+    await boot(page);
+    await toBoard(page);
+    await page.getByRole('button', { name: '新增卡片' }).click();
+    const dialog = page.locator('[role="dialog"]');
+    // aria-labelledby resolves to the h2, so the dialog announces as its
+    // title, not as an anonymous "dialog".
+    await expect(dialog).toHaveAttribute('aria-labelledby', /.+/);
+    const labelled = await page.evaluate(() => {
+      const d = document.querySelector('[role="dialog"]')!;
+      const id = d.getAttribute('aria-labelledby')!;
+      return document.getElementById(id)?.textContent ?? '';
+    });
+    expect(labelled).toContain('新卡片');
+  });
+
+  test('rows and cards are groups holding one door, not nested buttons', async ({ page }) => {
+    await boot(page);
+    await toBoard(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await toBoard(page);
+
+    await expect(page.getByTestId('task-k1')).toHaveAttribute('role', 'group');
+    await expect(page.locator('[data-testid="task-k1"] .card-door')).toHaveCount(1);
+    await expect(page.getByTestId('session-s1')).toHaveAttribute('role', 'group');
+    // Click-anywhere survives the restructuring: the door stretches.
+    await page.locator('[data-testid="task-k1"]').click({ position: { x: 10, y: 60 } });
+    await expect(page.getByTestId('board')).toHaveCount(0);
+  });
+
+  test('every tablist keeps the one-stop contract', async ({ page }) => {
+    await boot(page);
+    // Topbar view switcher: only the active tab is in the tab order.
+    await expect(page.getByRole('tab', { name: /終端機/ })).toHaveAttribute('tabindex', '0');
+    await expect(page.getByTestId('view-board')).toHaveAttribute('tabindex', '-1');
+
+    // Inspector tabs: roving plus arrows.
+    await toBoard(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await toBoard(page);
+    await page.getByTestId('inspect-k1').click();
+    await expect(page.getByTestId('inspector-diff-tab')).toHaveAttribute('tabindex', '0');
+    await expect(page.getByTestId('inspector-timeline-tab')).toHaveAttribute('tabindex', '-1');
+    await page.getByTestId('inspector-diff-tab').focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(page.getByTestId('inspector-timeline-tab')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  test('the permission mode wears a visible label', async ({ page }) => {
+    await boot(page);
+    await toBoard(page);
+    await newCard(page, '修好登入');
+    await page.locator('[data-testid="task-k1"] button.primary').click();
+    await expect(page.getByText('權限模式')).toBeVisible();
+    await expect(page.getByLabel('權限模式')).toHaveValue('normal');
   });
 });
 

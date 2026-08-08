@@ -111,10 +111,24 @@ export function AttemptInspector({
   return (
     <aside className="inspector" data-testid="inspector">
       <header className="inspector-head">
-        <div className="view-toggle" role="tablist">
+        <div
+          className="view-toggle"
+          role="tablist"
+          // The same contract the topbar keeps: one tab stop, arrows move.
+          onKeyDown={(e) => {
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            e.preventDefault();
+            const next = pane === 'diff' ? 'timeline' : 'diff';
+            setPane(next);
+            (
+              e.currentTarget.children[next === 'diff' ? 0 : 1] as HTMLElement
+            )?.focus();
+          }}
+        >
           <button
             role="tab"
             aria-selected={pane === 'diff'}
+            tabIndex={pane === 'diff' ? 0 : -1}
             className={pane === 'diff' ? 'active' : ''}
             data-testid="inspector-diff-tab"
             onClick={() => setPane('diff')}
@@ -124,6 +138,7 @@ export function AttemptInspector({
           <button
             role="tab"
             aria-selected={pane === 'timeline'}
+            tabIndex={pane === 'timeline' ? 0 : -1}
             className={pane === 'timeline' ? 'active' : ''}
             data-testid="inspector-timeline-tab"
             onClick={() => setPane('timeline')}

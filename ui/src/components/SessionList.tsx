@@ -54,7 +54,7 @@ export function SessionList({
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
-        <span>SESSIONS</span>
+        <span>{t('sidebar.title')}</span>
         <button className="icon" onClick={onNew} title={t('sidebar.newSession')}>
           +
         </button>
@@ -133,22 +133,12 @@ function Row({
   return (
     <div
       className={`session-row${active ? ' active' : ''}`}
-      onClick={() => onSelect(s.id)}
       data-testid={`session-${s.id}`}
-      // A div wearing button semantics, because a real <button> cannot hold
-      // the inner action buttons — but it owes the keyboard everything a
-      // button gives: focus, Enter, Space. The label carries the status so
-      // AT hears which row is the one waiting, and keeps the inner ✓/✕
-      // glyphs out of the computed name.
-      role="button"
-      tabIndex={0}
+      // A group holding one real door and its side actions — not a button
+      // pretending to contain buttons, which is the one shape ARIA forbids.
+      // The label carries the status so AT hears which row is waiting.
+      role="group"
       aria-label={`${s.title}，${t(STATUS_KEY[s.status])}`}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect(s.id);
-        }
-      }}
       // Dragging a row into the grid is the direct way to say which sessions
       // the layout should hold.
       draggable
@@ -159,11 +149,12 @@ function Row({
     >
       <div className="row-top">
         <span className={`dot ${s.status}`} />
-        {/* The session's own name — for an attempt that is the card's title,
-            which is what a person scans for. The directory is a hover away. */}
-        <span className="row-title" title={s.cwd}>
+        {/* The door: a real button stretched over the whole row, so a click
+            anywhere enters and the keyboard gets one honest tab stop. The
+            title is what a person scans for; the directory is a hover away. */}
+        <button className="row-door row-title" title={s.cwd} onClick={() => onSelect(s.id)}>
           {s.title}
-        </span>
+        </button>
         <span className="row-actions">
           <button
             className="row-action"

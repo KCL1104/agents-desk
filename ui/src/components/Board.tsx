@@ -352,23 +352,18 @@ function Card({
       data-testid={`task-${task.id}`}
       data-lifecycle={task.lifecycle}
       data-live={live.kind}
-      // Every card is focusable — moving it between columns is a keyboard
-      // act now, not only entering it. The label is title plus state: a
-      // bare title would strip ⚠ 等你授權 from the accessible name, and the
-      // one thing the breathing card shouts must not be silent to AT.
-      role={enter ? 'button' : undefined}
-      tabIndex={0}
+      // A labeled group, not a button holding buttons. The label is title
+      // plus state — the one thing the breathing card shouts must not be
+      // silent to AT. Enterable cards put their tab stop on the door; the
+      // rest stay focusable themselves so ⌘←/→ still has somewhere to land.
+      role="group"
+      tabIndex={enter ? -1 : 0}
       aria-label={`${task.title}，${waiting ? '⚠ ' : ''}${liveLabel(live, t)}`}
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
           e.preventDefault();
           e.stopPropagation();
           onMoveByKey(e.key === 'ArrowRight' ? 1 : -1);
-          return;
-        }
-        if (enter && (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
-          e.preventDefault();
-          enter();
         }
       }}
       draggable
@@ -376,11 +371,19 @@ function Card({
       onDragEnd={onDragEnd}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      onClick={enter}
     >
       <header className="board-card-head">
         <span className={`dot ${liveTone(live)}`} />
-        <span className="board-card-title">{task.title}</span>
+        {/* The whole card is the target when there is a session behind it —
+            as a real stretched button, so the click and the keyboard share
+            one honest control instead of a clickable article. */}
+        {enter ? (
+          <button className="card-door board-card-title" onClick={enter}>
+            {task.title}
+          </button>
+        ) : (
+          <span className="board-card-title">{task.title}</span>
+        )}
         {agent && <span className="ov-agent mono">{agent}</span>}
         {/* A session running with fewer prompts wears it openly. Quiet
             autonomy that looks like ordinary supervision would be worse

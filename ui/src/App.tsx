@@ -163,7 +163,10 @@ export default function App() {
 
   const pushToast = useCallback((kind: 'error' | 'ok', text: string) => {
     const id = Date.now() + Math.random();
-    setToasts((cur) => [...cur.slice(-2), { id, kind, text }]);
+    // Nothing is evicted: the screen shows the newest three, and the rest
+    // wait behind a count. Dropping the oldest error was exactly the
+    // second-problem-eats-the-first this stack exists to prevent.
+    setToasts((cur) => [...cur, { id, kind, text }]);
     if (kind === 'ok') {
       setTimeout(() => setToasts((cur) => cur.filter((t) => t.id !== id)), 4000);
     }
@@ -693,6 +696,7 @@ export default function App() {
             <button
               role="tab"
               aria-selected={view === 'terminal'}
+              tabIndex={view === 'terminal' ? 0 : -1}
               className={view === 'terminal' ? 'active' : ''}
               title={`${t('view.terminal')} (⌘/Ctrl+1)`}
               onClick={() => setView('terminal')}
@@ -702,6 +706,7 @@ export default function App() {
             <button
               role="tab"
               aria-selected={view === 'board'}
+              tabIndex={view === 'board' ? 0 : -1}
               className={view === 'board' ? 'active' : ''}
               data-testid="view-board"
               title={`${t('view.board')} (⌘/Ctrl+2)`}
@@ -712,6 +717,7 @@ export default function App() {
             <button
               role="tab"
               aria-selected={view === 'overview'}
+              tabIndex={view === 'overview' ? 0 : -1}
               className={view === 'overview' ? 'active' : ''}
               title={`${t('view.overview')} (⌘/Ctrl+3)`}
               onClick={() => setView('overview')}
@@ -872,7 +878,16 @@ export default function App() {
 
       {toasts.length > 0 && (
         <div className="toast-stack">
-          {toasts.map((toast) => (
+          {toasts.length > 3 && (
+            <button
+              className="toast toast-more"
+              data-testid="toast-more"
+              onClick={() => setToasts([])}
+            >
+              {t('toast.more', { count: toasts.length - 3 })}
+            </button>
+          )}
+          {toasts.slice(-3).map((toast) => (
             <div
               key={toast.id}
               className={`toast ${toast.kind === 'error' ? 'error' : 'ok'}`}

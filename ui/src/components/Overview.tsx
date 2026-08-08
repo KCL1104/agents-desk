@@ -93,26 +93,18 @@ function Card({
     <article
       className={`ov-card ${s.status}`}
       data-testid={`card-${s.id}`}
-      // Same identity rules as the board: the card is the door, one click
-      // (or Enter) walks through it, and the session wears its one name —
-      // the card title — not its worktree directory. Three attempts on one
-      // card would all read "card-1" by basename.
-      role="button"
-      tabIndex={0}
-      aria-label={s.title}
-      onClick={() => onOpen(s.id)}
-      onKeyDown={(e) => {
-        if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
-          e.preventDefault();
-          onOpen(s.id);
-        }
-      }}
+      // Same identity rules as the board: a labeled group whose title is a
+      // real stretched button — one click (or Enter on it) walks through —
+      // and the session wears its one name, the card title, not its
+      // worktree directory.
+      role="group"
+      aria-label={`${s.title}，${t(STATUS_KEY[s.status])}`}
     >
       <header className="ov-card-head">
         <span className={`dot ${s.status}`} />
-        <span className="ov-title" title={s.cwd}>
+        <button className="card-door ov-title" title={s.cwd} onClick={() => onOpen(s.id)}>
           {s.title}
-        </span>
+        </button>
         <span className="ov-agent mono">{s.agent}</span>
       </header>
 
