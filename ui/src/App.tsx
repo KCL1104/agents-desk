@@ -644,7 +644,26 @@ export default function App() {
       } else if ((e.key === 'i' || e.key === 'I') && !shellsOwn) {
         if (view === 'terminal' && (inspectId || activeAttemptId)) {
           e.preventDefault();
+          const opening = !inspectId;
           setInspectId(inspectId ? null : activeAttemptId);
+          // The flagship keyboard loop gets a keyboard entrance: opening
+          // by chord lands focus on the diff, where j/k and n/p live.
+          // Only by chord — the drawer also follows pane focus around,
+          // and stealing the caret on every follow would be theft.
+          if (opening) {
+            // The diff arrives async, so the landing waits for it — but
+            // only while the caret still sits where the chord left it. The
+            // moment the user moves on, the entrance expires unclaimed.
+            const from = document.activeElement;
+            const t0 = performance.now();
+            const land = () => {
+              if (document.activeElement !== from) return;
+              const body = document.querySelector<HTMLElement>('[data-testid="diff-body"]');
+              if (body) body.focus();
+              else if (performance.now() - t0 < 1000) requestAnimationFrame(land);
+            };
+            requestAnimationFrame(land);
+          }
         }
       } else if (e.key === '/' && !shellsOwn) {
         e.preventDefault();

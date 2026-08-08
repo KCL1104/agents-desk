@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import type { MessageKey } from './i18n';
 import type { SessionMeta, Status } from './types';
 
-export type Section = 'working' | 'waiting' | 'done';
+export type Section = 'waiting' | 'working' | 'idle' | 'done';
 
 export const SECTION_KEY: Record<Section, MessageKey> = {
-  working: 'section.working',
   waiting: 'section.waiting',
+  working: 'section.working',
+  idle: 'section.idle',
   done: 'section.done',
 };
 
@@ -38,7 +39,13 @@ export const STATUS_KEY: Record<Status, MessageKey> = {
  */
 export const SETTLE_MS = 2500;
 
-/** Where a session belongs, ignoring any settling delay. */
+/** Where a session belongs, ignoring any settling delay.
+ *
+ *  等你 holds exactly `NEEDS_YOU` — the same set the ⚠ banner counts, so
+ *  the section's number and the badge's can never disagree. `idle` is its
+ *  own tier: a turn that ended is your move, but nothing is blocked, and
+ *  filing it with the blocked rows made 「等你 (4)」 sit over a banner
+ *  saying ⚠ 2. */
 export function sectionOf(s: SessionMeta): Section {
   if (s.completed) return 'done';
   switch (s.status) {
@@ -50,8 +57,9 @@ export function sectionOf(s: SessionMeta): Section {
     case 'awaiting_trust':
     case 'waiting_permission':
     case 'waiting_input':
-    case 'idle':
       return 'waiting';
+    case 'idle':
+      return 'idle';
     case 'saved':
     case 'exited':
       return 'done';

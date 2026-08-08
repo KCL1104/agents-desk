@@ -96,6 +96,35 @@ test.describe('board', () => {
   });
 
   /**
+   * Hooks are Claude Code's. For any other agent the card's calm face is
+   * unverified, and 「安靜」 read as 「沒事」 is exactly the lie the two-axis
+   * board exists to avoid — so the card says it cannot tell.
+   */
+  test('a hookless agent’s card admits it has no status signal', async ({ page }) => {
+    await boot(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1', 'codex');
+    await page.getByTestId('view-board').click();
+
+    await expect(page.getByTestId('nosignal-k1')).toHaveText('無狀態訊號');
+
+    // The first real report retires the disclaimer for good.
+    await page.evaluate(() => window.__mock.report('s1', 'running'));
+    await expect(page.getByTestId('nosignal-k1')).toHaveCount(0);
+  });
+
+  test('a claude card never wears the no-signal chip', async ({ page }) => {
+    await boot(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await page.getByTestId('view-board').click();
+
+    // Fresh and silent, but its silence is trustworthy: hooks will speak.
+    await expect(page.locator('[data-testid="col-running"] .board-card')).toHaveCount(1);
+    await expect(page.getByTestId('nosignal-k1')).toHaveCount(0);
+  });
+
+  /**
    * The other half of the same criterion: the card is a way *into* the live
    * terminal, not a summary of it. Clicking has to leave the caret in the
    * TUI, because the next thing you do is answer it.

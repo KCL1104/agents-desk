@@ -366,6 +366,15 @@ textarea { resize: vertical; }
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
 }
 
+/* A world separator spans the grid: which machine the cards below run on.
+   The hairline carries the division so the label can stay quiet. */
+.ov-world {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 8px;
+  margin: 4px 0 0; font-weight: 400; color: var(--fg-dim);
+}
+.ov-world::after { content: ''; flex: 1; border-top: 1px solid var(--line); }
+
 .ov-card {
   position: relative;
   display: flex; flex-direction: column; gap: 7px;
@@ -625,6 +634,8 @@ textarea { resize: vertical; }
 }
 .board-card-state { font-size: 12px; color: var(--fg-dim); }
 .board-card.needs-you .board-card-state { color: var(--warn); font-weight: 600; }
+/* "Can't tell" wears the faintest ink: a disclaimer, never a status. */
+.board-card-state .no-signal { color: var(--fg-faint); font-size: 11px; padding: 1px 6px; }
 /* Quiet beside the warning it qualifies, and exempt from its weight. */
 .card-elapsed { color: var(--fg-faint); font-weight: 400; }
 .board-card-activity { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }

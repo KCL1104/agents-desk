@@ -57,11 +57,27 @@ export function Splitter({
     onCommit(handle.path, dragHandle(d.fr, handle.index, now - d.from, handle.span));
   };
 
+  /** role="separator" promises keyboard adjustability; kept, like the
+   *  drawer's grip: arrows nudge by a keystroke's worth of pixels through
+   *  the same clamping the drag goes through, committed immediately —
+   *  there is no release to wait for. */
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const along =
+      handle.dir === 'row'
+        ? { grow: 'ArrowRight', shrink: 'ArrowLeft' }
+        : { grow: 'ArrowDown', shrink: 'ArrowUp' };
+    if (e.key !== along.grow && e.key !== along.shrink) return;
+    e.preventDefault();
+    const delta = e.key === along.grow ? 24 : -24;
+    onCommit(handle.path, dragHandle([...fr], handle.index, delta, handle.span));
+  };
+
   return (
     <div
       className={`splitter ${handle.dir}`}
       role="separator"
       aria-orientation={handle.dir === 'row' ? 'vertical' : 'horizontal'}
+      tabIndex={0}
       data-testid={`splitter-${handle.path.join('.') || 'root'}-${handle.index}`}
       title={t('splitter.hint')}
       style={{
@@ -74,6 +90,7 @@ export function Splitter({
       onPointerMove={onPointerMove}
       onPointerUp={finish}
       onPointerCancel={finish}
+      onKeyDown={onKeyDown}
       onDoubleClick={() => onReset(handle.path)}
     />
   );

@@ -425,6 +425,25 @@ test.describe('resizing by dragging the boundary', () => {
       })
       .toBe(true);
   });
+
+  test('the boundary answers arrow keys — role="separator" kept honest', async ({ page }) => {
+    const splitter = await twoUp(page);
+    const before = await panes(page);
+
+    await splitter.focus();
+    await page.keyboard.press('ArrowRight');
+
+    // One keystroke's worth of pixels, committed immediately — and it
+    // survives a reload the same way a drag does.
+    await expect
+      .poll(async () => (await panes(page)).find((p) => p.id === 's1')?.w)
+      .toBeGreaterThan(before.find((p) => p.id === 's1')!.w + 10);
+    const wide = (await panes(page)).find((p) => p.id === 's1')!.w;
+
+    await page.reload();
+    await expectPanes(page, 2);
+    await expect.poll(async () => (await panes(page)).find((p) => p.id === 's1')?.w).toBe(wide);
+  });
 });
 
 test.describe('focus and zoom', () => {

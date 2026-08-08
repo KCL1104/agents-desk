@@ -85,6 +85,8 @@ export const en = {
   'overview.noStatus': 'This agent does not report status',
   'overview.markDone': 'Done',
   'overview.unmarkDone': 'Undo done',
+  // Only shown once a second world exists — see Overview's multiWorld gate.
+  'world.local': 'This machine',
 
   /* ----------------------------- panes -------------------------------- */
   'pane.dragHint':
@@ -100,7 +102,7 @@ export const en = {
   'keys.jump': 'Jump to the session waiting on you',
   'keys.palette': 'Command palette — sessions, cards, actions',
   'keys.cyclePanes': 'Focus the next / previous pane',
-  'keys.moveCard': 'Move the focused board card one column',
+  'keys.moveCard': 'Move the focused board card — a column sideways, a slot up or down',
   'keys.cycleTabs': 'Next / previous tab',
   'keys.inspector': 'Open or close the inspector',
   'keys.diff': 'J/K walk the diff lines, N/P the files; Enter acts on the focused one',
@@ -137,6 +139,7 @@ export const en = {
   'tabs.close': 'Close tab (sessions stay in the sidebar)',
   'tabs.new': 'New tab',
   'tabs.defaultName': 'Workspace {n}',
+  'tabs.strip': 'Workspace tabs',
 
   /* --------------------------- column picker -------------------------- */
   'cols.label': 'Columns',
@@ -168,6 +171,7 @@ export const en = {
   'board.deleteCard': 'Delete card',
   'board.confirmDelete': 'Delete for good?',
   'board.movedTo': '{title} moved to {col}',
+  'board.reordered': '{title} moved to position {n}',
   'announce.multi': '{count} sessions waiting on you: {titles}',
   'err.notDir': 'This path does not exist (or is not a folder). Check it, or pick the repository with Choose.',
   'err.notGitRepo': 'That folder is not a git repository. Point the card at the repo root — the folder holding .git.',
@@ -226,10 +230,14 @@ export const en = {
   'status.idle': 'Idle',
   'status.saved': 'Closed',
   'status.exited': 'Exited',
+  // Worn by cards whose agent has no hooks: silence that means "can't
+  // tell", kept distinct from silence that means "nothing to do".
+  'status.noSignal': 'no status signal',
 
   /* ----------------------------- sections ----------------------------- */
   'section.working': 'Working',
   'section.waiting': 'Waiting on you',
+  'section.idle': 'Idle',
   'section.done': 'Done',
 
   /* ------------------------------ unseen ------------------------------ */
@@ -450,6 +458,7 @@ export const zhTW: Record<MessageKey, string> = {
   'overview.noStatus': '這個 agent 不回報狀態',
   'overview.markDone': '完成',
   'overview.unmarkDone': '取消完成',
+  'world.local': '本機',
 
   /* ----------------------------- panes -------------------------------- */
   'pane.dragHint': '拖到別的 pane 中央可對調，拖到邊緣可切分；雙擊放大',
@@ -464,7 +473,7 @@ export const zhTW: Record<MessageKey, string> = {
   'keys.jump': '跳到正在等你的 session',
   'keys.palette': '命令面板 —— session、卡片、動作',
   'keys.cyclePanes': '聚焦下一個 / 上一個 pane',
-  'keys.moveCard': '把聚焦的看板卡片搬一欄',
+  'keys.moveCard': '搬動聚焦的卡片 —— 左右換欄、上下換位',
   'keys.cycleTabs': '下一個 / 上一個分頁',
   'keys.inspector': '開關檢視器',
   'keys.diff': 'J/K 逐行、N/P 逐檔；Enter 對聚焦處動作',
@@ -500,6 +509,7 @@ export const zhTW: Record<MessageKey, string> = {
   'tabs.close': '關閉分頁（session 會留在側邊欄）',
   'tabs.new': '新分頁',
   'tabs.defaultName': '工作 {n}',
+  'tabs.strip': '工作區分頁',
 
   /* --------------------------- column picker -------------------------- */
   'cols.label': '欄數',
@@ -530,6 +540,7 @@ export const zhTW: Record<MessageKey, string> = {
   'board.deleteCard': '刪除卡片',
   'board.confirmDelete': '確定刪除？',
   'board.movedTo': '{title} 移到 {col}',
+  'board.reordered': '{title} 移到第 {n} 位',
   'announce.multi': '{count} 個 session 等你：{titles}',
   'err.notDir': '這個路徑不存在（或不是資料夾）。檢查一下，或用「選擇」挑選 repository。',
   'err.notGitRepo': '這個資料夾不是 git repository。請指向 repo 根目錄 —— 也就是有 .git 的那層。',
@@ -588,10 +599,13 @@ export const zhTW: Record<MessageKey, string> = {
   'status.idle': '待命',
   'status.saved': '已關閉',
   'status.exited': '已結束',
+  'status.noSignal': '無狀態訊號',
 
   /* ----------------------------- sections ----------------------------- */
   'section.working': '開發中',
-  'section.waiting': '等待輸入',
+  // 與 ⚠ 徽章同一個詞：這一區裝的正是徽章數的那些列。
+  'section.waiting': '等你',
+  'section.idle': '待命',
   'section.done': '已完成',
 
   /* ------------------------------ unseen ------------------------------ */

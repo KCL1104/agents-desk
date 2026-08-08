@@ -40,7 +40,7 @@ export function TabStrip({
   const byId = new Map(sessions.map((s) => [s.id, s]));
 
   return (
-    <div className="tab-strip" role="tablist">
+    <div className="tab-strip" role="tablist" aria-label={tr('tabs.strip')}>
       {tabs.map((t) => {
         const shown = t.slots
           .filter((id): id is string => id !== null)

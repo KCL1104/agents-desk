@@ -195,12 +195,23 @@ test.describe('the keyboard can drive', () => {
     await newCard(page, '修好登入');
     await start(page, 'k1');
     await expect(page.locator('.pane:visible')).toHaveCount(1);
+    await page.evaluate(() => {
+      window.__mock.diffs.set(
+        'k1-a1',
+        ['diff --git a/a.py b/a.py', '--- a/a.py', '+++ b/a.py', '@@ -1 +1,2 @@', ' x', '+y'].join(
+          '\n',
+        ),
+      );
+    });
 
     // From outside the terminal the plain chord works; inside it, readline
     // owns Ctrl+I (it is Tab), so the Shift variant is the one that fires.
     await page.locator('.topbar').click();
     await page.keyboard.press('ControlOrMeta+i');
     await expect(page.getByTestId('inspector')).toBeVisible();
+    // The chord finishes its own journey: J/K walk the diff immediately,
+    // with no mouse trip to earn the focus first.
+    await expect(page.getByTestId('diff-body')).toBeFocused();
     await page.keyboard.press('ControlOrMeta+i');
     await expect(page.getByTestId('inspector')).toHaveCount(0);
 
@@ -445,6 +456,30 @@ test.describe('outcomes say so', () => {
 
     await page.keyboard.press('ControlOrMeta+ArrowLeft');
     await expect(page.locator('[data-testid="col-backlog"] .board-card')).toHaveCount(1);
+  });
+
+  test('a card moves within its column from the keyboard', async ({ page }) => {
+    await boot(page);
+    await toBoard(page);
+    await newCard(page, '修好登入');
+    await newCard(page, '寫測試');
+    const inBacklog = page.locator('[data-testid="col-backlog"] .board-card');
+    await expect(inBacklog).toHaveCount(2);
+    await expect(inBacklog.first()).toHaveAttribute('data-testid', 'task-k1');
+
+    // The order the drag could always say, sayable by the keyboard too.
+    await page.locator('[data-testid="task-k2"]').focus();
+    await page.keyboard.press('ControlOrMeta+ArrowUp');
+    await expect(inBacklog.first()).toHaveAttribute('data-testid', 'task-k2');
+    await expect(page.getByTestId('live-announce')).toContainText('移到第 1 位');
+    await expect(page.locator('[data-testid="task-k2"]')).toBeFocused();
+
+    // The edge is a wall, not a wrap: first place stays first.
+    await page.keyboard.press('ControlOrMeta+ArrowUp');
+    await expect(inBacklog.first()).toHaveAttribute('data-testid', 'task-k2');
+
+    await page.keyboard.press('ControlOrMeta+ArrowDown');
+    await expect(inBacklog.first()).toHaveAttribute('data-testid', 'task-k1');
   });
 
   test('two agents blocking at once are both announced', async ({ page }) => {

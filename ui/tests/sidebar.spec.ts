@@ -96,7 +96,38 @@ test.describe('sidebar sections', () => {
 
     await report(page, 's1', 'idle');
     await page.clock.fastForward(SETTLE_MS + 500);
-    await expect.poll(() => sectionOf(page, 's1')).toBe('waiting');
+    await expect.poll(() => sectionOf(page, 's1')).toBe('idle');
+  });
+
+  test('待命 is not 等你: the section count and the ⚠ banner agree', async ({ page }) => {
+    await page.clock.install();
+    await boot(page);
+    await newSession(page, '/Users/test/repo-one');
+    await newSession(page, '/Users/test/repo-two');
+    await newSession(page, '/Users/test/repo-three');
+
+    // One settled turn, one real block. Filing both under 等你 made the
+    // section say 2 over a banner saying ⚠ 1.
+    await report(page, 's1', 'idle');
+    await report(page, 's2', 'waiting_permission');
+    await page.clock.fastForward(SETTLE_MS + 500);
+    await expect.poll(() => sectionOf(page, 's1')).toBe('idle');
+    await expect.poll(() => sectionOf(page, 's2')).toBe('waiting');
+
+    await expect(page.locator('.waiting-banner')).toHaveText(/1/);
+    await expect(page.locator('[data-section="waiting"] .section-count')).toHaveText('1');
+    await expect(page.locator('[data-section="idle"] .section-count')).toHaveText('1');
+  });
+
+  test('a section head says whether it is open, not only to the eye', async ({ page }) => {
+    await boot(page);
+    await newSession(page, '/Users/test/repo-one');
+
+    const head = page.locator('[data-section="working"] .section-head');
+    await expect(head).toHaveAttribute('aria-expanded', 'true');
+    await head.click();
+    await expect(head).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('[data-testid="session-s1"]')).toHaveCount(0);
   });
 
   test('the selected session is pinned so the row never moves under the cursor', async ({

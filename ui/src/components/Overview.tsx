@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import type { SessionMeta } from '../types';
 import { elapsed, SECTION_KEY, sectionOf, STATUS_KEY, type Section } from '../sections';
+import { hostLabel } from '../board';
 import { useT } from '../i18n';
 
 interface Props {
@@ -12,7 +13,19 @@ interface Props {
   onClose: (id: string) => void;
 }
 
-const ORDER: Section[] = ['working', 'waiting', 'done'];
+const ORDER: Section[] = ['waiting', 'working', 'idle', 'done'];
+
+/** Rows bucketed by the world their session runs in, insertion-ordered. */
+function byWorld(rows: SessionMeta[]): Array<[string, SessionMeta[]]> {
+  const map = new Map<string, SessionMeta[]>();
+  for (const s of rows) {
+    const world = hostLabel(s.cwd) ?? '';
+    const list = map.get(world) ?? [];
+    list.push(s);
+    map.set(world, list);
+  }
+  return [...map.entries()];
+}
 
 /**
  * The oversight view: every session at once, as text.
@@ -45,6 +58,11 @@ export function Overview({ sessions, unseen, onOpen, onComplete, onClose }: Prop
   const bySection = new Map<Section, SessionMeta[]>(ORDER.map((s) => [s, []]));
   for (const s of sessions) bySection.get(sectionOf(s))?.push(s);
 
+  // Worlds earn their separators only by disagreeing: a desk that is all
+  // local (or all one distro) has nothing to disambiguate, and a header
+  // saying the one obvious thing would be noise on every screen.
+  const multiWorld = new Set(sessions.map((s) => hostLabel(s.cwd) ?? '')).size > 1;
+
   return (
     <div className="overview">
       {ORDER.map((section) => {
@@ -57,17 +75,28 @@ export function Overview({ sessions, unseen, onOpen, onComplete, onClose }: Prop
               <span className="section-count">{rows.length}</span>
             </h2>
             <div className="ov-grid">
-              {rows.map((s) => (
-                <Card
-                  key={s.id}
-                  session={s}
-                  unseen={unseen.has(s.id)}
-                  now={now}
-                  onOpen={onOpen}
-                  onComplete={onComplete}
-                  onClose={onClose}
-                />
-              ))}
+              {(multiWorld ? byWorld(rows) : ([['', rows]] as const)).map(
+                ([world, group]) => (
+                  <Fragment key={world || 'local'}>
+                    {multiWorld && (
+                      <h3 className="ov-world mono small" data-testid={`world-${world || 'local'}`}>
+                        {world || t('world.local')}
+                      </h3>
+                    )}
+                    {group.map((s) => (
+                      <Card
+                        key={s.id}
+                        session={s}
+                        unseen={unseen.has(s.id)}
+                        now={now}
+                        onOpen={onOpen}
+                        onComplete={onComplete}
+                        onClose={onClose}
+                      />
+                    ))}
+                  </Fragment>
+                ),
+              )}
             </div>
           </section>
         );

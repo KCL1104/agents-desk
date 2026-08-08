@@ -57,8 +57,32 @@ test.describe('overview', () => {
 
     await toOverview(page);
     // Two views of the same data must not disagree about where a session is.
+    // A turn that ended is 待命, not 等你: nothing is blocked on a human.
     await expect(page.locator('[data-ov-section="working"] .ov-card')).toHaveCount(1);
-    await expect(page.locator('[data-ov-section="waiting"] .ov-card')).toHaveCount(1);
+    await expect(page.locator('[data-ov-section="idle"] .ov-card')).toHaveCount(1);
+    await expect(page.locator('[data-ov-section="waiting"]')).toHaveCount(0);
+  });
+
+  test('sessions from another world get separators — an all-local desk gets none', async ({
+    page,
+  }) => {
+    await boot(page);
+    await newSession(page, '/Users/test/repo-one');
+    await newSession(page, '/Users/test/repo-two');
+    await toOverview(page);
+
+    // One world: a header saying the one obvious thing would be noise.
+    await expect(page.locator('.ov-card')).toHaveCount(2);
+    await expect(page.locator('.ov-world')).toHaveCount(0);
+
+    // A WSL session appears: now "which machine" is a real question, and
+    // every group answers it — including the local one, by name.
+    await page.locator('.view-toggle button', { hasText: '終端機' }).click();
+    await newSession(page, 'wsl://Ubuntu/home/me/app');
+    await toOverview(page);
+
+    await expect(page.getByTestId('world-local')).toHaveText('本機');
+    await expect(page.getByTestId('world-wsl:Ubuntu')).toHaveText('wsl:Ubuntu');
   });
 
   test('opening a card goes to that session’s terminal', async ({ page }) => {

@@ -100,6 +100,18 @@ export function Board({
     onAnnounce(t('board.movedTo', { title: task.title, col: t(COLUMN_KEY[next]) }));
   };
 
+  /** And the way up and down inside one: an order the drag could always
+   *  say, finally sayable by the keyboard too. */
+  const reorderByKey = (task: Task, step: 1 | -1) => {
+    const column = columnOf(tasks, task.lifecycle);
+    const at = column.findIndex((x) => x.id === task.id);
+    const to = at + step;
+    if (at < 0 || to < 0 || to >= column.length) return;
+    onMove(task.id, task.lifecycle, to);
+    refocus.current = task.id;
+    onAnnounce(t('board.reordered', { title: task.title, n: to + 1 }));
+  };
+
   const adHoc = sessions.filter((s) => s.attempt_id === null);
   const running = sessions.filter((s) => s.live && s.attempt_id !== null).length;
 
@@ -248,6 +260,7 @@ export function Board({
                     onCancelQueued={onCancelQueued}
                     onDelete={() => onDeleteTask(task.id)}
                     onMoveByKey={(step) => moveByKey(task, step)}
+                    onReorderByKey={(step) => reorderByKey(task, step)}
                     now={now}
                   />
                 ))}
@@ -366,6 +379,7 @@ function Card({
   onCancelQueued,
   onDelete,
   onMoveByKey,
+  onReorderByKey,
   now,
 }: {
   task: Task;
@@ -386,6 +400,7 @@ function Card({
   onCancelQueued: (taskId: string) => void;
   onDelete: () => void;
   onMoveByKey: (step: 1 | -1) => void;
+  onReorderByKey: (step: 1 | -1) => void;
   now: number;
 }) {
   const t = useT();
@@ -433,10 +448,15 @@ function Card({
         unread ? `，${t('unseen.label')}` : ''
       }`}
       onKeyDown={(e) => {
-        if ((e.metaKey || e.ctrlKey) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        if (!(e.metaKey || e.ctrlKey)) return;
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
           e.preventDefault();
           e.stopPropagation();
           onMoveByKey(e.key === 'ArrowRight' ? 1 : -1);
+        } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          e.stopPropagation();
+          onReorderByKey(e.key === 'ArrowDown' ? 1 : -1);
         }
       }}
       draggable
@@ -514,6 +534,19 @@ function Card({
         {waiting && <span aria-hidden="true">⚠ </span>}
         {liveLabel(live, t)}
         {hasAttempt && <span className="muted small mono"> #{live.attempt.seq}</span>}
+        {/* Hooks are Claude Code's; for anyone else 「安靜」 must never be
+            read as 「沒事」— the absence of signal is itself the signal. */}
+        {live.kind === 'session' &&
+          !live.session.reports_status &&
+          live.attempt.agent !== 'claude' && (
+            <span
+              className="chip no-signal"
+              data-testid={`nosignal-${task.id}`}
+              title={t('overview.noStatus')}
+            >
+              {t('status.noSignal')}
+            </span>
+          )}
         {/* How long it has been stuck — the number triage runs on, on the
             surface triage happens on, not only in the sidebar. Based on the
             last report, which for a blocked card is the moment it blocked. */}

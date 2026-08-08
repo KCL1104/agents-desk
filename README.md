@@ -166,6 +166,42 @@ permanent, add this to `~/.zshrc`:
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
+### Around the loop
+
+The pieces that carry the triage loop, in roughly the order you meet them:
+
+- **First run** — a welcome panel reports which agent CLIs this machine
+  actually has and explains the model in three sentences; after that, four
+  one-shot coach marks point out a surface the first time it matters, then
+  never again.
+- **Command palette** — `⌘/Ctrl+K`. Sessions waiting on you are listed
+  before you type anything: it is an attention inbox first and a search box
+  second. Cards and actions follow.
+- **Unseen tier** — a session that finishes a turn while its terminal is not
+  in front of you wears an unread dot in the sidebar, the tab badge and the
+  overview until that terminal has been on screen.
+- **Sidebar sections** — waiting on you (the same set the ⚠ badge counts)
+  first, then working, idle, done. Idle is its own tier: a turn that ended
+  is your move, but nothing is blocked on you.
+- **Board live peek** — selecting a card shows its real terminal beside the
+  columns, read-only until you enter it, so "what is it doing right now"
+  costs one click and no navigation.
+- **Inspector** (`⌘/Ctrl+I`) — the attempt's diff with per-file viewed
+  state, wrap, file jump and a resizable drawer; a timeline that rolls up
+  tool runs and prices each wait; a shell tab opening a real terminal in the
+  attempt's worktree; and a suggested next action read off git — shown only
+  when a human decision is plausible.
+- **Queued follow-up** — feedback written while the agent is mid-turn holds
+  until the turn ends, then sends as one message. A banner names what is
+  queued and cancels in one click.
+- **Branch picker** — the new-card dialog suggests the repo's branches
+  sorted by recency instead of asking you to type one from memory.
+- **Worlds** — repos over WSL or SSH carry a host badge on their cards, and
+  the overview separates sessions by machine once more than one is involved.
+- **No-signal chip** — status comes from Claude Code's hooks; a card running
+  any other agent says "no status signal" rather than letting silence read
+  as calm.
+
 ### Keyboard
 
 The high-frequency loop — an agent waits, you authorize, you move on — can be
@@ -174,9 +210,10 @@ driven without the mouse. `⌘/Ctrl+/` shows this list in the app:
 | Keys | Does |
 |---|---|
 | `⌘/Ctrl+E` | Cycle through the sessions waiting on you |
+| `⌘/Ctrl+K` | Command palette — waiting sessions first, then cards and actions |
 | `⌘/Ctrl+1` / `2` / `3` | Terminal wall · board · overview |
 | `⌘/Ctrl+Alt+←` / `→` | Focus the next / previous pane |
-| `⌘/Ctrl+←` / `→` | Move the focused board card one column |
+| `⌘/Ctrl+←` `→` / `↑` `↓` | Move the focused board card — a column sideways, a slot up or down |
 | `Ctrl+PgDn` / `PgUp` | Next / previous tab |
 | `⌘/Ctrl+I` | Open or close the inspector |
 | `J` / `K` | Walk the diff lines; `Enter` comments on one |
@@ -198,6 +235,11 @@ question — and the window is not focused, the OS shows a notification (in the
 app's language), and the dock/taskbar icon wears the waiting count on macOS
 and Linux. With the window focused the in-app banner already says it, so the
 OS stays quiet.
+
+The environment panel lets you choose which classes fire — permission and
+trust prompts, waiting on your reply, a turn finishing — and has a test
+button, because the first time you learn a notification setting is broken
+should not be while an agent sits blocked.
 
 ### Themes
 

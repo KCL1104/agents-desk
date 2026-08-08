@@ -18,7 +18,9 @@ interface Props {
   onShowEnv: () => void;
 }
 
-const ORDER: Section[] = ['working', 'waiting', 'done'];
+/** Blocked rows first: with many agents, "who is waiting on me" is the
+ *  only ordering that matters, and the top of the sidebar is the queue. */
+const ORDER: Section[] = ['waiting', 'working', 'idle', 'done'];
 
 export function SessionList({
   sessions,
@@ -38,8 +40,9 @@ export function SessionList({
   // 已完成 is where finished work goes to stop taking up attention, so it
   // starts collapsed.
   const [collapsed, setCollapsed] = useState<Record<Section, boolean>>({
-    working: false,
     waiting: false,
+    working: false,
+    idle: false,
     done: true,
   });
 
@@ -90,6 +93,7 @@ export function SessionList({
             <div className="section" key={section} data-section={section}>
               <button
                 className="section-head"
+                aria-expanded={!isCollapsed}
                 onClick={() => setCollapsed((c) => ({ ...c, [section]: !c[section] }))}
               >
                 <span className="section-caret">{isCollapsed ? '▸' : '▾'}</span>

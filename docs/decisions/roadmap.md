@@ -6,10 +6,10 @@
 ## 現況
 
 - main = 研究報告 + 六批實作 + checkpoints 決策文件(至 `5b6d3ad`),工作分支 `claude/research-popular-tool-frontend-fax4cb` 與 main 同步。
-- 驗證基線:Playwright 242 passed(沙箱跑法:`npx playwright test --config playwright.local.config.ts`,指向預裝 Chromium)、cargo 全綠(容器已裝 GTK/WebKit dev 套件)、`npm run build` 乾淨。
+- 驗證基線:Playwright 249 passed(沙箱跑法:`npx playwright test --config playwright.local.config.ts`,指向預裝 Chromium)、cargo 全綠(容器已裝 GTK/WebKit dev 套件)、`npm run build` 乾淨。
 - 慣例備忘:i18n 是雙語 typed catalog,兩語相同的字串要進 `i18n.spec.ts` 的 SHARED 豁免;每個新 Tauri 指令都要在 `tests/mock-tauri.ts` 補 handler;凡動 agent 看得到的 git 狀態(index、worktree、分支)一律禁止。
 
-## 第八批:收尾(狀態:**進行中**)
+## 第八批:收尾(狀態:**完成**)
 
 報告 Tier 1/2 的漏網項,一次清完:
 
