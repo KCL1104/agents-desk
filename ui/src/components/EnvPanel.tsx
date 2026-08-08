@@ -4,6 +4,17 @@ import { api } from '../api';
 import { joinArgs, splitArgs } from '../profiles';
 import type { BootStatus } from '../types';
 import { Modal } from './Modal';
+import {
+  applyTheme,
+  contrast,
+  currentTheme,
+  derive,
+  loadStored,
+  onColor,
+  PRESETS,
+  type Primaries,
+  type StoredTheme,
+} from '../theme';
 
 /**
  * Shows what environment the agents actually get. A GUI process inherits a
@@ -38,6 +49,8 @@ export function EnvPanel({ boot, onClose }: { boot: BootStatus; onClose: () => v
             </option>
           ))}
         </select>
+
+        <Theming />
 
         <Profiles onDirty={setDirty} />
 
@@ -214,6 +227,130 @@ function Profiles({ onDirty }: { onDirty: (dirty: boolean) => void }) {
         <p className="dialog-error" role="alert" data-testid="profile-error">
           {problem}
         </p>
+      )}
+    </div>
+  );
+}
+
+/** The six colors a custom theme asks for, in editor order. */
+const COLOR_FIELDS: { key: keyof Primaries; label: string }[] = [
+  { key: 'bg', label: 'theme.bg' },
+  { key: 'fg', label: 'theme.fg' },
+  { key: 'accent', label: 'theme.accent' },
+  { key: 'ok', label: 'theme.ok' },
+  { key: 'warn', label: 'theme.warn' },
+  { key: 'err', label: 'theme.err' },
+];
+
+/**
+ * Theme choice: presets first, each swatch painted in its own colors so the
+ * row is the preview. 自訂 opens the six colors a theme is really made of,
+ * with the derived tiers and their contrast shown live — the AA discipline
+ * the stylesheet documents, made visible at the moment it is being spent.
+ */
+function Theming() {
+  const { t } = useI18n();
+  const [stored, setStored] = useState<StoredTheme>(loadStored);
+
+  const pick = (next: StoredTheme) => {
+    setStored(next);
+    applyTheme(next);
+  };
+
+  const isCustom = stored.preset === 'custom';
+  const primaries: Primaries =
+    isCustom && 'primaries' in stored
+      ? stored.primaries
+      : {
+          bg: currentTheme().colors.bg,
+          fg: currentTheme().colors.fg,
+          accent: currentTheme().colors.accent,
+          ok: currentTheme().colors.ok,
+          warn: currentTheme().colors.warn,
+          err: currentTheme().colors.err,
+        };
+  const light = isCustom && 'light' in stored ? stored.light : currentTheme().light;
+
+  const editColor = (key: keyof Primaries, value: string) =>
+    pick({ preset: 'custom', light, primaries: { ...primaries, [key]: value } });
+
+  const derived = derive(primaries);
+  const checks: { label: string; ratio: number }[] = [
+    { label: t('theme.cText'), ratio: contrast(derived.fg, derived.bg) },
+    { label: t('theme.cDim'), ratio: contrast(derived.fgDim, derived.bg2) },
+    { label: t('theme.cFaint'), ratio: contrast(derived.fgFaint, derived.bg3) },
+    { label: t('theme.cAccent'), ratio: contrast(onColor(derived.accent), derived.accent) },
+  ];
+
+  return (
+    <div data-testid="theming">
+      <h3 className="modal-section">{t('env.theme')}</h3>
+      <div className="theme-row">
+        {PRESETS.map((p) => (
+          <button
+            key={p.id}
+            className={`theme-swatch${stored.preset === p.id ? ' active' : ''}`}
+            data-testid={`theme-${p.id}`}
+            aria-pressed={stored.preset === p.id}
+            style={{
+              background: p.colors.bg,
+              color: p.colors.fg,
+              borderColor: stored.preset === p.id ? p.colors.accent : p.colors.line,
+            }}
+            onClick={() => pick({ preset: p.id })}
+          >
+            <span className="swatch-accent" style={{ background: p.colors.accent }} />
+            {t(`theme.${p.id}` as 'theme.ink')}
+          </button>
+        ))}
+        <button
+          className={`theme-swatch${isCustom ? ' active' : ''}`}
+          data-testid="theme-custom"
+          aria-pressed={isCustom}
+          onClick={() => pick({ preset: 'custom', light, primaries })}
+        >
+          <span className="swatch-accent" style={{ background: primaries.accent }} />
+          {t('theme.custom')}
+        </button>
+      </div>
+
+      {isCustom && (
+        <div className="theme-editor" data-testid="theme-editor">
+          <p className="muted small">{t('theme.customHint')}</p>
+          <div className="color-grid">
+            {COLOR_FIELDS.map(({ key, label }) => (
+              <label className="color-field" key={key}>
+                {t(label as 'theme.bg')}
+                <input
+                  type="color"
+                  value={primaries[key]}
+                  data-testid={`color-${key}`}
+                  onChange={(e) => editColor(key, e.target.value)}
+                />
+              </label>
+            ))}
+          </div>
+          <label className="theme-light">
+            <input
+              type="checkbox"
+              checked={light}
+              onChange={(e) => pick({ preset: 'custom', light: e.target.checked, primaries })}
+            />
+            {t('theme.light')}
+          </label>
+          {/* The floor the stylesheet promises, checked while it is spent:
+              4.5:1 for every text tier, on the surface it actually sits on. */}
+          <div className="contrast-chips" data-testid="contrast-chips">
+            {checks.map((c) => (
+              <span
+                key={c.label}
+                className={`contrast-chip ${c.ratio >= 4.5 ? 'pass' : 'fail'}`}
+              >
+                {c.ratio >= 4.5 ? '✓' : '⚠'} {c.label} {c.ratio.toFixed(1)}
+              </span>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

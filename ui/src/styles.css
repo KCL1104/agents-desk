@@ -13,6 +13,7 @@
   --ok: #79c08a;
   --warn: #e0af68;
   --err: #e06c75;
+  --on-accent: #0d1017;
   --radius: 8px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 }
@@ -88,11 +89,11 @@ button {
   font: inherit;
   cursor: pointer;
 }
-button:hover:not(:disabled) { background: #26262d; }
+button:hover:not(:disabled) { background: color-mix(in srgb, var(--fg) 5%, var(--bg-3)); }
 button:disabled { opacity: 0.4; cursor: default; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #0d1017; font-weight: 600; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 button.primary:hover:not(:disabled) { filter: brightness(1.08); }
-button.danger { border-color: #5c2f33; color: var(--err); }
+button.danger { border-color: color-mix(in srgb, var(--err) 35%, var(--bg-3)); color: var(--err); }
 button.icon { padding: 2px 8px; font-size: 15px; line-height: 1; }
 
 input, textarea, select {
@@ -128,8 +129,8 @@ textarea { resize: vertical; }
   border-bottom: 1px solid var(--line);
 }
 .waiting-banner {
-  margin: 8px; border-color: #4a3a1c; color: var(--warn);
-  background: #241d10; text-align: left;
+  margin: 8px; border-color: color-mix(in srgb, var(--warn) 25%, var(--bg-2)); color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 7%, var(--bg-2)); text-align: left;
 }
 .session-groups { overflow-y: auto; flex: 1; }
 .group { margin-bottom: 10px; }
@@ -207,18 +208,18 @@ textarea { resize: vertical; }
   padding: 5px 4px 5px 7px;
   border: 1px solid transparent; border-radius: 6px;
 }
-.term-host.focused { border-color: #2f3f63; }
+.term-host.focused { border-color: color-mix(in srgb, var(--accent) 25%, var(--line)); }
 
 .term-host .xterm { height: 100%; }
 .term-host .xterm-viewport::-webkit-scrollbar { width: 9px; }
-.term-host .xterm-viewport::-webkit-scrollbar-thumb { background: #34343d; border-radius: 5px; }
+.term-host .xterm-viewport::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--fg) 15%, var(--bg)); border-radius: 5px; }
 
 .term-empty {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
   border: 1px dashed var(--line); border-radius: 6px;
 }
-.term-empty.drop-over { border-style: solid; border-color: var(--accent); background: #171d2b; }
+.term-empty.drop-over { border-style: solid; border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--bg)); }
 
 .sidebar-foot {
   margin: 8px; border: none; background: transparent; color: var(--fg-dim);
@@ -226,7 +227,7 @@ textarea { resize: vertical; }
 }
 .sidebar-foot:hover { color: var(--fg); background: transparent; }
 
-.dot.saved { background: #4a4a52; }
+.dot.saved { background: color-mix(in srgb, var(--fg) 26%, var(--bg)); }
 .dot.exited { background: var(--fg-dim); }
 
 .modal label { margin-top: 14px; }
@@ -254,10 +255,10 @@ textarea { resize: vertical; }
 }
 
 .waiting-banner {
-  margin: 8px; border-color: #4a3a1c; color: var(--warn);
-  background: #241d10; text-align: left; font-size: 12px;
+  margin: 8px; border-color: color-mix(in srgb, var(--warn) 25%, var(--bg-2)); color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 7%, var(--bg-2)); text-align: left; font-size: 12px;
 }
-.waiting-banner:hover { background: #2e2413; }
+.waiting-banner:hover { background: color-mix(in srgb, var(--warn) 12%, var(--bg-2)); }
 
 /* Toasts stack — parallel agents fail in parallel, and the second problem
    must not eat the first. */
@@ -271,8 +272,8 @@ textarea { resize: vertical; }
   background: var(--bg-3); border: 1px solid var(--line);
   box-shadow: 0 6px 24px rgba(0,0,0,0.45);
 }
-.toast.error { border-color: #5c2f33; color: var(--err); }
-.toast.ok { border-color: #2e4633; color: var(--ok); }
+.toast.error { border-color: color-mix(in srgb, var(--err) 35%, var(--bg-3)); color: var(--err); }
+.toast.ok { border-color: color-mix(in srgb, var(--ok) 30%, var(--bg-3)); color: var(--ok); }
 .toast-more { color: var(--fg-dim); font-size: 11px; padding: 4px 10px; }
 .toast button { background: transparent; border: none; color: inherit; padding: 0 2px; }
 
@@ -302,7 +303,7 @@ textarea { resize: vertical; }
   transition: background 120ms ease;
 }
 .session-row.active { background: var(--bg-3); }
-.session-row:hover { background: #1f1f25; }
+.session-row:hover { background: color-mix(in srgb, var(--fg) 4%, var(--bg-2)); }
 
 .row-top { display: flex; align-items: center; gap: 7px; }
 .row-title { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -369,7 +370,7 @@ textarea { resize: vertical; }
 }
 /* Blocked sessions are the ones that cost you time; make them findable at a
    glance without having to read every card. */
-.ov-card.waiting_permission { border-left-color: var(--warn); background: #1e1a12; }
+.ov-card.waiting_permission { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 5%, var(--bg-2)); }
 .ov-card.waiting_input { border-left-color: var(--warn); }
 .ov-card.running, .ov-card.starting { border-left-color: var(--accent); }
 .ov-card.idle { border-left-color: var(--ok); }
@@ -442,8 +443,8 @@ textarea { resize: vertical; }
   border: 1px solid var(--line); border-radius: 6px;
   background: var(--bg);
 }
-.pane.focused { border-color: #2f3f63; }
-.pane.drop-over { border-color: var(--accent); background: #171d2b; }
+.pane.focused { border-color: color-mix(in srgb, var(--accent) 25%, var(--line)); }
+.pane.drop-over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--bg)); }
 
 .pane-head {
   display: flex; align-items: center; gap: 6px;
@@ -452,7 +453,7 @@ textarea { resize: vertical; }
   cursor: grab; user-select: none; flex: none;
 }
 .pane-head:active { cursor: grabbing; }
-.pane.focused .pane-head { background: #1b2130; }
+.pane.focused .pane-head { background: color-mix(in srgb, var(--accent) 10%, var(--bg-2)); }
 .pane-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pane-agent { color: var(--fg-dim); font-size: 11px; }
 .pane-eject {
@@ -475,10 +476,10 @@ textarea { resize: vertical; }
    here" as against "these two will trade places". */
 .drop-preview {
   position: absolute; pointer-events: none; z-index: 3;
-  background: rgba(122, 162, 247, 0.22);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
   border: 1px solid var(--accent); border-radius: 4px;
 }
-.drop-preview.swap { background: rgba(122, 162, 247, 0.1); border-style: dashed; }
+.drop-preview.swap { background: color-mix(in srgb, var(--accent) 10%, transparent); border-style: dashed; }
 
 /* Only present while a drag is in flight, so they never sit in front of a
    terminal you are trying to click. */
@@ -487,7 +488,7 @@ textarea { resize: vertical; }
 .edge-drop.bottom { left: 0; right: 0; bottom: 0; height: 16px; }
 .edge-drop.left { top: 0; bottom: 0; left: 0; width: 16px; }
 .edge-drop.right { top: 0; bottom: 0; right: 0; width: 16px; }
-.edge-drop.drop-over { background: rgba(122, 162, 247, 0.35); box-shadow: 0 0 0 1px var(--accent); }
+.edge-drop.drop-over { background: color-mix(in srgb, var(--accent) 35%, transparent); box-shadow: 0 0 0 1px var(--accent); }
 
 /* ---------- splitters ---------- */
 
@@ -496,7 +497,7 @@ textarea { resize: vertical; }
 .splitter.col { cursor: row-resize; }
 /* Invisible until aimed at: a wall of terminals does not need grid lines
    drawn over it, but the handle has to be findable. */
-.splitter:hover, .splitter:active { background: rgba(122, 162, 247, 0.35); border-radius: 3px; }
+.splitter:hover, .splitter:active { background: color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 3px; }
 
 /* ---------- column picker ---------- */
 
@@ -533,7 +534,7 @@ textarea { resize: vertical; }
   border-radius: 10px; padding: 10px; min-height: 120px;
 }
 /* Only while something is being dragged over it, so the board is calm at rest. */
-.board-col.drop-over { border-color: var(--accent); background: #16192099; }
+.board-col.drop-over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--bg)); }
 
 .board-col-head {
   display: flex; align-items: center; gap: 8px;
@@ -565,7 +566,7 @@ textarea { resize: vertical; }
 /* The whole card is the door when a session lives behind it; the hover says
    so — cursor alone is an affordance only for people already dragging. */
 .board-card.enterable { cursor: pointer; }
-.board-card.enterable:hover { border-color: #3a4a6b; }
+.board-card.enterable:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
 .board-card.dragging { opacity: 0.4; }
 /* The card the drop would land in front of. */
 .board-card.insert-before { box-shadow: 0 -2px 0 var(--accent); }
@@ -574,19 +575,19 @@ textarea { resize: vertical; }
    has to be findable from across the room, without opening anything. */
 .board-card.needs-you {
   border-left-color: var(--warn);
-  background: #1e1a12;
+  background: color-mix(in srgb, var(--warn) 5%, var(--bg-2));
   animation: board-breathe 2.4s ease-in-out infinite;
 }
 @keyframes board-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 175, 104, 0); }
-  50% { box-shadow: 0 0 0 2px rgba(224, 175, 104, 0.28); }
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 28%, transparent); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .board-card.needs-you { animation: none; box-shadow: 0 0 0 2px rgba(224, 175, 104, 0.28); }
+  .board-card.needs-you { animation: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 28%, transparent); }
 }
 
 .board-card[data-live='session'] { border-left-color: var(--accent); }
-.board-card[data-live='stopped'] { border-left-color: #4a4a52; }
+.board-card[data-live='stopped'] { border-left-color: color-mix(in srgb, var(--fg) 26%, var(--bg)); }
 /* Finished cards recede the same way closed overview cards do: by fill and
    edge. Their 再試一次 button is still a live action, so no container
    opacity — it would fade the button and the text below AA together. */
@@ -623,12 +624,12 @@ textarea { resize: vertical; }
   display: flex; align-items: center; gap: 7px;
   padding: 5px 10px; font-size: 12px;
 }
-.adhoc-chip.needs-you { border-color: var(--warn); background: #1e1a12; }
+.adhoc-chip.needs-you { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 5%, var(--bg-2)); }
 .adhoc-title { font-weight: 600; }
 
 .dot.awaiting_trust { background: var(--warn); }
 .dot.waiting_input { background: var(--warn); }
-.dot.exited, .dot.saved { background: #4a4a52; }
+.dot.exited, .dot.saved { background: color-mix(in srgb, var(--fg) 26%, var(--bg)); }
 
 .modal.wide { width: 720px; }
 .dialog-error { color: var(--err); font-size: 12px; margin: 10px 0 0; }
@@ -751,14 +752,14 @@ textarea { resize: vertical; }
   background: transparent; border: 1px solid var(--err); color: var(--err);
   font-size: 11px; padding: 1px 8px; border-radius: 5px; flex: none;
 }
-.confirm-delete:hover { background: #2a1a1c; }
+.confirm-delete:hover { background: color-mix(in srgb, var(--err) 8%, var(--bg-3)); }
 
 /* The armed merge: not destructive-red — it is the loop's peak, but it
    mutates the base branch, so the second click pauses in warn. */
 .confirm-arm {
   background: transparent; border: 1px solid var(--warn); color: var(--warn);
 }
-.confirm-arm:hover:not(:disabled) { background: #241d10; }
+.confirm-arm:hover:not(:disabled) { background: color-mix(in srgb, var(--warn) 5%, var(--bg-3)); }
 
 /* The raw refusal, one disclosure behind its translation. */
 .err-details { margin-top: 4px; font-size: 11px; }
@@ -774,6 +775,45 @@ textarea { resize: vertical; }
 .board-card-branch { color: var(--fg-dim); }
 /* A repo living in another world says so, ahead of its name. */
 .host-badge { color: var(--accent); }
+
+/* ---------- theme picker ---------- */
+
+/* Each swatch is painted in its own theme's colors: the row is the preview,
+   not a name you have to try on faith. */
+.theme-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+.theme-swatch {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px;
+  font-size: 12px;
+}
+.theme-swatch.active { box-shadow: 0 0 0 1px var(--accent); }
+.swatch-accent { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+.theme-editor { margin-top: 6px; }
+.color-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 10px;
+  margin-top: 4px;
+}
+.color-field { display: flex; flex-direction: column; font-size: 11px; color: var(--fg-dim); }
+.color-field input[type='color'] {
+  width: 100%; height: 26px; padding: 1px 2px; margin-top: 3px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 5px;
+  cursor: pointer;
+}
+.theme-light {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 8px; font-size: 11px; color: var(--fg-dim);
+}
+.theme-light input { width: auto; }
+
+/* The floor, visible while it is being spent. */
+.contrast-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.contrast-chip {
+  font-size: 11px; padding: 1px 7px; border-radius: 5px;
+  border: 1px solid var(--line); color: var(--fg-dim);
+}
+.contrast-chip.pass { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 30%, var(--bg-3)); }
+.contrast-chip.fail { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, var(--bg-3)); font-weight: 600; }
 
 /* The profile editor: one row per profile, the whole list saved at once.
    Fixed shares, so the args field — the one with room to need — gets the

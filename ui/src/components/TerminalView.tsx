@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { api } from '../api';
+import { xtermTheme } from '../theme';
 
 /** base64 -> bytes. The PTY sends bytes so xterm's own UTF-8 decoder can
  *  stitch multi-byte characters that straddle a read boundary. */
@@ -55,29 +56,17 @@ export function TerminalView({
       cursorBlink: focused,
       allowProposedApi: true,
       scrollback: 10_000,
-      theme: {
-        background: '#131316',
-        foreground: '#e7e7ea',
-        cursor: '#7aa2f7',
-        selectionBackground: '#2f3b54',
-        black: '#1d1d22',
-        brightBlack: '#5a5a66',
-        red: '#e06c75',
-        brightRed: '#ff7b86',
-        green: '#79c08a',
-        brightGreen: '#8fd6a0',
-        yellow: '#e0af68',
-        brightYellow: '#f0c584',
-        blue: '#7aa2f7',
-        brightBlue: '#93b6ff',
-        magenta: '#bb9af7',
-        brightMagenta: '#d0b4ff',
-        cyan: '#56b6c2',
-        brightCyan: '#6fd3e0',
-        white: '#c8c8d0',
-        brightWhite: '#ffffff',
-      },
+      // The terminal wears the app's theme: same background, same accent
+      // for the cursor, an ANSI ramp picked for the theme's polarity.
+      theme: xtermTheme(),
     });
+
+    // Re-paint when the theme changes — every terminal stays mounted for
+    // its scrollback, so a theme switch must reach the ones already open.
+    const onTheme = () => {
+      term.options.theme = xtermTheme();
+    };
+    window.addEventListener('agentdesk:theme', onTheme);
 
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -161,6 +150,7 @@ export function TerminalView({
     return () => {
       disposed = true;
       clearTimeout(settle);
+      window.removeEventListener('agentdesk:theme', onTheme);
       observer.disconnect();
       onData.dispose();
       void unlistenPromise.then((off) => off());

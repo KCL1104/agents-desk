@@ -159,6 +159,28 @@ export const en = {
   'sidebar.title': 'Sessions',
   'toast.more': '{count} earlier — clear all',
 
+  /* ----------------------------- theme -------------------------------- */
+  'env.theme': 'Theme',
+  'theme.ink': 'Ink',
+  'theme.paper': 'Paper',
+  'theme.pine': 'Pine',
+  'theme.wisteria': 'Wisteria',
+  'theme.sunset': 'Sunset',
+  'theme.custom': 'Custom',
+  'theme.customHint':
+    'Six colors make a theme; the in-between tiers are derived. The chips below check each text tier against the surface it sits on — 4.5 is the floor worth keeping.',
+  'theme.bg': 'Background',
+  'theme.fg': 'Text',
+  'theme.accent': 'Accent',
+  'theme.ok': 'OK',
+  'theme.warn': 'Warning',
+  'theme.err': 'Error',
+  'theme.light': 'Light theme (terminals use a light ANSI ramp)',
+  'theme.cText': 'Body',
+  'theme.cDim': 'Secondary',
+  'theme.cFaint': 'Faintest',
+  'theme.cAccent': 'Primary button',
+
   /* ---------------------------- lifecycle ----------------------------- */
   'lifecycle.backlog': 'Backlog',
   'lifecycle.running': 'In progress',
@@ -414,6 +436,28 @@ export const zhTW: Record<MessageKey, string> = {
   'env.diagnostics': '診斷',
   'sidebar.title': 'Sessions',
   'toast.more': '還有 {count} 則較早的 — 全部清除',
+
+  /* ----------------------------- theme -------------------------------- */
+  'env.theme': '主題',
+  'theme.ink': '墨',
+  'theme.paper': '紙',
+  'theme.pine': '松',
+  'theme.wisteria': '紫藤',
+  'theme.sunset': '落日',
+  'theme.custom': '自訂',
+  'theme.customHint':
+    '六個顏色決定一個主題，中間的層次由此推導。下方的檢查會即時對照每一層文字與它實際所在的底色 —— 4.5 是值得守住的樓地板。',
+  'theme.bg': '背景',
+  'theme.fg': '文字',
+  'theme.accent': '強調色',
+  'theme.ok': '成功',
+  'theme.warn': '警告',
+  'theme.err': '錯誤',
+  'theme.light': '淺色主題（終端機改用淺色 ANSI 色盤）',
+  'theme.cText': '內文',
+  'theme.cDim': '次要',
+  'theme.cFaint': '最淡',
+  'theme.cAccent': '主要按鈕',
 
   /* ---------------------------- lifecycle ----------------------------- */
   'lifecycle.backlog': '待辦',
