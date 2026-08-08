@@ -7,3 +7,6 @@ target/
 test-results/
 playwright-report/
 *.tsbuildinfo
+
+# Claude Code personal settings
+.claude/settings.local.json
