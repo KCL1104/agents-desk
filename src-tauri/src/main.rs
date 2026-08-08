@@ -441,11 +441,17 @@ fn list_branches(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// The attempt's diff — against its base, or, when `n` names a checkpoint,
+/// against that snapshot instead.
 #[tauri::command]
-fn attempt_diff(state: State<'_, AppState>, attempt_id: String) -> StdResult<String, String> {
+fn attempt_diff(
+    state: State<'_, AppState>,
+    attempt_id: String,
+    n: Option<u64>,
+) -> StdResult<String, String> {
     state
         .core()?
-        .attempt_diff(&attempt_id)
+        .attempt_diff_from(&attempt_id, n)
         .map_err(|e| format!("{e:#}"))
 }
 

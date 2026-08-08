@@ -132,7 +132,9 @@ export const api = {
     invoke<string>('reopen_attempt', { attemptId, cols, rows }),
   finishAttempt: (attemptId: string, outcome: Outcome) =>
     invoke<void>('finish_attempt', { attemptId, outcome }),
-  attemptDiff: (attemptId: string) => invoke<string>('attempt_diff', { attemptId }),
+  /** The attempt's diff — against its base, or against checkpoint n. */
+  attemptDiff: (attemptId: string, n?: number) =>
+    invoke<string>('attempt_diff', { attemptId, n }),
   /** Line counts and ahead/behind for an open attempt — numstat, never the
       rendered diff, so a board full of cards can afford to ask. */
   attemptStats: (attemptId: string) => invoke<AttemptStat>('attempt_stats', { attemptId }),

@@ -2037,16 +2037,40 @@ impl Core {
     /// The attempt's diff: live from the worktree while it still exists, and
     /// the frozen copy once it does not.
     pub fn attempt_diff(&self, attempt_id: &str) -> Result<String> {
+        self.attempt_diff_from(attempt_id, None)
+    }
+
+    /// The same diff with the baseline swapped: against checkpoint `against`
+    /// instead of the attempt's base, answering "what has happened since
+    /// that snapshot" with the rendering the drawer already has. `0` (or
+    /// `None`) is the base itself.
+    pub fn attempt_diff_from(&self, attempt_id: &str, against: Option<u64>) -> Result<String> {
         let attempt = self
             .store
             .get_attempt(attempt_id)?
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         if let Some(frozen) = attempt.frozen_diff {
-            return Ok(frozen);
+            return match against {
+                None | Some(0) => Ok(frozen),
+                Some(n) => Err(anyhow!(
+                    "a finished attempt has no checkpoint #{n} left to compare against — \
+                     its refs are gone and the frozen diff is the record"
+                )),
+            };
         }
         let (wt_loc, he) = self.located(&attempt.worktree_path)?;
-        self.worktrees
-            .diff(&he.hr(&self.env), &wt_loc.path, &attempt.base_sha)
+        let hr = he.hr(&self.env);
+        let base = match against {
+            None | Some(0) => attempt.base_sha.clone(),
+            Some(n) => self
+                .worktrees
+                .checkpoints(&hr, &wt_loc.path, attempt_id)?
+                .into_iter()
+                .find(|c| c.n == n)
+                .map(|c| c.sha)
+                .ok_or_else(|| anyhow!("this attempt has no checkpoint #{n}"))?,
+        };
+        self.worktrees.diff(&hr, &wt_loc.path, &base)
     }
 
     /// The first message for this card.

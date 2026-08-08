@@ -701,6 +701,10 @@ export function installMock(): void {
         .find((a) => a.id === args.attemptId);
       // A finished attempt reads the copy frozen before its worktree went.
       if (attempt?.frozen_diff) return attempt.frozen_diff;
+      // Compared against a checkpoint: tests seed `<id>@<n>` entries.
+      if (args.n != null && Number(args.n) !== 0) {
+        return mock.diffs.get(`${String(args.attemptId)}@${Number(args.n)}`) ?? '';
+      }
       return mock.diffs.get(String(args.attemptId)) ?? '';
     },
 

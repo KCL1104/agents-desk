@@ -1,6 +1,6 @@
 # 決策文件:Checkpoints(worktree 快照與還原)
 
-> 狀態:**提案,待決** · 2026-08 · 來源:前端研究報告 Tier 3 #25
+> 狀態:**已定案,v1 已實作**(切片 1–4)· 2026-08 · 來源:前端研究報告 Tier 3 #25
 > 參照:Conductor checkpoints(機制為第三方轉述,未驗證)、Crystal CommitMode、opcode Timeline、Claude Code 原生 `/rewind`
 
 ## 問題
@@ -50,7 +50,9 @@ Conductor 在每次使用者訊息前快照(UserPromptSubmit 時刻)。我們驗
 
 ## 成本
 
-每輪一次 `add -A`(臨時 index)+ write-tree:量級與 `git status` 相同,而看板 stats 每 15 秒已在跑同量級的操作;object 走 content addressing,重複內容不重複儲存。大 repo 在 WSL/SSH 上的實測是開工前的必要功課(見未決)。
+每輪一次 `add -A`(臨時 index)+ write-tree:量級與 `git status` 相同,而看板 stats 每 15 秒已在跑同量級的操作;object 走 content addressing,重複內容不重複儲存。
+
+**實測**(2026-08,本機 Linux,2 萬檔 repo):首次快照(臨時 index 從零建)~0.21s;之後每次(index 續用、吃 stat cache)~0.04s;無變更同樣 ~0.04s;對照 `git status` ~0.02s——「與 status 同量級」成立,且臨時 index 因此**續用不即刪**(存於 worktree 私有 gitdir,worktree 收回時一併消失)。WSL/SSH 未實測(本容器無環境):每次快照約 5 個 git 呼叫,遠端走 ssh 多工連線是 5 個 round trip,遇到問題時的第一個嫌疑人記在這裡。
 
 ## 建議的 v1 範圍
 
@@ -61,9 +63,9 @@ Conductor 在每次使用者訊息前快照(UserPromptSubmit 時刻)。我們驗
 
 **驗收**:每輪結束產生一個 ref 且 agent 的 `git status` 前後不變(哲學驗收,要寫成測試);還原後 worktree 等於快照且自動快照存在;執行中還原被拒且理由完整;終局後 refs 消失、凍結 diff 依然完整;Playwright 覆蓋時間軸 UI 全流程。
 
-## 未決(開工前要拍板)
+## 未決 → 已拍板(v1 依建議採納)
 
-1. **預設開關**:Stop 快照預設開還是關?(建議:開,環境面板可關——成本已論證為可承受,但要先在大 repo + WSL 實測一次)
-2. **保留數**:每 attempt 全留還是最後 N 個?(建議:全留,終局即清,除非實測顯示 object 增長成問題)
-3. **手動檢查點的命名**:要不要讓人取名?(建議 v1 不要,時間戳即名——opcode 的具名是它分支樹的需要,我們沒有樹)
-4. **Conductor 機制驗證**:private ref 說法來自第三方轉述;不影響我們的設計,但引用時要保持標註。
+1. **預設開關**:開,環境面板可關(`checkpoints_on`)。大 repo 實測見成本節;WSL 未測,列為已知缺口。
+2. **保留數**:全留,終局即清(`close_attempt` 刪 refs + 啟動孤兒清掃)。
+3. **手動檢查點的命名**:不具名,時間戳即名。
+4. **Conductor 機制驗證**:維持標註,未再驗證;不影響本設計。

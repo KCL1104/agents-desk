@@ -353,3 +353,49 @@ test.describe('restore from the timeline', () => {
     expect(call).toMatchObject({ attemptId: 'k1-a1', n: 1 });
   });
 });
+
+test.describe('compare against a checkpoint', () => {
+  test('the baseline picker swaps the diff, and stays away until a checkpoint exists', async ({
+    page,
+  }) => {
+    await boardWithAttempt(page);
+    await page.evaluate((diff) => {
+      window.__mock.diffs.set('k1-a1', diff);
+      window.__mock.diffs.set(
+        'k1-a1@1',
+        [
+          'diff --git a/since.txt b/since.txt',
+          '--- /dev/null',
+          '+++ b/since.txt',
+          '@@ -0,0 +1 @@',
+          '+only since the snapshot',
+        ].join('\n'),
+      );
+    }, DIFF);
+
+    // No checkpoints yet: a select with one honest option is furniture.
+    await page.getByTestId('inspect-k1').click();
+    await expect(page.getByTestId('diff-body')).toContainText('src/auth.py');
+    await expect(page.getByTestId('ckpt-compare')).toHaveCount(0);
+
+    // A checkpoint appears; reopening the drawer offers the swap.
+    await page.evaluate(() => {
+      window.__mock.checkpoints.set('k1-a1', [
+        { n: 1, sha: 'cafe100', at: Math.floor(Date.now() / 1000) - 60 },
+      ]);
+    });
+    await page.getByRole('button', { name: '關閉檢視' }).click();
+    await page.getByTestId('view-board').click();
+    await page.getByTestId('inspect-k1').click();
+    await expect(page.getByTestId('ckpt-compare')).toBeVisible();
+
+    await page.getByTestId('ckpt-compare').selectOption('1');
+    // The same rendering, a different baseline: what happened *since*.
+    await expect(page.getByTestId('diff-body')).toContainText('only since the snapshot');
+    await expect(page.getByTestId('diff-body')).not.toContainText('src/auth.py');
+
+    // And back to the whole attempt.
+    await page.getByTestId('ckpt-compare').selectOption('0');
+    await expect(page.getByTestId('diff-body')).toContainText('src/auth.py');
+  });
+});

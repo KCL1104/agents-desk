@@ -371,6 +371,9 @@ export const en = {
   'ckpt.tell': 'Tell the agent',
   'ckpt.note':
     'Note: this worktree was restored to an earlier checkpoint. Files may not match what you last wrote — re-read anything before editing it.',
+  'ckpt.compare': 'Against',
+  'ckpt.compareBase': 'Base — the whole attempt',
+  'ckpt.compareN': 'Checkpoint #{n} · {time}',
 
   /* ----------------------------- profiles ------------------------------ */
   'profile.namePlaceholder': 'opus, quiet claude, …',
@@ -753,6 +756,9 @@ export const zhTW: Record<MessageKey, string> = {
   'ckpt.tell': '告訴 agent',
   'ckpt.note':
     '提醒：這個 worktree 已被還原到較早的檢查點。檔案內容可能與你上次寫入的不同 —— 編輯前請先重新讀取。',
+  'ckpt.compare': '比較對象',
+  'ckpt.compareBase': 'Base —— 整個 attempt',
+  'ckpt.compareN': '檢查點 #{n} · {time}',
 
   /* ----------------------------- profiles ------------------------------ */
   'profile.namePlaceholder': 'opus、安靜的 claude、…',

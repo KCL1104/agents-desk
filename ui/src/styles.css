@@ -1062,6 +1062,13 @@ textarea { resize: vertical; }
 .tl-restore.armed { color: var(--warn); border-color: var(--warn); font-size: 11px; }
 .tl-restore:disabled { opacity: 0.4; cursor: default; }
 
+/* The diff's baseline picker — only present once a checkpoint exists. */
+.compare-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 11px; border-bottom: 1px solid var(--line);
+}
+.compare-row select { font-size: 12px; padding: 2px 6px; }
+
 /* What the restore did (or refused) — stays until dismissed, because it
    names the retreat that was kept, which outlives a toast's four seconds. */
 .restore-banner {

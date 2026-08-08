@@ -194,6 +194,13 @@ The pieces that carry the triage loop, in roughly the order you meet them:
 - **Queued follow-up** — feedback written while the agent is mid-turn holds
   until the turn ends, then sends as one message. A banner names what is
   queued and cancels in one click.
+- **Checkpoints** — every turn's end snapshots the worktree into a private
+  ref (default on; off in the environment panel), touching nothing the
+  agent sees, plus a manual ⚑ for any agent. Prompt rows on the timeline
+  wear ↩: restore the code to before that turn — the conversation is never
+  touched, a pre-restore snapshot is kept first, and a turn in flight
+  refuses with its reason. The diff can compare against any checkpoint.
+  Refs die with the attempt; the frozen diff remains the record.
 - **Branch picker** — the new-card dialog suggests the repo's branches
   sorted by recency instead of asking you to type one from memory.
 - **Worlds** — repos over WSL or SSH carry a host badge on their cards, and

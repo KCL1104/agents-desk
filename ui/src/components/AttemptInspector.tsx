@@ -157,6 +157,9 @@ export function AttemptInspector({
   /** What the last restore did (or refused), shown over the timeline until
       dismissed — it names the retreat that was kept, which outlives 4s. */
   const [restored, setRestored] = useState<string | null>(null);
+  /** What the diff is measured against: 0 for the attempt's base — the
+      whole story — or a checkpoint's n for "what happened since". */
+  const [compareTo, setCompareTo] = useState(0);
 
   // The repo's run scripts, for the ▶ buttons. Read once per attempt: the
   // config is a file in the repository, and it does not move underneath an
@@ -176,7 +179,7 @@ export function AttemptInspector({
     setError(null);
     setEventsError(null);
     void api
-      .attemptDiff(attempt.id)
+      .attemptDiff(attempt.id, compareTo || undefined)
       .then((d) => {
         setDiff(d);
         setFetchedAt(Date.now());
@@ -208,7 +211,7 @@ export function AttemptInspector({
       setStat(null);
       setCps([]);
     }
-  }, [attempt.id, attempt.outcome]);
+  }, [attempt.id, attempt.outcome, compareTo]);
 
   // Read on open and whenever the attempt changes. Not on a timer: a diff
   // that reflows under you while you are reading it is worse than one you
@@ -221,6 +224,7 @@ export function AttemptInspector({
   useEffect(() => {
     setPicked(null);
     setRestored(null);
+    setCompareTo(0);
   }, [attempt.id]);
 
   /** A turn in flight blocks restoring: the agent would keep believing in
@@ -407,17 +411,42 @@ export function AttemptInspector({
       )}
 
       {pane === 'diff' ? (
-        // Keyed by attempt: the fold state describes one diff's files, and
-        // another attempt's diff must start from its own policy.
-        <DiffPane
-          key={attempt.id}
-          diff={diff}
-          fetchedAt={fetchedAt}
-          comments={comments}
-          viewed={viewed}
-          onViewed={onViewed}
-          onPick={setPicked}
-        />
+        <>
+          {/* Swap the baseline: the whole attempt, or what has happened
+              since a checkpoint. Only offered once there is a checkpoint to
+              compare against — a select with one honest option is furniture. */}
+          {attempt.outcome === null && cps.length > 0 && (
+            <div className="compare-row mono small">
+              <label className="muted" htmlFor="ckpt-compare">
+                {t('ckpt.compare')}
+              </label>
+              <select
+                id="ckpt-compare"
+                data-testid="ckpt-compare"
+                value={compareTo}
+                onChange={(e) => setCompareTo(Number(e.target.value) || 0)}
+              >
+                <option value={0}>{t('ckpt.compareBase')}</option>
+                {cps.map((c) => (
+                  <option key={c.n} value={c.n}>
+                    {t('ckpt.compareN', { n: c.n, time: clock(c.at * 1000) })}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {/* Keyed by attempt and baseline: the fold state describes one
+              diff's files, and a different comparison is a different diff. */}
+          <DiffPane
+            key={`${attempt.id}@${compareTo}`}
+            diff={diff}
+            fetchedAt={fetchedAt}
+            comments={comments}
+            viewed={viewed}
+            onViewed={onViewed}
+            onPick={setPicked}
+          />
+        </>
       ) : (
         <>
           {restored !== null && (
