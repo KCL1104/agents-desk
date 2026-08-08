@@ -461,6 +461,12 @@ impl Worktrees {
         stat.behind = parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
         stat.ahead = parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
 
+        // Whether anything is still uncommitted — the exact check the merge
+        // will make, run ahead of it, so the refusal can become a suggestion
+        // before the click instead of an error after it.
+        let dirty = git(hr, worktree, &["status", "--porcelain"])?;
+        stat.dirty = !dirty.trim().is_empty();
+
         Ok(stat)
     }
 }
@@ -476,6 +482,8 @@ pub struct DiffStat {
     pub ahead: i64,
     /// Commits the base has grown since — the merge refusal not yet hit.
     pub behind: i64,
+    /// Uncommitted work in the worktree — the other refusal not yet hit.
+    pub dirty: bool,
 }
 
 impl DiffStat {
@@ -511,7 +519,7 @@ mod tests {
         s.count("-\t-\tlogo.png");
         assert_eq!(
             s,
-            DiffStat { files: 3, adds: 12, dels: 10, ahead: 0, behind: 0 }
+            DiffStat { files: 3, adds: 12, dels: 10, ..DiffStat::default() }
         );
     }
 

@@ -33,6 +33,8 @@ export interface AttemptStat {
   /** Commits the base has grown since — the merge refusal you have not
       hit yet. */
   behind: number;
+  /** Uncommitted work in the worktree — the other refusal not yet hit. */
+  dirty: boolean;
 }
 
 /** What opening an attempt produced. Mirrors core.rs OpenedAttempt. */

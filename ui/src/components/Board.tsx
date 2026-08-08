@@ -19,6 +19,7 @@ import {
   type Live,
 } from '../board';
 import { elapsed } from '../sections';
+import { nextAction, NEXT_KEY } from '../next';
 
 interface Props {
   tasks: Task[];
@@ -513,6 +514,23 @@ function Card({
           {live.session.activity.tool} {live.session.activity.detail}
         </div>
       )}
+
+      {/* The one state-appropriate next step, read off git — and only when
+          a human decision is plausible. A running agent's worktree is dirty
+          by definition; nagging about it mid-work would be noise. */}
+      {(() => {
+        const decidable =
+          live.kind === 'stopped' ||
+          (live.kind === 'session' &&
+            (live.status === 'idle' || needsYou(live.status)));
+        const next = decidable && stat ? nextAction(stat) : null;
+        if (next === null) return null;
+        return (
+          <div className={`card-next ${next}`} data-testid={`next-${task.id}`}>
+            → {t(NEXT_KEY[next], { branch: task.base_branch, n: stat?.behind ?? 0 })}
+          </div>
+        );
+      })()}
 
       <footer className="board-card-foot">
         {live.kind === 'none' && (

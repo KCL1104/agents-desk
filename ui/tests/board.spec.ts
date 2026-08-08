@@ -350,7 +350,7 @@ test.describe('attempt footprint on the card', () => {
     await newCard(page, '修好登入');
     await start(page, 'k1');
     await page.evaluate(() => {
-      window.__mock.stats.set('k1-a1', { files: 2, adds: 12, dels: 3, ahead: 2, behind: 1 });
+      window.__mock.stats.set('k1-a1', { files: 2, adds: 12, dels: 3, ahead: 2, behind: 1, dirty: false });
     });
 
     await page.getByTestId('view-board').click();
@@ -376,7 +376,7 @@ test.describe('attempt footprint on the card', () => {
     await newCard(page, '修好登入');
     await start(page, 'k1');
     await page.evaluate(() => {
-      window.__mock.stats.set('k1-a1', { files: 1, adds: 5, dels: 0, ahead: 1, behind: 2 });
+      window.__mock.stats.set('k1-a1', { files: 1, adds: 5, dels: 0, ahead: 1, behind: 2, dirty: false });
     });
     await page.getByTestId('view-board').click();
     await page.getByTestId('inspect-k1').click();

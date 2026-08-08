@@ -62,7 +62,7 @@ test.describe('attempt inspector', () => {
     // raw header a hover away — four rows of a 460px drawer say it in one.
     await expect(page.locator('.diff-line.meta')).toHaveCount(0);
     await expect(page.locator('.diff-file')).toContainText('src/auth.py');
-    await expect(page.locator('.diff-file')).toHaveAttribute('title', /diff --git/);
+    await expect(page.locator('.diff-file-name')).toHaveAttribute('title', /diff --git/);
 
     // What it did.
     await page.getByTestId('inspector-timeline-tab').click();

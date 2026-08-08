@@ -6,6 +6,7 @@ import { useArmed } from './armed';
 import { FriendlyError } from './FriendlyError';
 import { STATUS_KEY } from '../sections';
 import {
+  autoCollapse,
   commentable,
   composeReview,
   followupSendable,
@@ -13,6 +14,7 @@ import {
   type DiffLine,
   type ReviewComment,
 } from '../review';
+import { nextAction, NEXT_KEY, type NextAction } from '../next';
 
 interface Props {
   attempt: Attempt;
@@ -24,6 +26,11 @@ interface Props {
       exactly the loss the dialogs' dirty-guard exists to prevent. */
   comments: ReviewComment[];
   onComments: (comments: ReviewComment[]) => void;
+  /** Files already reviewed, held by the App for the same reason: the
+      viewed marks are the reviewer's progress through a large diff, and
+      ⌘I must not reset a review half walked. */
+  viewed: string[];
+  onViewed: (files: string[]) => void;
   onClose: () => void;
   /** The attempt ended: nothing is left to inspect here. */
   onDone: () => void;
@@ -57,17 +64,62 @@ interface Picked {
  * The terminal is still the place for conversation; this is for the review
  * that reads the diff line by line.
  */
+/** The drawer's width, remembered. Bounds keep both neighbours honest: a
+ *  diff needs room to be code, and the terminal beside it needs room to
+ *  stay a terminal. */
+const WIDTH_KEY = 'agentdesk.inspectorWidth';
+const clampWidth = (w: number) => Math.max(340, Math.min(900, w));
+
+function storedWidth(): number {
+  const w = Number(localStorage.getItem(WIDTH_KEY));
+  return Number.isFinite(w) && w > 0 ? clampWidth(w) : 460;
+}
+
 export function AttemptInspector({
   attempt,
   baseBranch,
   comments,
   onComments,
+  viewed,
+  onViewed,
   onClose,
   onDone,
   onMerged,
   onRunScript,
 }: Props) {
   const t = useT();
+  const [width, setWidth] = useState(storedWidth);
+
+  /** Drag the left edge; the pane grid beside it refits as it goes. The
+   *  pointer is captured so a fast drag cannot escape a 6px handle. */
+  const onGripDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const grip = e.currentTarget;
+    const startX = e.clientX;
+    const startW = width;
+    grip.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => setWidth(clampWidth(startW + (startX - ev.clientX)));
+    const up = () => {
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      setWidth((w) => {
+        localStorage.setItem(WIDTH_KEY, String(w));
+        return w;
+      });
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+  };
+
+  /** role="separator" promises keyboard adjustability; the promise is
+   *  kept — ← widens the drawer, → gives the space back. */
+  const onGripKeys = (e: React.KeyboardEvent) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const next = clampWidth(width + (e.key === 'ArrowLeft' ? 24 : -24));
+    setWidth(next);
+    localStorage.setItem(WIDTH_KEY, String(next));
+  };
   const [pane, setPane] = useState<Pane>('diff');
   const [diff, setDiff] = useState<string | null>(null);
   /** When the diff on screen was read. The worktree keeps moving while you
@@ -141,7 +193,18 @@ export function AttemptInspector({
   }, [attempt.id]);
 
   return (
-    <aside className="inspector" data-testid="inspector">
+    <aside className="inspector" style={{ width }} data-testid="inspector">
+      <div
+        className="inspector-grip"
+        role="separator"
+        aria-orientation="vertical"
+        tabIndex={0}
+        data-testid="inspector-grip"
+        title={t('inspector.resize')}
+        aria-label={t('inspector.resize')}
+        onPointerDown={onGripDown}
+        onKeyDown={onGripKeys}
+      />
       <header className="inspector-head">
         <div
           className="view-toggle"
@@ -242,7 +305,17 @@ export function AttemptInspector({
       )}
 
       {pane === 'diff' ? (
-        <DiffPane diff={diff} fetchedAt={fetchedAt} comments={comments} onPick={setPicked} />
+        // Keyed by attempt: the fold state describes one diff's files, and
+        // another attempt's diff must start from its own policy.
+        <DiffPane
+          key={attempt.id}
+          diff={diff}
+          fetchedAt={fetchedAt}
+          comments={comments}
+          viewed={viewed}
+          onViewed={onViewed}
+          onPick={setPicked}
+        />
       ) : (
         <Timeline events={events} error={eventsError} />
       )}
@@ -260,7 +333,14 @@ export function AttemptInspector({
       )}
 
       {attempt.outcome === null && (
-        <Finish attempt={attempt} baseBranch={baseBranch} onDone={onDone} onMerged={onMerged} />
+        <Finish
+          attempt={attempt}
+          baseBranch={baseBranch}
+          next={stat ? nextAction(stat) : null}
+          behind={stat?.behind ?? 0}
+          onDone={onDone}
+          onMerged={onMerged}
+        />
       )}
     </aside>
   );
@@ -434,11 +514,18 @@ function Review({
 function Finish({
   attempt,
   baseBranch,
+  next,
+  behind,
   onDone,
   onMerged,
 }: {
   attempt: Attempt;
   baseBranch: string;
+  /** The merge path's own checks, run ahead of the click — what would
+      refuse (uncommitted work), what would risk (a base that moved), or
+      that the way is clear. */
+  next: NextAction;
+  behind: number;
   onDone: () => void;
   onMerged?: (branch: string) => void;
 }) {
@@ -472,6 +559,13 @@ function Finish({
 
   return (
     <footer className="inspector-foot">
+      {/* The refusal before the click: the same checks merge runs, worn as
+          a banner while there is still time to act on them. */}
+      {next !== null && (
+        <p className={`next-banner ${next}`} data-testid="next-banner">
+          {t(NEXT_KEY[next], { branch: baseBranch, n: behind })}
+        </p>
+      )}
       {problem && <FriendlyError text={problem} testid="finish-error" />}
       {/* The PR is the whole product of this path; its URL cannot be dead
           text in a 460px drawer. A real link that opens the browser, and a
@@ -574,20 +668,58 @@ function groupByFile(lines: DiffLine[]): FileSection[] {
   return out.filter((s) => s.lines.length > 0);
 }
 
+/** Wrapping long lines is a reading preference, not a per-diff choice. */
+const WRAP_KEY = 'agentdesk.diffWrap';
+
 function DiffPane({
   diff,
   fetchedAt,
   comments,
+  viewed,
+  onViewed,
   onPick,
 }: {
   diff: string | null;
   fetchedAt: number | null;
   comments: readonly ReviewComment[];
+  viewed: string[];
+  onViewed: (files: string[]) => void;
   onPick: (p: Picked) => void;
 }) {
   const t = useT();
   const lines = useMemo(() => (diff === null ? [] : parseDiff(diff)), [diff]);
   const sections = useMemo(() => groupByFile(lines), [lines]);
+
+  /** Explicit opens and closes, per file, overriding the starting policy.
+   *  The policy folds what nobody reads linearly — deletions, walls past
+   *  800 lines, files already marked viewed — and a click reverses any of
+   *  it; the click is remembered, the policy is not fought. */
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [wrap, setWrap] = useState(() => localStorage.getItem(WRAP_KEY) === '1');
+
+  const fileKey = (s: FileSection, si: number) => s.file ?? `#${si}`;
+  const isOpen = (s: FileSection, si: number) => {
+    const explicit = open[fileKey(s, si)];
+    if (explicit !== undefined) return explicit;
+    return !(
+      autoCollapse(s.lines.length, s.meta) ||
+      (s.file !== null && viewed.includes(s.file))
+    );
+  };
+
+  /** Marking viewed folds the file; unmarking reopens it. Either way the
+   *  explicit override is cleared, so the policy speaks again. */
+  const toggleViewed = (file: string) => {
+    onViewed(
+      viewed.includes(file) ? viewed.filter((f) => f !== file) : [...viewed, file],
+    );
+    setOpen((o) => {
+      if (!(file in o)) return o;
+      const next = { ...o };
+      delete next[file];
+      return next;
+    });
+  };
 
   if (diff === null) return <p className="muted small pad">{t('common.loading')}</p>;
   if (diff.trim() === '') {
@@ -605,23 +737,32 @@ function DiffPane({
     comments.some((c) => c.file === l.file && c.line === l.line && c.excerpt === l.text);
 
   /**
-   * j/k walk the commentable lines, Enter (per line) opens the comment.
+   * j/k walk the commentable lines, n/p the file headers; Enter acts on
+   * whichever is focused — a comment on a line, a fold on a header.
    * Plain letters are safe here: the diff is not a text field, and the
    * review textarea lives outside this element, so typing never collides.
    */
   const onDiffKeys = (e: React.KeyboardEvent<HTMLPreElement>) => {
-    if (e.key !== 'j' && e.key !== 'k') return;
-    const lines = [...e.currentTarget.querySelectorAll<HTMLElement>('.diff-line.commentable')];
-    if (lines.length === 0) return;
-    e.preventDefault();
-    const at = lines.indexOf(document.activeElement as HTMLElement);
-    const next =
-      at < 0
-        ? lines[0]
-        : lines[Math.min(lines.length - 1, Math.max(0, at + (e.key === 'j' ? 1 : -1)))];
-    next.focus();
-    next.scrollIntoView({ block: 'nearest' });
+    const walk = (selector: string, forward: boolean) => {
+      const stops = [...e.currentTarget.querySelectorAll<HTMLElement>(selector)];
+      if (stops.length === 0) return;
+      e.preventDefault();
+      const at = stops.indexOf(document.activeElement as HTMLElement);
+      const next =
+        at < 0
+          ? stops[0]
+          : stops[Math.min(stops.length - 1, Math.max(0, at + (forward ? 1 : -1)))];
+      next.focus();
+      next.scrollIntoView({ block: 'nearest' });
+    };
+    if (e.key === 'j' || e.key === 'k') {
+      walk('.diff-line.commentable', e.key === 'j');
+    } else if (e.key === 'n' || e.key === 'p') {
+      walk('.diff-file-name', e.key === 'n');
+    }
   };
+
+  const seen = sections.filter((s) => s.file !== null && viewed.includes(s.file)).length;
 
   return (
     <>
@@ -629,28 +770,107 @@ function DiffPane({
           in the header; this is the honesty that makes it worth pressing —
           a diff with no timestamp reads as current long after it is not. */}
       <div className="diff-summary mono small muted" data-testid="diff-summary">
-        <span>
-          {t('inspector.diffSummary', { files: sections.length })}
-          {adds > 0 && <span className="diff-count add"> +{adds}</span>}
-          {dels > 0 && <span className="diff-count del"> −{dels}</span>}
-        </span>
+        {/* The file count is also the jump: picking a file scrolls to it,
+            reopening it if the fold policy had it away. */}
+        <select
+          className="diff-jump"
+          value=""
+          aria-label={t('inspector.jumpLabel')}
+          data-testid="diff-jump"
+          onChange={(e) => {
+            const si = Number(e.target.value);
+            if (!Number.isFinite(si) || !sections[si]) return;
+            setOpen((o) => ({ ...o, [fileKey(sections[si], si)]: true }));
+            // After the section has rendered open.
+            requestAnimationFrame(() => {
+              document
+                .getElementById(`diff-file-${si}`)
+                ?.scrollIntoView({ block: 'start' });
+            });
+          }}
+        >
+          <option value="" disabled>
+            {t('inspector.diffSummary', { files: sections.length })}
+          </option>
+          {sections.map((s, si) => (
+            <option key={si} value={si}>
+              {s.file ?? '—'} +{s.adds} −{s.dels}
+            </option>
+          ))}
+        </select>
+        {adds > 0 && <span className="diff-count add">+{adds}</span>}
+        {dels > 0 && <span className="diff-count del">−{dels}</span>}
+        {seen > 0 && (
+          <span data-testid="viewed-count">
+            {t('inspector.viewedCount', { seen, files: sections.length })}
+          </span>
+        )}
+        <span className="spacer" />
+        <button
+          className={`diff-wrap-toggle${wrap ? ' active' : ''}`}
+          aria-pressed={wrap}
+          data-testid="diff-wrap"
+          title={t('inspector.wrap')}
+          onClick={() => {
+            setWrap(!wrap);
+            localStorage.setItem(WRAP_KEY, wrap ? '0' : '1');
+          }}
+        >
+          ⏎
+        </button>
         {fetchedAt !== null && (
           <span className="diff-fetched">{t('inspector.readAt', { time: clock(fetchedAt) })}</span>
         )}
       </div>
-      <pre className="diff mono" data-testid="diff-body" tabIndex={0} onKeyDown={onDiffKeys}>
-      {sections.map((s, si) => (
+      <pre
+        className={`diff mono${wrap ? ' wrap' : ''}`}
+        data-testid="diff-body"
+        tabIndex={0}
+        onKeyDown={onDiffKeys}
+      >
+      {sections.map((s, si) => {
+        const opened = isOpen(s, si);
+        const isViewed = s.file !== null && viewed.includes(s.file);
+        return (
         <span key={si} className="diff-section">
           {/* The plumbing (`index 1111111..`, `---/+++`) said nothing a
               reviewer acts on and cost four rows per file in a 460px
               drawer. The filename and its weight say it all; the raw
-              header is a hover away. */}
-          <span className="diff-file" title={s.meta.join('\n') || undefined}>
-            <span className="diff-file-name">{s.file ?? '—'}</span>
+              header is a hover away. Roving focus like the lines: n/p
+              land here, Enter folds. */}
+          <span className="diff-file" id={`diff-file-${si}`}>
+            <button
+              className="diff-file-name"
+              tabIndex={-1}
+              aria-expanded={opened}
+              title={s.meta.join('\n') || undefined}
+              data-testid={`diff-fold-${si}`}
+              onClick={() =>
+                setOpen((o) => ({ ...o, [fileKey(s, si)]: !opened }))
+              }
+            >
+              <span className="diff-caret" aria-hidden="true">
+                {opened ? '▾' : '▸'}
+              </span>
+              {s.file ?? '—'}
+            </button>
             {s.adds > 0 && <span className="diff-count add">+{s.adds}</span>}
             {s.dels > 0 && <span className="diff-count del">−{s.dels}</span>}
+            <span className="spacer" />
+            {s.file !== null && (
+              <button
+                className={`diff-viewed${isViewed ? ' on' : ''}`}
+                tabIndex={-1}
+                aria-pressed={isViewed}
+                data-testid={`diff-viewed-${si}`}
+                title={t(isViewed ? 'inspector.unmarkViewed' : 'inspector.markViewed')}
+                onClick={() => toggleViewed(s.file as string)}
+              >
+                ✓
+              </button>
+            )}
           </span>
-          {s.lines.map(({ l, i }) => (
+          {opened && s.lines.map(({ l, i }) => (
             <span
               key={i}
               className={[
@@ -689,7 +909,8 @@ function DiffPane({
             </span>
           ))}
         </span>
-      ))}
+        );
+      })}
       </pre>
     </>
   );

@@ -103,7 +103,7 @@ export const en = {
   'keys.moveCard': 'Move the focused board card one column',
   'keys.cycleTabs': 'Next / previous tab',
   'keys.inspector': 'Open or close the inspector',
-  'keys.diff': 'Walk the diff lines; Enter comments on one',
+  'keys.diff': 'J/K walk the diff lines, N/P the files; Enter acts on the focused one',
   'keys.escape': 'Close the open dialog',
   'keys.sheet': 'This list',
   'keys.shellNote':
@@ -290,6 +290,17 @@ export const en = {
   'inspector.diffSummary': '{files} files',
   'inspector.readAt': 'read {time}',
   'inspector.copyUrl': 'Copy link',
+  'inspector.jumpLabel': 'Jump to a file',
+  'inspector.viewedCount': '· viewed {seen}/{files}',
+  'inspector.wrap': 'Wrap long lines',
+  'inspector.markViewed': 'Mark as viewed — folds it away',
+  'inspector.unmarkViewed': 'Viewed — click to take it back',
+  'inspector.resize': 'Drag to resize; ← wider, → narrower',
+
+  /* --------------------------- next action ----------------------------- */
+  'next.commit': 'Uncommitted changes — a merge now would not include them',
+  'next.rebase': '{branch} has moved on by {n} — rebase before merging',
+  'next.finish': 'Clean and ahead — ready to merge into {branch} or open a PR',
   'inspector.runHint': 'Run `{name}` in this attempt’s worktree, in its own terminal',
 
   /* ----------------------------- review ------------------------------- */
@@ -448,7 +459,7 @@ export const zhTW: Record<MessageKey, string> = {
   'keys.moveCard': '把聚焦的看板卡片搬一欄',
   'keys.cycleTabs': '下一個 / 上一個分頁',
   'keys.inspector': '開關檢視器',
-  'keys.diff': '在 diff 行之間移動；Enter 對該行留言',
+  'keys.diff': 'J/K 逐行、N/P 逐檔；Enter 對聚焦處動作',
   'keys.escape': '關閉打開的對話框',
   'keys.sheet': '這份清單',
   'keys.shellNote':
@@ -630,6 +641,17 @@ export const zhTW: Record<MessageKey, string> = {
   'inspector.diffSummary': '{files} 個檔案',
   'inspector.readAt': '{time} 讀取',
   'inspector.copyUrl': '複製連結',
+  'inspector.jumpLabel': '跳到檔案',
+  'inspector.viewedCount': '· 已看 {seen}/{files}',
+  'inspector.wrap': '長行折行',
+  'inspector.markViewed': '標為已看 —— 順手收合',
+  'inspector.unmarkViewed': '已看 —— 點一下取消',
+  'inspector.resize': '拖曳調整寬度；← 加寬、→ 收窄',
+
+  /* --------------------------- next action ----------------------------- */
+  'next.commit': '還有未 commit 的變更 —— 現在合併不會包含它們',
+  'next.rebase': '{branch} 已前進 {n} 個 commit —— 合併前先 rebase',
+  'next.finish': '乾淨且領先 —— 可以合併回 {branch} 或開 PR',
   'inspector.runHint': '在這個 attempt 的 worktree 裡執行 `{name}`，開自己的終端機',
 
   /* ----------------------------- review ------------------------------- */

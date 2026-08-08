@@ -91,14 +91,20 @@ test.describe('the review loop', () => {
     await expect(rows.nth(1)).toContainText('session 可能是 undefined');
   });
 
-  /** Headers must not take feedback — a filename chip names no line. */
-  test('file headers and hunk markers are not clickable targets', async ({ page }) => {
+  /** Headers must not take feedback — a filename names no line. Clicking
+   *  one folds the file instead, and the fold is a fold, not a comment. */
+  test('file headers fold and hunk markers take nothing', async ({ page }) => {
     await boardWithAttempt(page);
     // The plumbing lines are gone from the render; the file chip carries
     // the name and the counts, with the raw header a hover away.
     await expect(page.locator('.diff-line.meta')).toHaveCount(0);
     await expect(page.locator('.diff-file')).toContainText('src/auth.py');
-    await page.locator('.diff-file').click();
+
+    await page.getByTestId('diff-fold-0').click();
+    await expect(page.locator('.diff-line.hunk')).toHaveCount(0);
+    await expect(page.getByTestId('review')).toHaveCount(0);
+
+    await page.getByTestId('diff-fold-0').click();
     await page.locator('.diff-line.hunk').click();
     await expect(page.getByTestId('review')).toHaveCount(0);
   });

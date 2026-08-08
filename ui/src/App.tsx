@@ -143,6 +143,10 @@ export default function App() {
    *  promise a stray click cannot discard typed text, and the flagship loop
    *  cannot keep less of that promise than a dialog does. */
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewComment[]>>({});
+  /** Files marked as viewed while reviewing, per attempt — the reviewer's
+   *  own progress through a large diff, held here for the same reason the
+   *  drafts are: ⌘I must not reset a review half walked. */
+  const [reviewViewed, setReviewViewed] = useState<Record<string, string[]>>({});
   /** Sessions that finished a turn while their terminal was not in front of
    *  you. 「等你」 has a whole signal chain; without this, 「趁你不在時做完了」
    *  had none — finished work sat indistinguishable from work already read.
@@ -1070,6 +1074,8 @@ export default function App() {
             }
             comments={reviewDrafts[inspected.id] ?? []}
             onComments={(c) => setReviewDrafts((d) => ({ ...d, [inspected.id]: c }))}
+            viewed={reviewViewed[inspected.id] ?? []}
+            onViewed={(files) => setReviewViewed((v) => ({ ...v, [inspected.id]: files }))}
             onClose={() => setInspectId(null)}
             onDone={() => setInspectId(null)}
             // The loop's peak action gets its confirmation moment: the drawer

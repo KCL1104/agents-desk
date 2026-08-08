@@ -90,6 +90,21 @@ export function commentable(l: DiffLine): boolean {
   return (l.kind === 'add' || l.kind === 'del' || l.kind === 'context') && l.file !== null;
 }
 
+/**
+ * Whether a file's slice of the diff starts folded.
+ *
+ * A deleted file's body says nothing its header does not; a slice past
+ * this many lines is a wall nobody reads linearly — a lockfile, a
+ * generated bundle — and walls between the reviewer and the real change
+ * are how big diffs go unreviewed. Either way the fold is a starting
+ * position, not a verdict: one click reopens it.
+ */
+export const COLLAPSE_OVER = 800;
+
+export function autoCollapse(lineCount: number, meta: readonly string[]): boolean {
+  return lineCount > COLLAPSE_OVER || meta.some((m) => m.startsWith('deleted file'));
+}
+
 /** One piece of feedback, tied to the line it was written against. */
 export interface ReviewComment {
   file: string | null;

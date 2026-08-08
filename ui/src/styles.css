@@ -681,9 +681,22 @@ textarea { resize: vertical; }
 .term-area > .term-stack { flex: 1; min-width: 0; }
 
 .inspector {
+  position: relative;
   width: 460px; max-width: 46vw; flex: none;
   display: flex; flex-direction: column; min-height: 0;
   border-left: 1px solid var(--line); background: var(--bg-2);
+}
+
+/* The drawer's left edge, draggable. Invisible until aimed at, exactly
+   like the pane splitters — and unlike them it keeps the separator role's
+   keyboard promise: arrows resize. */
+.inspector-grip {
+  position: absolute; left: -1px; top: 0; bottom: 0; width: 7px;
+  cursor: col-resize; z-index: 2;
+}
+.inspector-grip:hover, .inspector-grip:active {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 3px;
 }
 
 .inspector-head {
@@ -699,15 +712,31 @@ textarea { resize: vertical; }
 /* The whole diff in one line, above the lines themselves: how many files,
    how much, and — the honesty that earns the reload button — read when. */
 .diff-summary {
-  display: flex; align-items: baseline; gap: 8px;
-  padding: 5px 11px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 11px; border-bottom: 1px solid var(--line);
 }
-.diff-fetched { margin-left: auto; color: var(--fg-faint); }
+.diff-fetched { color: var(--fg-faint); flex: none; }
+/* The file count doubling as the jump menu, dressed like the column
+   picker: a control, but a quiet one. */
+.diff-jump {
+  width: auto; max-width: 170px;
+  background: var(--bg-3); color: var(--fg-dim);
+  border: 1px solid var(--line); border-radius: 5px;
+  font-size: 11px; padding: 1px 4px;
+}
+.diff-wrap-toggle {
+  padding: 0 7px; font-size: 12px; line-height: 1.5;
+  background: transparent; color: var(--fg-dim);
+}
+.diff-wrap-toggle.active { color: var(--fg); background: var(--bg-3); border-color: var(--accent); }
 
 .diff {
   flex: 1; margin: 0; overflow: auto; padding: 8px 10px;
   font-size: 12px; line-height: 1.5; white-space: pre;
 }
+/* A reading preference: long lines fold instead of scrolling sideways,
+   which matters exactly while clicking lines to comment on them. */
+.diff.wrap { white-space: pre-wrap; word-break: break-all; }
 .diff-line { display: block; }
 .diff-line.add { color: var(--ok); }
 .diff-line.del { color: var(--err); }
@@ -724,10 +753,23 @@ textarea { resize: vertical; }
   font-weight: 600;
 }
 .diff-section + .diff-section .diff-file { margin-top: 10px; }
-.diff-file-name { overflow: hidden; text-overflow: ellipsis; }
+/* The name is the fold: a real button, same face as the text it was. */
+.diff-file-name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: none; border: none; padding: 0; margin: 0;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+  display: inline-flex; align-items: baseline; gap: 5px; min-width: 0;
+}
+.diff-caret { color: var(--fg-dim); width: 9px; flex: none; }
 .diff-count { font-weight: 400; font-size: 11px; }
 .diff-count.add { color: var(--ok); }
 .diff-count.del { color: var(--err); }
+/* Review progress, one file at a time. On, it wears the calm of done. */
+.diff-viewed {
+  padding: 0 6px; font-size: 11px; line-height: 1.5;
+  background: transparent; color: var(--fg-faint);
+}
+.diff-viewed.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
 
 /* The repo's run scripts: one chip per script, under the branch line. */
 .inspector-run {
@@ -821,6 +863,12 @@ textarea { resize: vertical; }
 /* Behind is the merge refusal you have not hit yet — the one count that
    asks for an action, so it alone takes the warning color. */
 .stat-behind { color: var(--warn); font-weight: 600; }
+
+/* The one state-appropriate next step, read off git. ok says the way is
+   clear; warn says something stands in it. */
+.card-next { font-size: 12px; }
+.card-next.finish { color: var(--ok); }
+.card-next.commit, .card-next.rebase { color: var(--warn); }
 /* A repo living in another world says so, ahead of its name. */
 .host-badge { color: var(--accent); }
 
@@ -958,6 +1006,23 @@ textarea { resize: vertical; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .pr-url .chip { flex: none; cursor: pointer; }
+
+/* The merge path's own checks, run before the click: what would refuse,
+   what would risk, or that the way is clear. */
+.next-banner {
+  margin: 0; font-size: 12px; padding: 6px 9px;
+  border: 1px solid var(--line); border-radius: 6px;
+}
+.next-banner.finish {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 30%, var(--bg-2));
+  background: color-mix(in srgb, var(--ok) 6%, var(--bg-2));
+}
+.next-banner.commit, .next-banner.rebase {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 30%, var(--bg-2));
+  background: color-mix(in srgb, var(--warn) 6%, var(--bg-2));
+}
 
 .inspector-foot {
   border-top: 1px solid var(--line); padding: 9px 11px;

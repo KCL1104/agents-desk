@@ -83,7 +83,7 @@ declare global {
       /** Each open attempt's numstat footprint, as the core measures it. */
       stats: Map<
         string,
-        { files: number; adds: number; dels: number; ahead: number; behind: number }
+        { files: number; adds: number; dels: number; ahead: number; behind: number; dirty: boolean }
       >;
       events: Map<string, MockEvent[]>;
       /** Cards waiting for a slot, in order. */
@@ -165,7 +165,7 @@ export function installMock(): void {
     diffs: new Map<string, string>(),
     stats: new Map<
       string,
-      { files: number; adds: number; dels: number; ahead: number; behind: number }
+      { files: number; adds: number; dels: number; ahead: number; behind: number; dirty: boolean }
     >(),
     events: new Map<string, MockEvent[]>(),
     queue: [] as string[],
