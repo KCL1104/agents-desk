@@ -3,8 +3,9 @@ import type * as React from 'react';
 import { api, subscribe } from './api';
 import { useT } from './i18n';
 import { needsYou } from './types';
-import type { BootStatus, Lifecycle, PermissionMode, SessionMeta, Tab, Task } from './types';
+import type { BootStatus, Lifecycle, PermissionMode, SessionMeta, Status, Tab, Task } from './types';
 import { STATUS_KEY } from './sections';
+import type { ReviewComment } from './review';
 import { BootGate } from './components/BootGate';
 import { SessionList } from './components/SessionList';
 import { EdgeDrop, EmptyGrid, Pane } from './components/Pane';
@@ -114,6 +115,19 @@ export default function App() {
   const [inspectId, setInspectId] = useState<string | null>(null);
   /** The shortcuts cheat sheet (⌘/Ctrl+/). */
   const [showKeys, setShowKeys] = useState(false);
+  /** Review feedback in progress, per attempt. Held here because the drawer
+   *  unmounts on ⌘I and follows focus between panes — the dialogs already
+   *  promise a stray click cannot discard typed text, and the flagship loop
+   *  cannot keep less of that promise than a dialog does. */
+  const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewComment[]>>({});
+  /** Sessions that finished a turn while their terminal was not in front of
+   *  you. 「等你」 has a whole signal chain; without this, 「趁你不在時做完了」
+   *  had none — finished work sat indistinguishable from work already read.
+   *  Cleared the moment the pane is focused, or the agent runs again. */
+  const [unseen, setUnseen] = useState<ReadonlySet<string>>(new Set());
+  /** Each session's last status, so only transitions mark unseen — a
+   *  re-broadcast of an idle list must not re-mark what was already read. */
+  const lastStatus = useRef<Map<string, Status>>(new Map());
   /** What the screen reader hears when an agent starts waiting. The whole
    *  in-app signal chain is otherwise visual — a breathing card is silence
    *  to AT, and the OS notification only fires while the window is away. */
@@ -304,6 +318,80 @@ export default function App() {
   // Every live session keeps a mounted terminal, whichever tab or view is
   // showing, so switching never costs a repaint or loses scrollback.
   const liveIds = useMemo(() => sessions.filter((s) => s.live).map((s) => s.id), [sessions]);
+
+  /** The open attempt behind each live session — for the ⚡ badge in the
+   *  views where supervision actually happens, not only on the board. */
+  const attemptBySession = useMemo(() => {
+    const map = new Map<string, PermissionMode>();
+    for (const a of attempts) {
+      if (a.session_id !== null && a.outcome === null) map.set(a.session_id, a.mode);
+    }
+    return map;
+  }, [attempts]);
+
+  // Turn endings, filed as read or unread. A turn that ends (idle) or a CLI
+  // that exits while its pane is not the one in front of you goes unread —
+  // and only a transition marks it, so a re-broadcast of an idle list never
+  // re-marks what was already read.
+  useEffect(() => {
+    const ended = (s: Status) => s === 'idle' || s === 'exited';
+    const mark: string[] = [];
+    const clear: string[] = [];
+    const alive = new Set<string>();
+    for (const s of sessions) {
+      alive.add(s.id);
+      const prev = lastStatus.current.get(s.id);
+      lastStatus.current.set(s.id, s.status);
+      if (prev === undefined || prev === s.status) continue;
+      if (ended(s.status) && !ended(prev) && prev !== 'saved') {
+        // Read live only if that pane was on screen with the caret and the
+        // window itself had the user's attention.
+        const inFront =
+          document.hasFocus() &&
+          view === 'terminal' &&
+          focusedId === s.id &&
+          (zoomed === null || zoomed === s.id);
+        if (!inFront) mark.push(s.id);
+      } else if (!ended(s.status)) {
+        // Working again: whatever finished before has been acted on.
+        clear.push(s.id);
+      }
+    }
+    for (const id of [...lastStatus.current.keys()]) {
+      if (!alive.has(id)) {
+        lastStatus.current.delete(id);
+        clear.push(id);
+      }
+    }
+    if (mark.length === 0 && clear.length === 0) return;
+    setUnseen((prev) => {
+      const marks = mark.filter((id) => !prev.has(id));
+      const clears = clear.filter((id) => prev.has(id));
+      if (marks.length === 0 && clears.length === 0) return prev;
+      const next = new Set(prev);
+      for (const id of clears) next.delete(id);
+      for (const id of marks) next.add(id);
+      return next;
+    });
+  }, [sessions, view, focusedId, zoomed]);
+
+  // Looking at it is what reads it — including coming back to a window that
+  // was elsewhere when the turn ended, which no state change announces.
+  useEffect(() => {
+    const readFocused = () => {
+      if (view !== 'terminal' || focusedId === null) return;
+      if (zoomed !== null && zoomed !== focusedId) return;
+      setUnseen((prev) => {
+        if (!prev.has(focusedId)) return prev;
+        const next = new Set(prev);
+        next.delete(focusedId);
+        return next;
+      });
+    };
+    readFocused();
+    window.addEventListener('focus', readFocused);
+    return () => window.removeEventListener('focus', readFocused);
+  }, [view, focusedId, zoomed]);
 
   /* ----------------------------- actions ---------------------------- */
 
@@ -619,6 +707,7 @@ export default function App() {
       <SessionList
         sessions={sessions}
         activeId={focusedId}
+        unseen={unseen}
         onSelect={onOpenFromSidebar}
         onNew={() => setShowNew(true)}
         onClose={(id) => void api.closeSession(id)}
@@ -632,6 +721,7 @@ export default function App() {
           tabs={tabs}
           activeId={activeTab?.id ?? null}
           sessions={sessions}
+          unseen={unseen}
           onSelect={setActiveTabId}
           renameId={renameTabId}
           onCreate={() =>
@@ -655,6 +745,22 @@ export default function App() {
             <>
               <span className={`dot ${active.status}`} />
               <strong>{active.title}</strong>
+              {/* A session running with fewer prompts wears it here too —
+                  this bar names what you are supervising, and quiet
+                  autonomy in exactly this view would be the worst kind. */}
+              {(() => {
+                const mode = attemptBySession.get(active.id);
+                if (!mode || mode === 'normal') return null;
+                return (
+                  <span
+                    className={`mode-badge ${mode}`}
+                    data-testid="topbar-mode"
+                    title={t(mode === 'yolo' ? 'mode.yolo' : 'mode.accept_edits')}
+                  >
+                    {mode === 'yolo' ? '⚡' : '✎'}
+                  </span>
+                );
+              })()}
               <span className="muted mono">{active.cwd}</span>
             </>
           ) : (
@@ -768,6 +874,7 @@ export default function App() {
                 <Pane
                   key={id}
                   session={session}
+                  mode={attemptBySession.get(id) ?? null}
                   visible={view === 'terminal' && shown}
                   focused={id === focusedId}
                   zoomed={zoomed === id}
@@ -830,6 +937,8 @@ export default function App() {
             baseBranch={
               tasks.find((t) => t.id === inspected.task_id)?.base_branch ?? 'base'
             }
+            comments={reviewDrafts[inspected.id] ?? []}
+            onComments={(c) => setReviewDrafts((d) => ({ ...d, [inspected.id]: c }))}
             onClose={() => setInspectId(null)}
             onDone={() => setInspectId(null)}
             // The loop's peak action gets its confirmation moment: the drawer
@@ -844,6 +953,7 @@ export default function App() {
           <Board
             tasks={tasks}
             sessions={sessions}
+            unseen={unseen}
             onOpenSession={onOpen}
             onMove={onMoveTask}
             onStart={(task) => {
@@ -865,6 +975,7 @@ export default function App() {
         {view === 'overview' && (
           <Overview
             sessions={sessions}
+            unseen={unseen}
             onOpen={onOpen}
             onComplete={(id, completed) => void api.setCompleted(id, completed)}
             onClose={(id) => void api.closeSession(id)}

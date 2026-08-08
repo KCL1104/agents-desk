@@ -17,6 +17,7 @@
 //! a POSIX path inside a distro.
 
 use anyhow::{anyhow, Context, Result};
+use serde::Serialize;
 use std::path::PathBuf;
 
 use crate::host::{Host, HostRef};
@@ -399,11 +400,131 @@ impl Worktrees {
         }
         Ok(out)
     }
+
+    /// The attempt's footprint at a glance, cheap enough for every card on
+    /// the board to ask on a timer: `--numstat` counts rather than the
+    /// rendered diff, plus where the branch stands against its base.
+    ///
+    /// Untracked files go through `--no-index` per file, the same route
+    /// `diff` takes — never `add -N`, which would mutate the agent's own
+    /// index behind its back to save ourselves a few invocations.
+    ///
+    /// Ahead and behind are measured against the base *branch* as it is
+    /// now, not the recorded base commit: the diff answers "what did this
+    /// attempt do", but ahead/behind answers "will the merge go", and the
+    /// merge goes against the branch that kept moving.
+    pub fn stat(
+        &self,
+        hr: &HostRef,
+        worktree: &str,
+        base_sha: &str,
+        base_branch: &str,
+    ) -> Result<DiffStat> {
+        let mut stat = DiffStat::default();
+
+        let tracked = git(hr, worktree, &["diff", "--numstat", base_sha])?;
+        for line in tracked.lines() {
+            stat.count(line);
+        }
+
+        let untracked = git(
+            hr,
+            worktree,
+            &["ls-files", "--others", "--exclude-standard"],
+        )?;
+        for file in untracked.lines().filter(|l| !l.trim().is_empty()) {
+            let counted = hr.run(
+                "git",
+                &["diff", "--no-index", "--numstat", "--", "/dev/null", file],
+                Some(worktree),
+            );
+            if let Ok(o) = counted {
+                for line in String::from_utf8_lossy(&o.stdout).lines() {
+                    stat.count(line);
+                }
+            }
+        }
+
+        // `left...right` with --left-right --count prints "behind\tahead"
+        // from the branch's point of view.
+        let counts = git(
+            hr,
+            worktree,
+            &[
+                "rev-list",
+                "--left-right",
+                "--count",
+                &format!("{base_branch}...HEAD"),
+            ],
+        )?;
+        let mut parts = counts.split_whitespace();
+        stat.behind = parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+        stat.ahead = parts.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+
+        Ok(stat)
+    }
+}
+
+/// What `stat` measures. Serialized as-is to the UI.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct DiffStat {
+    /// Files touched, counting untracked ones — an agent's commonest act.
+    pub files: i64,
+    pub adds: i64,
+    pub dels: i64,
+    /// Commits the branch has that the base does not.
+    pub ahead: i64,
+    /// Commits the base has grown since — the merge refusal not yet hit.
+    pub behind: i64,
+}
+
+impl DiffStat {
+    /// One `--numstat` line: `adds\tdels\tpath`. A binary file prints `-`
+    /// for both counts; it is still a touched file, just not counted lines.
+    fn count(&mut self, line: &str) {
+        let mut cols = line.split('\t');
+        let (Some(a), Some(d)) = (cols.next(), cols.next()) else {
+            return;
+        };
+        if cols.next().is_none() {
+            return;
+        }
+        self.files += 1;
+        self.adds += a.parse::<i64>().unwrap_or(0);
+        self.dels += d.parse::<i64>().unwrap_or(0);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /* -------------------------- diffstat ---------------------------- */
+
+    #[test]
+    fn numstat_lines_are_counted() {
+        let mut s = DiffStat::default();
+        s.count("12\t3\tsrc/app.ts");
+        s.count("0\t7\tREADME.md");
+        // A binary file prints `-` for both counts; it is still a file
+        // the attempt touched, just not countable lines.
+        s.count("-\t-\tlogo.png");
+        assert_eq!(
+            s,
+            DiffStat { files: 3, adds: 12, dels: 10, ahead: 0, behind: 0 }
+        );
+    }
+
+    /// Whatever is not a numstat row — blank lines, stray warnings on
+    /// stdout — must not count as a touched file.
+    #[test]
+    fn noise_is_not_a_file() {
+        let mut s = DiffStat::default();
+        s.count("");
+        s.count("warning: exhaustive rename detection was skipped");
+        s.count("12\t3");
+        assert_eq!(s, DiffStat::default());
+    }
 
     /* --------------------------- slugs ----------------------------- */
 

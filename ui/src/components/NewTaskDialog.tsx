@@ -6,7 +6,7 @@ import { FriendlyError } from './FriendlyError';
 
 interface Props {
   onCancel: () => void;
-  onCreate: (title: string, prompt: string, repoPath: string, baseBranch: string) => void;
+  onCreate: (title: string, prompt: string, repoPath: string, baseBranch: string) => void | Promise<void>;
   /** Set when the core refused the repository or the base branch. */
   error: string | null;
 }
@@ -39,6 +39,10 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
   const [prompt, setPrompt] = useState('');
   const [repo, setRepo] = useState(recents()[0] ?? '');
   const [branch, setBranch] = useState('main');
+  /** Creating checks the repository on disk, which takes real time on a
+   *  WSL or SSH host — and a button still live during it makes two cards
+   *  from one double-click. Same discipline as the Finish footer. */
+  const [busy, setBusy] = useState(false);
   const list = recents();
 
   const pick = async () => {
@@ -48,6 +52,21 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
 
   const ready = title.trim() !== '' && prompt.trim() !== '' && repo.trim() !== '';
   const dirty = title.trim() !== '' || prompt.trim() !== '';
+
+  const submit = () => {
+    if (!ready || busy) return;
+    setBusy(true);
+    void Promise.resolve(
+      onCreate(title.trim(), prompt.trim(), repo.trim(), branch.trim()),
+    ).finally(() => setBusy(false));
+  };
+
+  /** Enter finishes the form from any single-line field — but never the
+   *  Enter that is confirming an IME composition, which zh-TW typing ends
+   *  every phrase with. */
+  const submitOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit();
+  };
 
   return (
     <Modal onCancel={onCancel} dirty={dirty}>
@@ -59,6 +78,7 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
           placeholder={t('newTask.titlePlaceholder')}
           data-testid="task-title"
           onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={submitOnEnter}
         />
 
         <label>{t('newTask.promptLabel')}</label>
@@ -79,6 +99,7 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
             data-testid="task-repo"
             placeholder="/Users/you/code/your-repo"
             onChange={(e) => setRepo(e.target.value)}
+            onKeyDown={submitOnEnter}
           />
           <button onClick={pick}>{t('common.choose')}</button>
         </div>
@@ -100,6 +121,7 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
           value={branch}
           data-testid="task-branch"
           onChange={(e) => setBranch(e.target.value)}
+          onKeyDown={submitOnEnter}
         />
         <p className="muted small">{t('newTask.baseHint')}</p>
 
@@ -109,11 +131,11 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
           <button onClick={onCancel}>{t('common.cancel')}</button>
           <button
             className="primary"
-            disabled={!ready}
+            disabled={!ready || busy}
             data-testid="task-create"
-            onClick={() => onCreate(title.trim(), prompt.trim(), repo.trim(), branch.trim())}
+            onClick={submit}
           >
-            {t('common.create')}
+            {busy ? t('inspector.working') : t('common.create')}
           </button>
         </div>
     </Modal>

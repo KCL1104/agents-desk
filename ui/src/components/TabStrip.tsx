@@ -6,6 +6,8 @@ interface Props {
   tabs: Tab[];
   activeId: string | null;
   sessions: SessionMeta[];
+  /** Sessions that finished while unwatched, for the badge's middle tier. */
+  unseen: ReadonlySet<string>;
   /** Tab to open directly in rename mode, if any. */
   renameId?: string | null;
   onSelect: (id: string) => void;
@@ -25,6 +27,7 @@ export function TabStrip({
   tabs,
   activeId,
   sessions,
+  unseen,
   renameId,
   onSelect,
   onCreate,
@@ -44,6 +47,7 @@ export function TabStrip({
           .map((id) => byId.get(id))
           .filter((s): s is SessionMeta => s !== undefined);
         const waiting = shown.filter((s) => needsYou(s.status)).length;
+        const unread = shown.filter((s) => unseen.has(s.id)).length;
         const busy = shown.some((s) => s.status === 'running' || s.status === 'starting');
 
         return (
@@ -103,9 +107,16 @@ export function TabStrip({
             ) : (
               <>
                 <span className="tab-name">{t.name}</span>
+                {/* One badge, by urgency: blocked beats unread beats busy.
+                    Unread wears a count in a filled pill — mail's unread
+                    grammar — so it never reads as the busy dot. */}
                 {waiting > 0 ? (
                   <span className="tab-badge waiting" title={tr('tabs.waiting')}>
                     ⚠{waiting}
+                  </span>
+                ) : unread > 0 ? (
+                  <span className="tab-badge unseen" title={tr('tabs.unseen')}>
+                    {unread}
                   </span>
                 ) : busy ? (
                   <span className="tab-badge busy" title={tr('tabs.busy')}>

@@ -1750,6 +1750,28 @@ impl Core {
         Ok(id)
     }
 
+    /// The attempt's footprint at a glance — numstat counts and where its
+    /// branch stands against the base, for the card badges. A finished
+    /// attempt has no worktree left and no standing to measure; its frozen
+    /// diff already says everything it will ever say.
+    pub fn attempt_stats(&self, attempt_id: &str) -> Result<worktree::DiffStat> {
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        if attempt.outcome.is_some() {
+            return Err(anyhow!("attempt is finished"));
+        }
+        let task = self.task(&attempt.task_id)?;
+        let (wt_loc, he) = self.located(&attempt.worktree_path)?;
+        self.worktrees.stat(
+            &he.hr(&self.env),
+            &wt_loc.path,
+            &attempt.base_sha,
+            &task.base_branch,
+        )
+    }
+
     /// The attempt's diff: live from the worktree while it still exists, and
     /// the frozen copy once it does not.
     pub fn attempt_diff(&self, attempt_id: &str) -> Result<String> {

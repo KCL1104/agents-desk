@@ -45,6 +45,12 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
     onCreate(dir, agent, splitArgs(args));
   };
 
+  /** Enter finishes the form from either single-line field — except the
+   *  Enter that is confirming an IME composition. */
+  const submitOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) create();
+  };
+
   // The hint reads better with `cd` set as code, so it is spliced back into
   // the translated sentence rather than each language carrying markup.
   const [hintBefore, hintAfter] = t('newSession.cwdHint').split('{cd}');
@@ -60,6 +66,7 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
             value={cwd}
             placeholder="/Users/you/code/your-repo"
             onChange={(e) => setCwd(e.target.value)}
+            onKeyDown={submitOnEnter}
           />
           <button onClick={pick}>{t('common.choose')}</button>
         </div>
@@ -79,7 +86,7 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
           </div>
         )}
 
-        <label>Agent</label>
+        <label>{t('attempt.agent')}</label>
         <div className="row">
           <select value={agent} onChange={(e) => setAgent(e.target.value)}>
             {launchers.map((l) => (
@@ -96,6 +103,7 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
           value={args}
           placeholder="--continue     --model sonnet"
           onChange={(e) => setArgs(e.target.value)}
+          onKeyDown={submitOnEnter}
         />
         <p className="muted small">{t('newSession.argsHint')}</p>
 

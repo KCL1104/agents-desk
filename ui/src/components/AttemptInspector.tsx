@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api, type AttemptStat } from '../api';
 import type { Attempt, AttemptEvent } from '../types';
 import { useT } from '../i18n';
 import { useArmed } from './armed';
@@ -18,6 +18,12 @@ interface Props {
   attempt: Attempt;
   /** Named so the merge button can say where the work is going. */
   baseBranch: string;
+  /** The feedback batch in progress, held by the App keyed per attempt.
+      The drawer unmounts on ⌘I and follows focus between panes — if the
+      batch lived here, either act would destroy typed feedback, which is
+      exactly the loss the dialogs' dirty-guard exists to prevent. */
+  comments: ReviewComment[];
+  onComments: (comments: ReviewComment[]) => void;
   onClose: () => void;
   /** The attempt ended: nothing is left to inspect here. */
   onDone: () => void;
@@ -54,6 +60,8 @@ interface Picked {
 export function AttemptInspector({
   attempt,
   baseBranch,
+  comments,
+  onComments,
   onClose,
   onDone,
   onMerged,
@@ -62,9 +70,16 @@ export function AttemptInspector({
   const t = useT();
   const [pane, setPane] = useState<Pane>('diff');
   const [diff, setDiff] = useState<string | null>(null);
+  /** When the diff on screen was read. The worktree keeps moving while you
+      read — refresh is deliberate, so the staleness has to be visible. */
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
   const [events, setEvents] = useState<AttemptEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [comments, setComments] = useState<ReviewComment[]>([]);
+  /** The timeline's own failure, kept apart from the diff's: a fetch error
+      rendered as "no activity yet" would be a lie on exactly the surface
+      that audits what an agent did. */
+  const [eventsError, setEventsError] = useState<string | null>(null);
+  const [stat, setStat] = useState<AttemptStat | null>(null);
   const [picked, setPicked] = useState<Picked | null>(null);
   const [runScripts, setRunScripts] = useState<string[]>([]);
 
@@ -84,27 +99,44 @@ export function AttemptInspector({
 
   const refresh = useCallback(() => {
     setError(null);
+    setEventsError(null);
     void api
       .attemptDiff(attempt.id)
-      .then(setDiff)
+      .then((d) => {
+        setDiff(d);
+        setFetchedAt(Date.now());
+      })
       .catch((e) => setError(String(e)));
     void api
       .attemptEvents(attempt.id)
       .then(setEvents)
-      .catch(() => {
-        /* the diff half is still worth showing */
+      .catch((e) => {
+        // The diff half is still worth showing; the timeline says what
+        // actually went wrong instead of pleading empty.
+        setEventsError(String(e));
       });
-  }, [attempt.id]);
+    // Where the branch stands against its base. Only an open attempt has a
+    // worktree to measure; a refusal here (worktree mid-teardown, base
+    // branch renamed) costs a badge, not the drawer.
+    if (attempt.outcome === null) {
+      void api
+        .attemptStats(attempt.id)
+        .then(setStat)
+        .catch(() => setStat(null));
+    } else {
+      setStat(null);
+    }
+  }, [attempt.id, attempt.outcome]);
 
   // Read on open and whenever the attempt changes. Not on a timer: a diff
   // that reflows under you while you are reading it is worse than one you
   // asked to refresh.
   useEffect(refresh, [refresh]);
 
-  // Feedback is written against one attempt's diff; carrying it across to
-  // another attempt would send it somewhere it was never about.
+  // The line being commented on is transient; the batch is not. Comments
+  // live with the App keyed per attempt, so switching attempts shows each
+  // one its own batch rather than wiping anything.
   useEffect(() => {
-    setComments([]);
     setPicked(null);
   }, [attempt.id]);
 
@@ -158,6 +190,20 @@ export function AttemptInspector({
       <div className="inspector-meta mono small muted">
         <span>{attempt.branch}</span>
         <span title={attempt.base_sha}>base {attempt.base_sha.slice(0, 8)}</span>
+        {/* Where the branch stands against its base — ↓ is the one that
+            matters, because it is the merge refusal you have not hit yet. */}
+        {stat && stat.ahead > 0 && (
+          <span title={t('stats.ahead', { n: stat.ahead, branch: baseBranch })}>↑{stat.ahead}</span>
+        )}
+        {stat && stat.behind > 0 && (
+          <span
+            className="stat-behind"
+            data-testid="inspector-behind"
+            title={t('stats.behind', { n: stat.behind, branch: baseBranch })}
+          >
+            ↓{stat.behind}
+          </span>
+        )}
         {attempt.mode !== 'normal' && (
           <span className={`mode-badge ${attempt.mode}`}>
             {attempt.mode === 'yolo' ? '⚡ ' : '✎ '}
@@ -196,9 +242,9 @@ export function AttemptInspector({
       )}
 
       {pane === 'diff' ? (
-        <DiffPane diff={diff} comments={comments} onPick={setPicked} />
+        <DiffPane diff={diff} fetchedAt={fetchedAt} comments={comments} onPick={setPicked} />
       ) : (
-        <Timeline events={events} />
+        <Timeline events={events} error={eventsError} />
       )}
 
       {pane === 'diff' && (picked !== null || comments.length > 0) && (
@@ -207,7 +253,7 @@ export function AttemptInspector({
           picked={picked}
           comments={comments}
           onPick={setPicked}
-          onChange={setComments}
+          onChange={onComments}
           onSent={refresh}
           onProblem={setError}
         />
@@ -400,6 +446,7 @@ function Finish({
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [prUrl, setPrUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const run = (what: string, fn: () => Promise<unknown>) => () => {
     setBusy(what);
@@ -426,9 +473,30 @@ function Finish({
   return (
     <footer className="inspector-foot">
       {problem && <FriendlyError text={problem} testid="finish-error" />}
+      {/* The PR is the whole product of this path; its URL cannot be dead
+          text in a 460px drawer. A real link that opens the browser, and a
+          copy for wherever the review conversation actually happens. */}
       {prUrl && (
-        <p className="mono small" data-testid="pr-url">
-          {prUrl}
+        <p className="mono small pr-url" data-testid="pr-url">
+          <a
+            href={prUrl}
+            onClick={(e) => {
+              e.preventDefault();
+              void api.openExternal(prUrl);
+            }}
+          >
+            {prUrl}
+          </a>
+          <button
+            className="chip"
+            data-testid="pr-copy"
+            onClick={() => {
+              void navigator.clipboard?.writeText(prUrl);
+              setCopied(true);
+            }}
+          >
+            {copied ? t('attempt.copied') : t('inspector.copyUrl')}
+          </button>
         </p>
       )}
       <div className="row">
@@ -508,10 +576,12 @@ function groupByFile(lines: DiffLine[]): FileSection[] {
 
 function DiffPane({
   diff,
+  fetchedAt,
   comments,
   onPick,
 }: {
   diff: string | null;
+  fetchedAt: number | null;
   comments: readonly ReviewComment[];
   onPick: (p: Picked) => void;
 }) {
@@ -527,6 +597,9 @@ function DiffPane({
       </p>
     );
   }
+
+  const adds = sections.reduce((n, s) => n + s.adds, 0);
+  const dels = sections.reduce((n, s) => n + s.dels, 0);
 
   const noted = (l: DiffLine) =>
     comments.some((c) => c.file === l.file && c.line === l.line && c.excerpt === l.text);
@@ -551,7 +624,21 @@ function DiffPane({
   };
 
   return (
-    <pre className="diff mono" data-testid="diff-body" tabIndex={0} onKeyDown={onDiffKeys}>
+    <>
+      {/* The whole diff in one line, and when it was read. The reload sits
+          in the header; this is the honesty that makes it worth pressing —
+          a diff with no timestamp reads as current long after it is not. */}
+      <div className="diff-summary mono small muted" data-testid="diff-summary">
+        <span>
+          {t('inspector.diffSummary', { files: sections.length })}
+          {adds > 0 && <span className="diff-count add"> +{adds}</span>}
+          {dels > 0 && <span className="diff-count del"> −{dels}</span>}
+        </span>
+        {fetchedAt !== null && (
+          <span className="diff-fetched">{t('inspector.readAt', { time: clock(fetchedAt) })}</span>
+        )}
+      </div>
+      <pre className="diff mono" data-testid="diff-body" tabIndex={0} onKeyDown={onDiffKeys}>
       {sections.map((s, si) => (
         <span key={si} className="diff-section">
           {/* The plumbing (`index 1111111..`, `---/+++`) said nothing a
@@ -603,7 +690,8 @@ function DiffPane({
           ))}
         </span>
       ))}
-    </pre>
+      </pre>
+    </>
   );
 }
 
@@ -627,8 +715,17 @@ function classOf(l: DiffLine): string {
   }
 }
 
-function Timeline({ events }: { events: AttemptEvent[] }) {
+function Timeline({ events, error }: { events: AttemptEvent[]; error: string | null }) {
   const t = useT();
+  // A failed read is not an empty history. "No activity yet" over a dead
+  // fetch would clear an agent that was never audited.
+  if (error !== null && events.length === 0) {
+    return (
+      <p className="dialog-error pad" role="alert" data-testid="timeline-error">
+        {t('inspector.eventsFailed', { err: error })}
+      </p>
+    );
+  }
   if (events.length === 0) {
     return (
       <p className="muted small pad" data-testid="timeline-empty">

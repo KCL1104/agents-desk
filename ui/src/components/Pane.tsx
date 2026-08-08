@@ -11,7 +11,7 @@ import {
   type DragPayload,
   type Zone,
 } from '../layout';
-import type { SessionMeta } from '../types';
+import type { PermissionMode, SessionMeta } from '../types';
 
 /**
  * Drop-target plumbing, shared by the pane and the empty grid.
@@ -67,6 +67,10 @@ function useDropTarget(onDrop: (p: DragPayload, zone: Zone) => void, zoned = tru
 
 interface PaneProps {
   session: SessionMeta;
+  /** The attempt's permission mode, or null for an ad-hoc session. A pane
+      is where a session is actually watched, so a session running with
+      fewer prompts has to wear its ⚡ here, not only on the board. */
+  mode: PermissionMode | null;
   focused: boolean;
   visible: boolean;
   zoomed: boolean;
@@ -87,6 +91,7 @@ interface PaneProps {
  */
 export function Pane({
   session,
+  mode,
   focused,
   visible,
   zoomed,
@@ -134,6 +139,15 @@ export function Pane({
           {session.title}
         </span>
         <span className="pane-agent mono">{session.agent}</span>
+        {mode !== null && mode !== 'normal' && (
+          <span
+            className={`mode-badge ${mode}`}
+            data-testid={`pane-mode-${session.id}`}
+            title={t(mode === 'yolo' ? 'mode.yolo' : 'mode.accept_edits')}
+          >
+            {mode === 'yolo' ? '⚡' : '✎'}
+          </span>
+        )}
         <button
           className="pane-zoom"
           title={zoomed ? t('pane.restore') : t('pane.zoom')}

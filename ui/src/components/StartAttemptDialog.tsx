@@ -9,7 +9,7 @@ import { FriendlyError } from './FriendlyError';
 interface Props {
   task: Task;
   onCancel: () => void;
-  onStart: (agent: string, prompt: string, mode: PermissionMode) => void;
+  onStart: (agent: string, prompt: string, mode: PermissionMode) => void | Promise<void>;
   error: string | null;
 }
 
@@ -39,6 +39,9 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
   const [willSend, setWillSend] = useState(true);
   const [edited, setEdited] = useState(false);
   const [copied, setCopied] = useState(false);
+  /** Starting spawns a worktree and a PTY — a button still live during it
+   *  makes two attempts from one double-click. */
+  const [busy, setBusy] = useState(false);
   const launchers = useLaunchers();
 
   // What the picked launcher runs underneath — a profile of claude is still
@@ -174,11 +177,18 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
           <button onClick={onCancel}>{t('common.cancel')}</button>
           <button
             className="primary"
-            disabled={prompt.trim() === ''}
+            disabled={prompt.trim() === '' || busy}
             data-testid="attempt-start"
-            onClick={() => onStart(agent, prompt, mode)}
+            onClick={() => {
+              setBusy(true);
+              void Promise.resolve(onStart(agent, prompt, mode)).finally(() => setBusy(false));
+            }}
           >
-            {willSend ? t('common.start') : t('attempt.openNoPrompt')}
+            {busy
+              ? t('inspector.working')
+              : willSend
+                ? t('common.start')
+                : t('attempt.openNoPrompt')}
           </button>
         </div>
     </Modal>

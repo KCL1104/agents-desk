@@ -42,7 +42,8 @@ export function ColumnPicker({
         <option value="auto">{t('cols.auto')}</option>
         {COUNTS.map((n) => (
           <option key={n} value={String(n)}>
-            {t('cols.n', { n })}
+            {/* English needs the singular; zh-TW's 欄 never inflects. */}
+            {n === 1 ? t('cols.one') : t('cols.n', { n })}
           </option>
         ))}
       </select>

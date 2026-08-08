@@ -135,12 +135,18 @@ textarea { resize: vertical; }
 .session-groups { overflow-y: auto; flex: 1; }
 .group { margin-bottom: 10px; }
 .group-head { padding: 6px 12px 2px; color: var(--fg-dim); font-size: 11px; }
-/* Every status dot, in one place. */
+/* Every status dot, in one place. Filled is the state itself; hollow is its
+   quieter cousin. Opacity variants of one color were indistinguishable at
+   7px — and opacity-on-color is the anti-pattern the fg-faint comment
+   already names. Shape survives what color cannot. */
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-dim); flex: none; }
 .dot.running { background: var(--accent); }
-.dot.starting { background: var(--accent); opacity: 0.5; }
+/* Starting is the outline of running: the same color, about to fill in. */
+.dot.starting { background: transparent; box-shadow: inset 0 0 0 1.5px var(--accent); }
 .dot.waiting_permission { background: var(--warn); }
-.dot.waiting_input { background: var(--warn); opacity: 0.7; }
+/* The idle prompt asks less urgently than the permission gate: same color,
+   hollow. */
+.dot.waiting_input { background: transparent; box-shadow: inset 0 0 0 1.5px var(--warn); }
 .dot.idle { background: var(--ok); }
 
 .main { display: flex; flex-direction: column; overflow: hidden; }
@@ -157,7 +163,9 @@ textarea { resize: vertical; }
 /* ---------- modal / boot ---------- */
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; }
-.modal { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; width: 520px; max-width: 92vw; }
+/* Taller than the window, a modal scrolls itself — clipping the Close
+   button off-screen is a trap, not a layout. */
+.modal { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; width: 520px; max-width: 92vw; max-height: 90vh; overflow-y: auto; }
 .modal h2 { margin: 0 0 14px; font-size: 16px; }
 /* Section heads inside a modal that holds more than one concern: the env
    panel is settings on top, diagnostics below, and the seam should show. */
@@ -419,6 +427,12 @@ textarea { resize: vertical; }
 .tab-name { overflow: hidden; text-overflow: ellipsis; }
 .tab-badge { font-size: 11px; flex: none; }
 .tab-badge.waiting { color: var(--warn); font-weight: 700; }
+/* Unread wears mail's grammar — a count in a filled pill — so it can never
+   be mistaken for the busy dot beside it. */
+.tab-badge.unseen {
+  background: var(--accent); color: var(--on-accent);
+  border-radius: 8px; padding: 0 5px; font-size: 10px; font-weight: 700;
+}
 .tab-badge.busy { color: var(--accent); }
 .tab-close {
   background: transparent; border: none; color: var(--fg-dim);
@@ -583,7 +597,11 @@ textarea { resize: vertical; }
   50% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 28%, transparent); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .board-card.needs-you { animation: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 28%, transparent); }
+  .board-card.needs-you,
+  .adhoc-chip.needs-you {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 28%, transparent);
+  }
 }
 
 .board-card[data-live='session'] { border-left-color: var(--accent); }
@@ -624,12 +642,28 @@ textarea { resize: vertical; }
   display: flex; align-items: center; gap: 7px;
   padding: 5px 10px; font-size: 12px;
 }
-.adhoc-chip.needs-you { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 5%, var(--bg-2)); }
+/* The same breath as a blocked board card — one attention language, worn by
+   every surface that can be blocked on you. */
+.adhoc-chip.needs-you {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 5%, var(--bg-2));
+  animation: board-breathe 2.4s ease-in-out infinite;
+}
 .adhoc-title { font-weight: 600; }
 
-.dot.awaiting_trust { background: var(--warn); }
-.dot.waiting_input { background: var(--warn); }
+/* The trust gate wears a different shape, not a third warn variant: it is
+   a door to answer once, not a light to watch. */
+.dot.awaiting_trust {
+  background: var(--warn);
+  border-radius: 1.5px;
+  transform: rotate(45deg) scale(0.85);
+}
 .dot.exited, .dot.saved { background: color-mix(in srgb, var(--fg) 26%, var(--bg)); }
+
+/* Finished behind your back: unread mail's grammar — weight on the name, an
+   accent dot beside it, both gone the moment its terminal has been seen. */
+.unseen-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+.session-row.unseen .row-title { font-weight: 600; }
 
 .modal.wide { width: 720px; }
 .dialog-error { color: var(--err); font-size: 12px; margin: 10px 0 0; }
@@ -661,6 +695,14 @@ textarea { resize: vertical; }
   border-bottom: 1px solid var(--line);
 }
 .inspector-frozen { color: var(--warn); }
+
+/* The whole diff in one line, above the lines themselves: how many files,
+   how much, and — the honesty that earns the reload button — read when. */
+.diff-summary {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 5px 11px; border-bottom: 1px solid var(--line);
+}
+.diff-fetched { margin-left: auto; color: var(--fg-faint); }
 
 .diff {
   flex: 1; margin: 0; overflow: auto; padding: 8px 10px;
@@ -773,6 +815,12 @@ textarea { resize: vertical; }
   margin-top: 2px;
 }
 .board-card-branch { color: var(--fg-dim); }
+/* The attempt's footprint, quiet beside the branch it measures against. */
+.card-stat { margin-left: 6px; display: inline-flex; gap: 5px; }
+.stat-ahead { color: var(--fg-dim); }
+/* Behind is the merge refusal you have not hit yet — the one count that
+   asks for an action, so it alone takes the warning color. */
+.stat-behind { color: var(--warn); font-weight: 600; }
 /* A repo living in another world says so, ahead of its name. */
 .host-badge { color: var(--accent); }
 
@@ -835,6 +883,14 @@ textarea { resize: vertical; }
 }
 .mode-badge.yolo { color: var(--warn); }
 .mode-badge.accept_edits { color: var(--accent); }
+
+/* The one artifact of the PR path: a live link and a copy, not dead text. */
+.pr-url { display: flex; align-items: center; gap: 8px; margin: 0; min-width: 0; }
+.pr-url a {
+  color: var(--accent);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pr-url .chip { flex: none; cursor: pointer; }
 
 .inspector-foot {
   border-top: 1px solid var(--line); padding: 9px 11px;

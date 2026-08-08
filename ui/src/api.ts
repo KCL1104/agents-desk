@@ -21,6 +21,19 @@ export interface StartResult {
   queuedAt: number | null;
 }
 
+/** An attempt's footprint at a glance. Mirrors worktree.rs DiffStat. */
+export interface AttemptStat {
+  /** Files touched, counting untracked ones — an agent's commonest act. */
+  files: number;
+  adds: number;
+  dels: number;
+  /** Commits this branch has that the base does not. */
+  ahead: number;
+  /** Commits the base has grown since — the merge refusal you have not
+      hit yet. */
+  behind: number;
+}
+
 /** What opening an attempt produced. Mirrors core.rs OpenedAttempt. */
 export interface OpenedAttempt {
   attempt_id: string;
@@ -96,6 +109,9 @@ export const api = {
   finishAttempt: (attemptId: string, outcome: Outcome) =>
     invoke<void>('finish_attempt', { attemptId, outcome }),
   attemptDiff: (attemptId: string) => invoke<string>('attempt_diff', { attemptId }),
+  /** Line counts and ahead/behind for an open attempt — numstat, never the
+      rendered diff, so a board full of cards can afford to ask. */
+  attemptStats: (attemptId: string) => invoke<AttemptStat>('attempt_stats', { attemptId }),
   attemptEvents: (attemptId: string) =>
     invoke<AttemptEvent[]>('attempt_events', { attemptId }),
   /** Send a later message into an attempt's live terminal, as one pasted
@@ -116,6 +132,10 @@ export const api = {
       Returns the new session's id. */
   runScript: (attemptId: string, name: string, cols: number, rows: number) =>
     invoke<string>('run_script', { attemptId, name, cols, rows }),
+
+  /** Open a URL in the system browser. Through the opener plugin, because a
+      plain anchor inside the webview would navigate the app itself. */
+  openExternal: (url: string) => invoke<void>('plugin:opener|open_url', { url, with: null }),
 
   /** Replay buffer for a pane mounting after its PTY already started. */
   termSnapshot: (id: string) => invoke<{ data: string; seq: number }>('term_snapshot', { id }),

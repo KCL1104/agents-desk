@@ -7,6 +7,9 @@ import { DRAG_MIME, encodeDrag } from '../layout';
 interface Props {
   sessions: SessionMeta[];
   activeId: string | null;
+  /** Sessions that finished a turn while their terminal was not in front
+      of you. The row wears it like unread mail: weight plus a dot. */
+  unseen: ReadonlySet<string>;
   onSelect: (id: string) => void;
   onNew: () => void;
   onClose: (id: string) => void;
@@ -20,6 +23,7 @@ const ORDER: Section[] = ['working', 'waiting', 'done'];
 export function SessionList({
   sessions,
   activeId,
+  unseen,
   onSelect,
   onNew,
   onClose,
@@ -61,7 +65,16 @@ export function SessionList({
       </div>
 
       {waiting.length > 0 && (
-        <button className="waiting-banner" onClick={() => onSelect(waiting[0].id)}>
+        <button
+          className="waiting-banner"
+          // Cycles like ⌘E: with three blocked agents each click lands on
+          // the next one, instead of revisiting the first forever while the
+          // keyboard path moves on. Same affordance, same behaviour.
+          onClick={() => {
+            const i = waiting.findIndex((s) => s.id === activeId);
+            onSelect(waiting[(i + 1) % waiting.length].id);
+          }}
+        >
           {t('sidebar.waitingCount', { count: waiting.length })}
         </button>
       )}
@@ -90,6 +103,7 @@ export function SessionList({
                     key={s.id}
                     session={s}
                     active={s.id === activeId}
+                    unseen={unseen.has(s.id)}
                     now={now}
                     onSelect={onSelect}
                     onClose={onClose}
@@ -112,6 +126,7 @@ export function SessionList({
 function Row({
   session: s,
   active,
+  unseen,
   now,
   onSelect,
   onClose,
@@ -120,6 +135,7 @@ function Row({
 }: {
   session: SessionMeta;
   active: boolean;
+  unseen: boolean;
   now: number;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
@@ -132,13 +148,13 @@ function Row({
 
   return (
     <div
-      className={`session-row${active ? ' active' : ''}`}
+      className={`session-row${active ? ' active' : ''}${unseen ? ' unseen' : ''}`}
       data-testid={`session-${s.id}`}
       // A group holding one real door and its side actions — not a button
       // pretending to contain buttons, which is the one shape ARIA forbids.
       // The label carries the status so AT hears which row is waiting.
       role="group"
-      aria-label={`${s.title}，${t(STATUS_KEY[s.status])}`}
+      aria-label={`${s.title}，${t(STATUS_KEY[s.status])}${unseen ? `，${t('unseen.label')}` : ''}`}
       // Dragging a row into the grid is the direct way to say which sessions
       // the layout should hold.
       draggable
@@ -155,6 +171,11 @@ function Row({
         <button className="row-door row-title" title={s.cwd} onClick={() => onSelect(s.id)}>
           {s.title}
         </button>
+        {/* Finished behind your back — unread until its terminal has been
+            in front of you. The label rides the aria-label above. */}
+        {unseen && (
+          <span className="unseen-dot" data-testid={`unseen-${s.id}`} title={t('unseen.label')} />
+        )}
         <span className="row-actions">
           <button
             className="row-action"

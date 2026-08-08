@@ -412,6 +412,19 @@ fn attempt_diff(state: State<'_, AppState>, attempt_id: String) -> StdResult<Str
         .map_err(|e| format!("{e:#}"))
 }
 
+/// Numstat counts and ahead/behind for an open attempt — the board's card
+/// badges, cheap enough to ask for on a timer.
+#[tauri::command]
+fn attempt_stats(
+    state: State<'_, AppState>,
+    attempt_id: String,
+) -> StdResult<crate::worktree::DiffStat, String> {
+    state
+        .core()?
+        .attempt_stats(&attempt_id)
+        .map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 fn attempt_events(
     state: State<'_, AppState>,
@@ -484,6 +497,9 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        // For the PR URL: an anchor inside the webview would navigate the
+        // app itself, so external links go out through the opener.
+        .plugin(tauri_plugin_opener::init())
         .on_window_event(|_, event| {
             if let tauri::WindowEvent::Focused(focused) = event {
                 FOCUSED.store(*focused, Ordering::Relaxed);
@@ -541,6 +557,7 @@ fn main() {
             reopen_attempt,
             finish_attempt,
             attempt_diff,
+            attempt_stats,
             attempt_events,
             send_followup,
             list_run_scripts,

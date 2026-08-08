@@ -116,6 +116,7 @@ export const en = {
   /* ------------------------------ tabs -------------------------------- */
   'tabs.rename': '{name} — double-click to rename',
   'tabs.waiting': 'Waiting on you',
+  'tabs.unseen': 'Finished while you were away',
   'tabs.busy': 'Running',
   'tabs.close': 'Close tab (sessions stay in the sidebar)',
   'tabs.new': 'New tab',
@@ -124,7 +125,8 @@ export const en = {
   /* --------------------------- column picker -------------------------- */
   'cols.label': 'Columns',
   'cols.auto': 'Auto',
-  'cols.n': '{n} col',
+  'cols.one': '1 col',
+  'cols.n': '{n} cols',
   'cols.custom': 'Custom',
   'cols.manualHint':
     'This tab’s layout is one you arranged; choosing anything else reverts it to automatic',
@@ -214,6 +216,14 @@ export const en = {
   'section.waiting': 'Waiting on you',
   'section.done': 'Done',
 
+  /* ------------------------------ unseen ------------------------------ */
+  'unseen.label': 'finished, not yet seen',
+
+  /* ------------------------------ stats ------------------------------- */
+  'stats.ahead': '{n} commits {branch} does not have yet',
+  'stats.behind': '{branch} has moved on by {n} commits — rebase before merging',
+  'stats.hint': 'Lines changed vs {branch} · ↑ commits ahead · ↓ commits behind',
+
   /* ---------------------------- inspector ----------------------------- */
   'inspector.changes': 'Changes',
   'inspector.activity': 'Activity',
@@ -233,6 +243,10 @@ export const en = {
     'Close this attempt and take the worktree back. Changes are frozen and kept.',
   'inspector.noChanges': 'This attempt has not changed any files yet.',
   'inspector.noActivity': 'No activity yet. Status reporting only works with Claude Code.',
+  'inspector.eventsFailed': 'Could not read the activity: {err}',
+  'inspector.diffSummary': '{files} files',
+  'inspector.readAt': 'read {time}',
+  'inspector.copyUrl': 'Copy link',
   'inspector.runHint': 'Run `{name}` in this attempt’s worktree, in its own terminal',
 
   /* ----------------------------- review ------------------------------- */
@@ -395,6 +409,7 @@ export const zhTW: Record<MessageKey, string> = {
   /* ------------------------------ tabs -------------------------------- */
   'tabs.rename': '{name} — 雙擊改名',
   'tabs.waiting': '等你處理',
+  'tabs.unseen': '趁你不在時完成了',
   'tabs.busy': '執行中',
   'tabs.close': '關閉分頁（session 會留在側邊欄）',
   'tabs.new': '新分頁',
@@ -403,6 +418,7 @@ export const zhTW: Record<MessageKey, string> = {
   /* --------------------------- column picker -------------------------- */
   'cols.label': '欄數',
   'cols.auto': '自動',
+  'cols.one': '1 欄',
   'cols.n': '{n} 欄',
   'cols.custom': '自訂',
   'cols.manualHint': '這個分頁的佈局是你自己排的；選其他值會還原成自動',
@@ -492,6 +508,14 @@ export const zhTW: Record<MessageKey, string> = {
   'section.waiting': '等待輸入',
   'section.done': '已完成',
 
+  /* ------------------------------ unseen ------------------------------ */
+  'unseen.label': '已完成，還沒看過',
+
+  /* ------------------------------ stats ------------------------------- */
+  'stats.ahead': '有 {n} 個 {branch} 還沒有的 commit',
+  'stats.behind': '{branch} 已經前進了 {n} 個 commit —— 合併前先 rebase',
+  'stats.hint': '相對 {branch} 的行數變更 · ↑ 領先的 commit · ↓ 落後的 commit',
+
   /* ---------------------------- inspector ----------------------------- */
   'inspector.changes': '變更',
   'inspector.activity': '活動',
@@ -509,6 +533,10 @@ export const zhTW: Record<MessageKey, string> = {
   'inspector.discardHint': '關掉這個 attempt 並收回 worktree。變更會凍結保留。',
   'inspector.noChanges': '這個 attempt 還沒有改動任何檔案。',
   'inspector.noActivity': '還沒有活動。狀態回報只對 Claude Code 有效。',
+  'inspector.eventsFailed': '讀取活動失敗：{err}',
+  'inspector.diffSummary': '{files} 個檔案',
+  'inspector.readAt': '{time} 讀取',
+  'inspector.copyUrl': '複製連結',
   'inspector.runHint': '在這個 attempt 的 worktree 裡執行 `{name}`，開自己的終端機',
 
   /* ----------------------------- review ------------------------------- */

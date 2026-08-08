@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { api } from '../api';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { api, type AttemptStat } from '../api';
 import { useT } from '../i18n';
 import { useArmed } from './armed';
 import type { Attempt, Lifecycle, SessionMeta, Task } from '../types';
@@ -23,6 +23,8 @@ import { elapsed } from '../sections';
 interface Props {
   tasks: Task[];
   sessions: SessionMeta[];
+  /** Sessions that finished a turn while their terminal was unwatched. */
+  unseen: ReadonlySet<string>;
   /** Go to this session's terminal, with the caret in it. */
   onOpenSession: (id: string) => void;
   onMove: (id: string, lifecycle: Lifecycle, position: number) => void;
@@ -52,6 +54,7 @@ interface Props {
 export function Board({
   tasks,
   sessions,
+  unseen,
   onOpenSession,
   onMove,
   onStart,
@@ -104,6 +107,48 @@ export function Board({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  /** Each open attempt's footprint: +N −M and where its branch stands
+   *  against the base. Cheap numstat calls, never the rendered diff, and a
+   *  chain of timeouts rather than an interval — a tick that reschedules
+   *  only after it finishes cannot pile up behind a slow host (WSL, SSH). */
+  const [stats, setStats] = useState<Record<string, AttemptStat>>({});
+  const openIds = useMemo(
+    () =>
+      tasks
+        .flatMap((task) => task.attempts)
+        .filter((a) => a.outcome === null)
+        .map((a) => a.id)
+        .sort()
+        .join(' '),
+    [tasks],
+  );
+  useEffect(() => {
+    const ids = openIds === '' ? [] : openIds.split(' ');
+    if (ids.length === 0) {
+      setStats({});
+      return;
+    }
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      const results = await Promise.allSettled(ids.map((id) => api.attemptStats(id)));
+      if (stop) return;
+      const next: Record<string, AttemptStat> = {};
+      results.forEach((r, i) => {
+        // A refusal (worktree mid-setup or mid-teardown) costs a badge,
+        // never a toast — the card's status line already tells that story.
+        if (r.status === 'fulfilled') next[ids[i]] = r.value;
+      });
+      setStats(next);
+      timer = setTimeout(() => void tick(), 15000);
+    };
+    void tick();
+    return () => {
+      stop = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [openIds]);
 
   /**
    * Which card moved, and where it lands.
@@ -167,6 +212,8 @@ export function Board({
                     key={task.id}
                     task={task}
                     live={liveStateOf(task, sessions)}
+                    stats={stats}
+                    unseen={unseen}
                     dragging={dragId === task.id}
                     insertBefore={over?.col === col && over.taskId === task.id}
                     onDragStart={(e) => {
@@ -227,6 +274,7 @@ export function Board({
             >
               <span className={`dot ${s.status}`} />
               <span className="adhoc-title">{s.title}</span>
+              {unseen.has(s.id) && <span className="unseen-dot" title={t('unseen.label')} />}
               <span className="muted small">{t(STATUS_KEY[s.status])}</span>
             </button>
           ))}
@@ -295,6 +343,8 @@ function Concurrency({ running, tasks }: { running: number; tasks: Task[] }) {
 function Card({
   task,
   live,
+  stats,
+  unseen,
   dragging,
   insertBefore,
   onDragStart,
@@ -312,6 +362,8 @@ function Card({
 }: {
   task: Task;
   live: Live;
+  stats: Record<string, AttemptStat>;
+  unseen: ReadonlySet<string>;
   dragging: boolean;
   insertBefore: boolean;
   onDragStart: (e: React.DragEvent) => void;
@@ -331,6 +383,16 @@ function Card({
   const waiting = live.kind === 'session' && needsYou(live.status);
   const hasAttempt = live.kind !== 'none' && live.kind !== 'queued';
   const agent = hasAttempt ? live.attempt.agent : null;
+  const stat = hasAttempt ? stats[live.attempt.id] : undefined;
+  /** Its session finished a turn while unwatched. A stopped card keys by
+   *  the attempt's session — the CLI that exited is exactly the unread
+   *  ending worth a dot. */
+  const unread =
+    live.kind === 'session'
+      ? unseen.has(live.session.id)
+      : live.kind === 'stopped' && live.attempt.session_id !== null
+        ? unseen.has(live.attempt.session_id)
+        : false;
   const del = useArmed(onDelete);
 
   // The whole card is the target when there is a session behind it: getting
@@ -358,7 +420,9 @@ function Card({
       // rest stay focusable themselves so ⌘←/→ still has somewhere to land.
       role="group"
       tabIndex={enter ? -1 : 0}
-      aria-label={`${task.title}，${waiting ? '⚠ ' : ''}${liveLabel(live, t)}`}
+      aria-label={`${task.title}，${waiting ? '⚠ ' : ''}${liveLabel(live, t)}${
+        unread ? `，${t('unseen.label')}` : ''
+      }`}
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
           e.preventDefault();
@@ -383,6 +447,9 @@ function Card({
           </button>
         ) : (
           <span className="board-card-title">{task.title}</span>
+        )}
+        {unread && (
+          <span className="unseen-dot" data-testid={`unseen-card-${task.id}`} title={t('unseen.label')} />
         )}
         {agent && <span className="ov-agent mono">{agent}</span>}
         {/* A session running with fewer prompts wears it openly. Quiet
@@ -412,6 +479,21 @@ function Card({
         )}
         {repoName(task.repo_path)}
         <span className="board-card-branch"> ⎇ {task.base_branch}</span>
+        {/* The attempt's footprint, and where its branch stands. ↓ wears the
+            warning color because it is a merge refusal you have not hit yet
+            — the one number that says "rebase before you try". */}
+        {stat && (stat.adds > 0 || stat.dels > 0 || stat.ahead > 0 || stat.behind > 0) && (
+          <span
+            className="card-stat"
+            data-testid={`stat-${task.id}`}
+            title={t('stats.hint', { branch: task.base_branch })}
+          >
+            {stat.adds > 0 && <span className="diff-count add">+{stat.adds}</span>}
+            {stat.dels > 0 && <span className="diff-count del">−{stat.dels}</span>}
+            {stat.ahead > 0 && <span className="stat-ahead">↑{stat.ahead}</span>}
+            {stat.behind > 0 && <span className="stat-behind">↓{stat.behind}</span>}
+          </span>
+        )}
       </div>
 
       <div className="board-card-state" data-testid={`state-${task.id}`}>

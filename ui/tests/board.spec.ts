@@ -339,3 +339,47 @@ test.describe('board', () => {
     await expect(page.locator('.session-row')).toHaveCount(0);
   });
 });
+
+/**
+ * The card's footprint badges: numstat counts and where the branch stands
+ * against its base — read from git, never from the terminal.
+ */
+test.describe('attempt footprint on the card', () => {
+  test('a card wears +N −M and ahead/behind', async ({ page }) => {
+    await boot(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await page.evaluate(() => {
+      window.__mock.stats.set('k1-a1', { files: 2, adds: 12, dels: 3, ahead: 2, behind: 1 });
+    });
+
+    await page.getByTestId('view-board').click();
+    const stat = page.getByTestId('stat-k1');
+    await expect(stat).toContainText('+12');
+    await expect(stat).toContainText('−3');
+    await expect(stat).toContainText('↑2');
+    // Behind is the merge refusal not yet hit — the one count in warn.
+    await expect(stat).toContainText('↓1');
+  });
+
+  test('an untouched worktree wears no badge at all', async ({ page }) => {
+    await boot(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await page.getByTestId('view-board').click();
+    await expect(page.getByTestId('state-k1')).toBeVisible();
+    await expect(page.getByTestId('stat-k1')).toHaveCount(0);
+  });
+
+  test('the drawer meta shows where the branch stands', async ({ page }) => {
+    await boot(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await page.evaluate(() => {
+      window.__mock.stats.set('k1-a1', { files: 1, adds: 5, dels: 0, ahead: 1, behind: 2 });
+    });
+    await page.getByTestId('view-board').click();
+    await page.getByTestId('inspect-k1').click();
+    await expect(page.getByTestId('inspector-behind')).toHaveText('↓2');
+  });
+});

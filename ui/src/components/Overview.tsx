@@ -5,6 +5,8 @@ import { useT } from '../i18n';
 
 interface Props {
   sessions: SessionMeta[];
+  /** Sessions that finished a turn while their terminal was unwatched. */
+  unseen: ReadonlySet<string>;
   onOpen: (id: string) => void;
   onComplete: (id: string, completed: boolean) => void;
   onClose: (id: string) => void;
@@ -23,7 +25,7 @@ const ORDER: Section[] = ['working', 'waiting', 'done'];
  * Sections are ordered the same way as the sidebar, so the two views of the
  * same data never disagree.
  */
-export function Overview({ sessions, onOpen, onComplete, onClose }: Props) {
+export function Overview({ sessions, unseen, onOpen, onComplete, onClose }: Props) {
   const t = useT();
   // One timer for every elapsed counter on the page.
   const [now, setNow] = useState(() => Date.now());
@@ -59,6 +61,7 @@ export function Overview({ sessions, onOpen, onComplete, onClose }: Props) {
                 <Card
                   key={s.id}
                   session={s}
+                  unseen={unseen.has(s.id)}
                   now={now}
                   onOpen={onOpen}
                   onComplete={onComplete}
@@ -75,12 +78,14 @@ export function Overview({ sessions, onOpen, onComplete, onClose }: Props) {
 
 function Card({
   session: s,
+  unseen,
   now,
   onOpen,
   onComplete,
   onClose,
 }: {
   session: SessionMeta;
+  unseen: boolean;
   now: number;
   onOpen: (id: string) => void;
   onComplete: (id: string, completed: boolean) => void;
@@ -98,13 +103,14 @@ function Card({
       // and the session wears its one name, the card title, not its
       // worktree directory.
       role="group"
-      aria-label={`${s.title}，${t(STATUS_KEY[s.status])}`}
+      aria-label={`${s.title}，${t(STATUS_KEY[s.status])}${unseen ? `，${t('unseen.label')}` : ''}`}
     >
       <header className="ov-card-head">
         <span className={`dot ${s.status}`} />
         <button className="card-door ov-title" title={s.cwd} onClick={() => onOpen(s.id)}>
           {s.title}
         </button>
+        {unseen && <span className="unseen-dot" title={t('unseen.label')} />}
         <span className="ov-agent mono">{s.agent}</span>
       </header>
 

@@ -103,6 +103,27 @@ test.describe('the review loop', () => {
     await expect(page.getByTestId('review')).toHaveCount(0);
   });
 
+  /**
+   * The batch survives the drawer. ⌘I unmounts the inspector outright and
+   * the drawer follows focus between panes — half-written feedback must
+   * ride both out, the same promise the dialogs' dirty-guard makes for a
+   * stray backdrop click.
+   */
+  test('closing the drawer does not destroy the pending batch', async ({ page }) => {
+    await boardWithAttempt(page);
+    await page.locator('.diff-line.add').click();
+    await page.getByTestId('review-note').fill('session 可能是 undefined，要先檢查');
+    await page.getByTestId('review-add').click();
+    await expect(page.getByTestId('review-pending').locator('li')).toHaveCount(1);
+
+    // Away and back — the drawer unmounts entirely in between.
+    await page.getByTestId('toggle-inspector').click();
+    await expect(page.getByTestId('inspector')).toHaveCount(0);
+    await page.getByTestId('toggle-inspector').click();
+    await expect(page.getByTestId('review-pending').locator('li')).toHaveCount(1);
+    await expect(page.locator('.diff-line.noted')).toHaveCount(1);
+  });
+
   /** A comment added and then thought better of leaves nothing behind. */
   test('feedback can be taken back out of the batch before it is sent', async ({ page }) => {
     await boardWithAttempt(page);

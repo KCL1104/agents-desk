@@ -80,6 +80,11 @@ declare global {
       repos: Record<string, string[]>;
       /** What each attempt's worktree currently shows as changed. */
       diffs: Map<string, string>;
+      /** Each open attempt's numstat footprint, as the core measures it. */
+      stats: Map<
+        string,
+        { files: number; adds: number; dels: number; ahead: number; behind: number }
+      >;
       events: Map<string, MockEvent[]>;
       /** Cards waiting for a slot, in order. */
       queue: string[];
@@ -144,6 +149,10 @@ export function installMock(): void {
     tasks: JSON.parse(sessionStorage.getItem('__mockTasks') ?? '[]') as MockTask[],
     repos: { '/Users/test/picked-repo': ['main', 'develop'] } as Record<string, string[]>,
     diffs: new Map<string, string>(),
+    stats: new Map<
+      string,
+      { files: number; adds: number; dels: number; ahead: number; behind: number }
+    >(),
     events: new Map<string, MockEvent[]>(),
     queue: [] as string[],
     maxConcurrent: 3,
@@ -646,6 +655,24 @@ export function installMock(): void {
       return mock.diffs.get(String(args.attemptId)) ?? '';
     },
 
+    attempt_stats: (args) => {
+      const attempt = mock.tasks
+        .flatMap((t) => t.attempts)
+        .find((a) => a.id === args.attemptId);
+      // The core refuses a finished attempt — no worktree, nothing to measure.
+      if (!attempt) throw new Error(`no such attempt: ${String(args.attemptId)}`);
+      if (attempt.outcome !== null) throw new Error('attempt is finished');
+      return (
+        mock.stats.get(String(args.attemptId)) ?? {
+          files: 0,
+          adds: 0,
+          dels: 0,
+          ahead: 0,
+          behind: 0,
+        }
+      );
+    },
+
     attempt_events: (args) => mock.events.get(String(args.attemptId)) ?? [],
 
     list_launchers: () =>
@@ -720,6 +747,7 @@ export function installMock(): void {
     },
     'plugin:event|unlisten': () => null,
     'plugin:dialog|open': () => '/Users/test/picked-repo',
+    'plugin:opener|open_url': () => null,
     'plugin:notification|is_permission_granted': () => true,
     'plugin:notification|notify': () => null,
   };
