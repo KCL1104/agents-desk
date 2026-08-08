@@ -653,6 +653,11 @@ pub struct Core {
     claude_version: Option<(u64, u64, u64)>,
     /// Which notifications to raise — the router's copy of the same cell.
     notify_prefs: Arc<Mutex<NotifyPrefs>>,
+    /// Each attempt's worktree shell, while one is live. One shell per
+    /// attempt — asking again returns the session already there, so the
+    /// button is idempotent and the shells never pile up. In-memory only:
+    /// a shell does not outlive the app any more than the PTYs do.
+    shells: Mutex<HashMap<String, String>>,
     /// Everything known about each execution environment, resolved on first
     /// use and kept: a WSL distro's login environment costs a probe, and the
     /// answer does not change under a running app.
@@ -808,6 +813,7 @@ impl Core {
             worktrees: Worktrees::new(worktree_root),
             claude_version,
             notify_prefs,
+            shells: Mutex::new(HashMap::new()),
             hosts: Mutex::new(HashMap::new()),
         });
 
@@ -1809,6 +1815,122 @@ impl Core {
             return Err(e);
         }
 
+        self.persist(&meta);
+        self.broadcast();
+        Ok(id)
+    }
+
+    /// A shell of the person's own, in the attempt's worktree.
+    ///
+    /// Reviewing an agent's work keeps demanding ad-hoc commands — run the
+    /// tests, `git log`, grep — in *its* worktree, not yours. The ▶ scripts
+    /// cover what the repository predicted; this covers everything it did
+    /// not, without typing into the agent's terminal and without hunting
+    /// the worktree path to `cd` into. The shell is the host's own login
+    /// shell, so inside WSL it is the distro's, with the distro's PATH.
+    pub fn open_shell(&self, attempt_id: &str, cols: u16, rows: u16) -> Result<String> {
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        if attempt.outcome.is_some() {
+            return Err(anyhow!(
+                "attempt {attempt_id} is finished; its worktree has been removed"
+            ));
+        }
+
+        // One shell per attempt: while it lives, the button returns it
+        // rather than stacking a second.
+        if let Some(existing) = self.shells.lock().unwrap().get(attempt_id) {
+            if self
+                .sessions
+                .lock()
+                .unwrap()
+                .get(existing)
+                .is_some_and(|s| s.live)
+            {
+                return Ok(existing.clone());
+            }
+        }
+
+        let task = self.task(&attempt.task_id)?;
+        let (repo_loc, he) = self.located(&task.repo_path)?;
+        let wt_loc = host::locate(&attempt.worktree_path)?;
+        if matches!(he.host, Host::Local) && !cfg!(unix) {
+            return Err(anyhow!("a worktree shell needs a POSIX shell"));
+        }
+
+        let id = uuid::Uuid::new_v4().to_string();
+        let at = now_ms();
+        let shell = he.env.shell.clone();
+        let meta = SessionMeta {
+            id: id.clone(),
+            cwd: attempt.worktree_path.clone(),
+            title: format!("$ {} #{}", task.title, attempt.seq),
+            agent: shell
+                .rsplit(['/', '\\'])
+                .find(|s| !s.is_empty())
+                .unwrap_or("sh")
+                .to_string(),
+            status: Status::Starting,
+            created_at: at,
+            last_active_at: at,
+            live: true,
+            reports_status: false,
+            activity: None,
+            activity_since: 0,
+            completed: false,
+            // Ad-hoc, like the ▶ scripts: no lifecycle, no slot — the card
+            // is about the agent, and this terminal is about you.
+            attempt_id: None,
+        };
+
+        // The same variable the scripts see, because the same need exists:
+        // the repository the worktree was opened from is where untracked
+        // things worth reaching (.env) live.
+        let shell_env = [(
+            "AGENTDESK_ROOT_PATH".to_string(),
+            repo_loc.path.clone(),
+        )];
+        let (program, args, outer_cwd, outer_env): (
+            String,
+            Vec<String>,
+            Option<String>,
+            Vec<(String, String)>,
+        ) = match &he.host {
+            Host::Local => (
+                shell,
+                Vec::new(),
+                Some(wt_loc.path.clone()),
+                shell_env.to_vec(),
+            ),
+            _ => {
+                let envs = host::pty_env(&he.env, &shell_env);
+                let (p, a, _) = he.host.wrap(&shell, &[], Some(&wt_loc.path), &envs);
+                (p, a, None, Vec::new())
+            }
+        };
+
+        self.sessions.lock().unwrap().insert(id.clone(), meta.clone());
+        if let Err(e) = self.ptys.spawn(
+            &id,
+            &program,
+            &args,
+            outer_cwd.as_deref(),
+            &self.env,
+            &outer_env,
+            cols.max(20),
+            rows.max(5),
+            Arc::clone(&self.router) as Arc<dyn PtySink>,
+        ) {
+            self.sessions.lock().unwrap().remove(&id);
+            return Err(e);
+        }
+
+        self.shells
+            .lock()
+            .unwrap()
+            .insert(attempt_id.to_string(), id.clone());
         self.persist(&meta);
         self.broadcast();
         Ok(id)

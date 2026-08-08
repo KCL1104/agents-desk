@@ -28,6 +28,8 @@ interface Props {
   unseen: ReadonlySet<string>;
   /** Go to this session's terminal, with the caret in it. */
   onOpenSession: (id: string) => void;
+  /** Peek at this session beside the board — hover or focus says which. */
+  onPreview: (id: string) => void;
   onMove: (id: string, lifecycle: Lifecycle, position: number) => void;
   onStart: (task: Task) => void;
   onResume: (attemptId: string) => void;
@@ -57,6 +59,7 @@ export function Board({
   sessions,
   unseen,
   onOpenSession,
+  onPreview,
   onMove,
   onStart,
   onResume,
@@ -238,6 +241,7 @@ export function Board({
                       drop(e, col, task.id);
                     }}
                     onOpenSession={onOpenSession}
+                    onPreview={onPreview}
                     onStart={() => onStart(task)}
                     onResume={onResume}
                     onInspect={onInspect}
@@ -272,6 +276,8 @@ export function Board({
               className={`adhoc-chip${needsYou(s.status) ? ' needs-you' : ''}`}
               data-testid={`adhoc-${s.id}`}
               onClick={() => onOpenSession(s.id)}
+              onMouseEnter={() => s.live && onPreview(s.id)}
+              onFocus={() => s.live && onPreview(s.id)}
             >
               <span className={`dot ${s.status}`} />
               <span className="adhoc-title">{s.title}</span>
@@ -353,6 +359,7 @@ function Card({
   onDragOver,
   onDrop,
   onOpenSession,
+  onPreview,
   onStart,
   onResume,
   onInspect,
@@ -372,6 +379,7 @@ function Card({
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
   onOpenSession: (id: string) => void;
+  onPreview: (id: string) => void;
   onStart: () => void;
   onResume: (attemptId: string) => void;
   onInspect: (attempt: Attempt) => void;
@@ -436,6 +444,11 @@ function Card({
       onDragEnd={onDragEnd}
       onDragOver={onDragOver}
       onDrop={onDrop}
+      // The peek: pointing at a card (or landing focus on it) shows its
+      // live terminal beside the board. Sticky — leaving the card keeps
+      // the last peek, so glance and pointer can part ways.
+      onMouseEnter={() => live.kind === 'session' && onPreview(live.session.id)}
+      onFocus={() => live.kind === 'session' && onPreview(live.session.id)}
     >
       <header className="board-card-head">
         <span className={`dot ${liveTone(live)}`} />

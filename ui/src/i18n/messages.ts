@@ -302,6 +302,9 @@ export const en = {
   'next.rebase': '{branch} has moved on by {n} — rebase before merging',
   'next.finish': 'Clean and ahead — ready to merge into {branch} or open a PR',
   'inspector.runHint': 'Run `{name}` in this attempt’s worktree, in its own terminal',
+  'inspector.shell': 'shell',
+  'inspector.shellHint':
+    'A shell of your own in this attempt’s worktree — run the tests, git log, anything, without typing into the agent’s terminal',
 
   /* ----------------------------- review ------------------------------- */
   'review.hint': 'Click to attach feedback to this line',
@@ -363,6 +366,7 @@ export const en = {
   'error.deleteCard': 'Could not delete the card: {err}',
   'error.newTab': 'Could not add the tab: {err}',
   'error.runScript': 'Could not start the run script: {err}',
+  'error.openShell': 'Could not open the worktree shell: {err}',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -653,6 +657,9 @@ export const zhTW: Record<MessageKey, string> = {
   'next.rebase': '{branch} 已前進 {n} 個 commit —— 合併前先 rebase',
   'next.finish': '乾淨且領先 —— 可以合併回 {branch} 或開 PR',
   'inspector.runHint': '在這個 attempt 的 worktree 裡執行 `{name}`，開自己的終端機',
+  'inspector.shell': 'shell',
+  'inspector.shellHint':
+    '在這個 attempt 的 worktree 開一個你自己的 shell —— 跑測試、git log 都行，不用打進 agent 的終端機',
 
   /* ----------------------------- review ------------------------------- */
   'review.hint': '點一下，對這行附上意見',
@@ -713,6 +720,7 @@ export const zhTW: Record<MessageKey, string> = {
   'error.deleteCard': '刪除卡片失敗：{err}',
   'error.newTab': '新增分頁失敗：{err}',
   'error.runScript': '啟動 run script 失敗：{err}',
+  'error.openShell': '開 worktree shell 失敗：{err}',
 };
 
 export type Locale = 'en' | 'zh-TW';

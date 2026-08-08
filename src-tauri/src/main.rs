@@ -458,6 +458,20 @@ fn list_run_scripts(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// A shell of your own in the attempt's worktree — reused while it lives.
+#[tauri::command]
+fn open_shell(
+    state: State<'_, AppState>,
+    attempt_id: String,
+    cols: u16,
+    rows: u16,
+) -> StdResult<String, String> {
+    state
+        .core()?
+        .open_shell(&attempt_id, cols, rows)
+        .map_err(|e| format!("{e:#}"))
+}
+
 /// Start a run script in the attempt's worktree, in a terminal of its own.
 #[tauri::command]
 fn run_script(
@@ -598,6 +612,7 @@ fn main() {
             send_followup,
             list_run_scripts,
             run_script,
+            open_shell,
             list_launchers,
             list_profiles,
             save_profiles,

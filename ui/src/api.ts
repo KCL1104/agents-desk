@@ -141,6 +141,10 @@ export const api = {
       Returns the new session's id. */
   runScript: (attemptId: string, name: string, cols: number, rows: number) =>
     invoke<string>('run_script', { attemptId, name, cols, rows }),
+  /** A shell of your own in the attempt's worktree. One per attempt:
+      asking again while it lives returns the same session. */
+  openShell: (attemptId: string, cols: number, rows: number) =>
+    invoke<string>('open_shell', { attemptId, cols, rows }),
 
   /** Open a URL in the system browser. Through the opener plugin, because a
       plain anchor inside the webview would navigate the app itself. */

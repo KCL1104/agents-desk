@@ -108,6 +108,9 @@ test.describe('language', () => {
       // that word, keyed so a future locale can differ.
       'sidebar.title',
       'palette.sessions',
+      // "shell" is the same kind of loanword: the chip says what the
+      // terminal it opens will run, in the word both languages use.
+      'inspector.shell',
     ]);
     const untranslated = (Object.keys(en) as Array<keyof typeof en>).filter(
       (k) => zhTW[k] === en[k] && !SHARED.has(k),

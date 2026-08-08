@@ -49,11 +49,14 @@ test.describe('workspace scripts and the multi-repo board', () => {
     await expect(page.getByTestId('adhoc-s2')).toContainText('▶ dev');
   });
 
-  test('a repo without run scripts shows no run row', async ({ page }) => {
+  test('a repo without run scripts still offers the shell, and only that', async ({ page }) => {
     await boardWithAttempt(page);
     await page.getByTestId('inspect-k1').click();
     await expect(page.getByTestId('diff-empty')).toBeVisible();
-    await expect(page.getByTestId('run-scripts')).toHaveCount(0);
+    // The row holds your worktree shell — always — and no ▶ buttons the
+    // repository never declared.
+    await expect(page.getByTestId('open-shell')).toBeVisible();
+    await expect(page.locator('[data-testid="run-scripts"] .chip')).toHaveCount(1);
   });
 
   /**

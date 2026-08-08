@@ -38,6 +38,8 @@ interface Props {
   onMerged?: (branch: string) => void;
   /** Start one of the repo's run scripts in this attempt's worktree. */
   onRunScript: (name: string) => void;
+  /** A shell of your own in this attempt's worktree. */
+  onOpenShell: () => void;
 }
 
 type Pane = 'diff' | 'timeline';
@@ -86,6 +88,7 @@ export function AttemptInspector({
   onDone,
   onMerged,
   onRunScript,
+  onOpenShell,
 }: Props) {
   const t = useT();
   const [width, setWidth] = useState(storedWidth);
@@ -280,10 +283,19 @@ export function AttemptInspector({
         )}
       </div>
 
-      {/* The repo's run scripts: a dev server or test watcher, one click,
-          in this attempt's own worktree with its own port. */}
-      {runScripts.length > 0 && attempt.outcome === null && (
+      {/* The worktree's own terminals: a shell of yours, always — reviewing
+          keeps demanding ad-hoc commands in *its* worktree, not yours — and
+          the repo's ▶ scripts when it declares any. */}
+      {attempt.outcome === null && (
         <div className="inspector-run" data-testid="run-scripts">
+          <button
+            className="chip mono"
+            data-testid="open-shell"
+            title={t('inspector.shellHint')}
+            onClick={onOpenShell}
+          >
+            $ {t('inspector.shell')}
+          </button>
           {runScripts.map((name) => (
             <button
               key={name}

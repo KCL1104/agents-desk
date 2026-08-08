@@ -93,6 +93,8 @@ declare global {
       dirtyWorktrees: Set<string>;
       /** The repo's `.agentdesk/config.json` run script names. */
       runScripts: string[];
+      /** Each attempt's worktree shell, while one is live — the core's cache. */
+      shells: Map<string, string>;
       /** Named launch profiles, as the settings table holds them. */
       profiles: Array<{ name: string; agent: string; args: string[] }>;
       /** Which notifications the desk raises, as the core defaults them. */
@@ -173,6 +175,7 @@ export function installMock(): void {
     pendingStarts: new Map<string, { agent: string; prompt: string; mode: string }>(),
     dirtyWorktrees: new Set<string>(),
     runScripts: [] as string[],
+    shells: new Map<string, string>(),
     profiles: [] as Array<{ name: string; agent: string; args: string[] }>,
     notifyPrefs: { permission: true, input: true, done: false },
     calls: [] as Array<{ cmd: string; args: unknown }>,
@@ -752,6 +755,28 @@ export function installMock(): void {
       s.title = `▶ ${name}`;
       mock.sessions.push(s);
       mock.snapshots.set(s.id, { data: '', seq: 0 });
+      mock.pushSessions();
+      return s.id;
+    },
+
+    open_shell: (args) => {
+      const attemptId = String(args.attemptId);
+      const attempt = mock.tasks
+        .flatMap((t) => t.attempts)
+        .find((a) => a.id === attemptId);
+      if (!attempt) throw new Error(`no such attempt: ${attemptId}`);
+      if (attempt.outcome !== null) throw new Error('attempt is finished');
+      // One shell per attempt: while it lives, the button returns it.
+      const existing = mock.shells.get(attemptId);
+      if (existing && mock.sessions.some((s) => s.id === existing && s.live)) {
+        return existing;
+      }
+      const task = mock.tasks.find((t) => t.id === attempt.task_id)!;
+      const s = makeSession(attempt.worktree_path, 'zsh');
+      s.title = `$ ${task.title} #${attempt.seq}`;
+      mock.sessions.push(s);
+      mock.snapshots.set(s.id, { data: '', seq: 0 });
+      mock.shells.set(attemptId, s.id);
       mock.pushSessions();
       return s.id;
     },

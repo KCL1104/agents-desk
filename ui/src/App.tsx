@@ -346,6 +346,22 @@ export default function App() {
   // showing, so switching never costs a repaint or loses scrollback.
   const liveIds = useMemo(() => sessions.filter((s) => s.live).map((s) => s.id), [sessions]);
 
+  /** The card the board is peeking at — set by hovering or focusing a card
+   *  whose session is live, sticky until another takes it. */
+  const [previewId, setPreviewId] = useState<string | null>(null);
+
+  /** The board's live peek: the hovered card's session, else the focused
+   *  one. Claude Squad's list+preview, GUI-shaped — and because it is the
+   *  same mounted pane, the preview is the terminal, not a copy of it. */
+  const previewSession = useMemo(() => {
+    if (view !== 'board') return null;
+    const liveOf = (id: string | null) => {
+      const s = id ? sessions.find((x) => x.id === id) : undefined;
+      return s?.live ? s.id : null;
+    };
+    return liveOf(previewId) ?? liveOf(focusedId);
+  }, [view, previewId, sessions, focusedId]);
+
   /** The open attempt behind each live session — for the ⚡ badge in the
    *  views where supervision actually happens, not only on the board. */
   const attemptBySession = useMemo(() => {
@@ -739,6 +755,21 @@ export default function App() {
     [onOpen],
   );
 
+  /** A shell of your own in an attempt's worktree — reused while it lives,
+   *  so the button lands you in the shell already there rather than
+   *  stacking a second. */
+  const onOpenShell = useCallback(
+    async (attemptId: string) => {
+      try {
+        const id = await api.openShell(attemptId, INITIAL_COLS, INITIAL_ROWS);
+        await onOpen(id);
+      } catch (e) {
+        setError(t('error.openShell', { err: String(e) }));
+      }
+    },
+    [onOpen],
+  );
+
   const onMoveTask = useCallback((id: string, lifecycle: Lifecycle, position: number) => {
     void api.moveTask(id, lifecycle, position).catch((e) => setError(t('error.moveCard', { err: String(e) })));
   }, []);
@@ -968,9 +999,50 @@ export default function App() {
           </div>
         </header>
 
-        {/* Both views stay mounted: unmounting the terminals would dispose
-            their scrollback and force every TUI to repaint on return. */}
-        <div className="term-area" style={{ display: view === 'terminal' ? 'flex' : 'none' }}>
+        {/* One row for every view, so the board can keep a live peek beside
+            it: the terminals stay mounted (unmounting would dispose their
+            scrollback), the board sits to their left when it is up. */}
+        <div className="content-row">
+        {view === 'board' && (
+          <Board
+            tasks={tasks}
+            sessions={sessions}
+            unseen={unseen}
+            onOpenSession={onOpen}
+            onPreview={setPreviewId}
+            onMove={onMoveTask}
+            onStart={(task) => {
+              setDialogError(null);
+              setStarting(task);
+            }}
+            onResume={onResumeAttempt}
+            onInspect={onInspectAttempt}
+            onCancelQueued={onCancelQueued}
+            onNewTask={() => {
+              setDialogError(null);
+              setShowNewTask(true);
+            }}
+            onDeleteTask={onDeleteTask}
+            onAnnounce={say}
+          />
+        )}
+
+        {view === 'overview' && (
+          <Overview
+            sessions={sessions}
+            unseen={unseen}
+            onOpen={onOpen}
+            onComplete={(id, completed) => void api.setCompleted(id, completed)}
+            onClose={(id) => void api.closeSession(id)}
+          />
+        )}
+
+        <div
+          className={`term-area${view === 'board' && previewSession ? ' as-preview' : ''}`}
+          style={{
+            display: view === 'terminal' || previewSession !== null ? 'flex' : 'none',
+          }}
+        >
         <div
           className="term-stack"
           ref={gridRef}
@@ -990,9 +1062,13 @@ export default function App() {
               if (!session) return null;
               const index = members.indexOf(id);
               const shown = index >= 0 && (zoomed === null || zoomed === id);
+              // The board's peek: this pane, alone, filling the preview
+              // column — zoomed's geometry, whatever tab or layout it is
+              // in, because a peek must not depend on the wall's slots.
+              const previewing = view === 'board' && id === previewSession;
 
               let style: React.CSSProperties | undefined;
-              if (zoomed === id) {
+              if (zoomed === id || previewing) {
                 style = { position: 'absolute', inset: 0 };
               } else if (manual) {
                 const r = geom?.panes.get(id);
@@ -1010,8 +1086,12 @@ export default function App() {
                   key={id}
                   session={session}
                   mode={attemptBySession.get(id) ?? null}
-                  visible={view === 'terminal' && shown}
-                  focused={id === focusedId}
+                  visible={(view === 'terminal' && shown) || previewing}
+                  // Only on the wall: a peeked pane holds no caret, so keys
+                  // pressed over the board can never reach an agent — and
+                  // walking through a card re-focuses the terminal even
+                  // though the peek already had it visible.
+                  focused={id === focusedId && view === 'terminal'}
                   zoomed={zoomed === id}
                   style={style}
                   onFocus={() => setFocused(id)}
@@ -1041,6 +1121,7 @@ export default function App() {
 
             {manual &&
               !zoomed &&
+              view === 'terminal' &&
               geom?.handles.map((h) => {
                 const node = nodeAt(shownRoot, h.path);
                 if (!node || !isSplit(node)) return null;
@@ -1082,42 +1163,11 @@ export default function App() {
             // closing alone reads as "gone", not "landed".
             onMerged={(branch) => pushToast('ok', t('inspector.merged', { branch }))}
             onRunScript={(name) => void onRunScript(inspected.id, name)}
+            onOpenShell={() => void onOpenShell(inspected.id)}
           />
         )}
         </div>
-
-        {view === 'board' && (
-          <Board
-            tasks={tasks}
-            sessions={sessions}
-            unseen={unseen}
-            onOpenSession={onOpen}
-            onMove={onMoveTask}
-            onStart={(task) => {
-              setDialogError(null);
-              setStarting(task);
-            }}
-            onResume={onResumeAttempt}
-            onInspect={onInspectAttempt}
-            onCancelQueued={onCancelQueued}
-            onNewTask={() => {
-              setDialogError(null);
-              setShowNewTask(true);
-            }}
-            onDeleteTask={onDeleteTask}
-            onAnnounce={say}
-          />
-        )}
-
-        {view === 'overview' && (
-          <Overview
-            sessions={sessions}
-            unseen={unseen}
-            onOpen={onOpen}
-            onComplete={(id, completed) => void api.setCompleted(id, completed)}
-            onClose={(id) => void api.closeSession(id)}
-          />
-        )}
+        </div>
       </main>
 
       <div className="visually-hidden" aria-live="polite" data-testid="live-announce">

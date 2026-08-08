@@ -680,6 +680,21 @@ textarea { resize: vertical; }
 .term-area { flex: 1; min-height: 0; }
 .term-area > .term-stack { flex: 1; min-width: 0; }
 
+/* One row for every view, so the board can keep a live peek beside it. */
+.content-row { flex: 1; min-height: 0; display: flex; }
+.content-row > .board, .content-row > .overview { min-width: 0; }
+
+/* The board's peek: the hovered card's real pane — the same mounted
+   terminal, the same bytes — beside the columns, so triage never has to
+   jump in just to look. Sized to stay above the width where a TUI's box
+   drawing comes apart. */
+.term-area.as-preview {
+  flex: none; width: 520px; max-width: 44vw;
+  border-left: 1px solid var(--line);
+}
+/* The drawer belongs to the terminal view; a peek is not a review. */
+.term-area.as-preview .inspector { display: none; }
+
 .inspector {
   position: relative;
   width: 460px; max-width: 46vw; flex: none;
