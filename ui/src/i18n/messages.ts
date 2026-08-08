@@ -114,6 +114,8 @@ export const en = {
 
   /* ------------------------------ board ------------------------------- */
   'board.newCard': 'New card',
+  'board.emptyBacklog': 'Press ＋ to add a card',
+  'board.emptyDrop': 'Drag a card here',
   'board.adHoc': 'Ad-hoc sessions',
   'board.adHocEmpty': 'No ad-hoc sessions.',
   'board.concurrency': 'Running at once',
@@ -335,6 +337,8 @@ export const zhTW: Record<MessageKey, string> = {
 
   /* ------------------------------ board ------------------------------- */
   'board.newCard': '新增卡片',
+  'board.emptyBacklog': '按 ＋ 新增卡片',
+  'board.emptyDrop': '把卡片拖到這裡',
   'board.adHoc': '臨時 session',
   'board.adHocEmpty': '沒有臨時 session。',
   'board.concurrency': '同時執行',

@@ -143,10 +143,14 @@ textarea { resize: vertical; }
   background: var(--bg); padding: 5px;
 }
 
-/* The layout itself. `min-height` rather than `height` so it is exactly the
-   viewport when everything fits and taller when it does not.
+/* The layout itself. `height` is definite so `1fr` rows resolve against the
+   real space: with only a min-height, an auto-height grid sizes its rows to
+   content, and a terminal a hair taller than the viewport inflates every row
+   and leaves the wall scrollable by a few phantom pixels. When the row
+   minimums genuinely do not fit, the tracks overflow this box and the stack
+   scrolls exactly that overflow.
    `position: relative` anchors manual mode's absolute panes and splitters. */
-.term-grid { position: relative; min-height: 100%; }
+.term-grid { position: relative; height: 100%; }
 
 /* The pane is padded, not the terminal itself: xterm measures its host to
    pick cols/rows, so padding inside would make it miscount.
@@ -187,7 +191,14 @@ textarea { resize: vertical; }
 .dot.exited { background: var(--fg-dim); }
 
 .modal label { margin-top: 14px; }
-.modal .stat { padding: 5px 0; border-bottom: 1px solid var(--line); }
+/* A stat is a question and its answer: apart, aligned, the answer able to
+   give way gracefully when it is a long path. */
+.modal .stat {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; padding: 6px 0; border-bottom: 1px solid var(--line);
+}
+.stat-label { color: var(--fg-dim); font-size: 11px; flex: none; }
+.stat-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modal .chips { max-height: 150px; overflow-y: auto; margin-top: 6px; }
 
 .dot.starting { background: var(--accent); opacity: 0.5; }
@@ -414,7 +425,9 @@ textarea { resize: vertical; }
 
 /* ---------- column picker ---------- */
 
-.col-picker { display: flex; align-items: center; gap: 6px; }
+/* Never wraps and never shrinks: a two-character label folded into a column
+   of one-character lines reads as a different word. */
+.col-picker { display: flex; align-items: center; gap: 6px; flex: none; white-space: nowrap; }
 .col-picker select {
   background: var(--bg-3); color: var(--fg);
   border: 1px solid var(--line); border-radius: 5px;
@@ -454,7 +467,13 @@ textarea { resize: vertical; }
 .board-col-head .icon { margin-left: auto; padding: 0 6px; }
 
 .board-cards { display: flex; flex-direction: column; gap: 8px; }
-.board-empty { margin: 4px 0 0; text-align: center; }
+/* An empty column is an invitation, not a shrug: a quiet drop target that
+   says what would put something here. */
+.board-empty {
+  margin: 2px 0 0; text-align: center;
+  border: 1px dashed var(--line); border-radius: 8px;
+  padding: 16px 8px; opacity: 0.8;
+}
 
 .board-card {
   display: flex; flex-direction: column; gap: 6px;
@@ -626,11 +645,15 @@ textarea { resize: vertical; }
 /* A repo living in another world says so, ahead of its name. */
 .host-badge { color: var(--accent); }
 
-/* The profile editor: one row per profile, the whole list saved at once. */
+/* The profile editor: one row per profile, the whole list saved at once.
+   Fixed shares, so the args field — the one with room to need — gets the
+   remainder instead of being squeezed to a sliver. */
 .profiles { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
 .profile-row { display: flex; gap: 6px; align-items: center; }
 .profile-row input, .profile-row select { min-width: 0; }
-.profile-row .profile-args { flex: 1; }
+.profile-row input:first-child { flex: 0 0 140px; }
+.profile-row select { flex: none; }
+.profile-row .profile-args { flex: 1 1 120px; }
 
 /* A session running with fewer prompts wears it openly. */
 .mode-badge {

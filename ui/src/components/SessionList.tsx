@@ -145,7 +145,11 @@ function Row({
     >
       <div className="row-top">
         <span className={`dot ${s.status}`} />
-        <span className="row-title">{basename(s.cwd)}</span>
+        {/* The session's own name — for an attempt that is the card's title,
+            which is what a person scans for. The directory is a hover away. */}
+        <span className="row-title" title={s.cwd}>
+          {s.title}
+        </span>
         <span className="row-actions">
           <button
             className="row-action"
@@ -186,7 +190,3 @@ function Row({
   );
 }
 
-function basename(p: string): string {
-  const parts = p.split('/').filter(Boolean);
-  return parts[parts.length - 1] ?? p;
-}

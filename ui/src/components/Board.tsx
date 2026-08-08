@@ -156,7 +156,11 @@ export function Board({
                     onDelete={() => onDeleteTask(task.id)}
                   />
                 ))}
-                {cards.length === 0 && <p className="board-empty muted small">—</p>}
+                {cards.length === 0 && (
+                  <p className="board-empty muted small">
+                    {col === 'backlog' ? t('board.emptyBacklog') : t('board.emptyDrop')}
+                  </p>
+                )}
               </div>
             </section>
           );
