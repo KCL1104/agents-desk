@@ -220,6 +220,7 @@ test('a card names its repository by basename', () => {
 test('a wsl repository is labelled with its distro', async () => {
   const { hostLabel, repoName } = await import('../src/board');
   expect(hostLabel('wsl://Ubuntu/home/me/code/app')).toBe('wsl:Ubuntu');
+  expect(hostLabel('ssh://devbox/home/me/app')).toBe('ssh:devbox');
   expect(hostLabel('/Users/me/code/app')).toBeNull();
   // The name still reads from the path's last segment, URL or not.
   expect(repoName('wsl://Ubuntu/home/me/code/app')).toBe('app');

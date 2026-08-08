@@ -18,7 +18,7 @@ use std::time::Duration;
 /// Printed by the probe shell immediately before the env dump, so we can
 /// discard anything the user's rc files echoed on the way (motd, version
 /// manager banners, `nvm` chatter).
-const MARKER: &str = "__AGENTDESK_ENV__";
+pub const MARKER: &str = "__AGENTDESK_ENV__";
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 

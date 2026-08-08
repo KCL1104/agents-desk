@@ -308,7 +308,7 @@ fn run_archive(hr: &HostRef, script: &str, worktree: &str, root: &str) {
         }
         // Inside a host the script's environment rides the argv, the same
         // way a launch's does.
-        Host::Wsl { .. } => {
+        _ => {
             let envs = host::pty_env(
                 hr.env,
                 &[("AGENTDESK_ROOT_PATH".to_string(), root.to_string())],
@@ -319,7 +319,7 @@ fn run_archive(hr: &HostRef, script: &str, worktree: &str, root: &str) {
                 Some(worktree),
                 &envs,
             );
-            let mut c = Command::new(hr.local.which("wsl.exe").unwrap_or_else(|| outer.into()));
+            let mut c = Command::new(hr.local.which(&outer).unwrap_or_else(|| outer.clone().into()));
             c.args(args);
             c
         }
@@ -618,6 +618,12 @@ pub struct HostEnv {
     /// `~/.agentdesk/worktrees` *inside the host* — a worktree lives in the
     /// same filesystem as its repository, never across a boundary.
     pub worktree_root: String,
+    /// Where this host's claude finds the status plugin: the app's own dir
+    /// locally, the same dir through `/mnt` for WSL, a remotely provisioned
+    /// copy (URL pointing back through the tunnel) for SSH. `None` when the
+    /// hook listener is down or the tunnel could not be raised — sessions
+    /// run either way, they just show no status.
+    pub hook_plugin_dir: Option<String>,
 }
 
 impl HostEnv {
@@ -778,13 +784,17 @@ impl Core {
                 env: self.env.clone(),
                 claude_version: self.claude_version,
                 worktree_root: self.worktrees.local_root(),
+                hook_plugin_dir: self
+                    .hooks
+                    .get()
+                    .map(|s| s.plugin_dir.to_string_lossy().to_string()),
             },
-            Host::Wsl { .. } => {
+            _ => {
                 let env = h.probe_env(&self.env)?;
                 let home = env.vars.get("HOME").cloned().ok_or_else(|| {
-                    anyhow!("the distro's environment came back without a HOME")
+                    anyhow!("the host's environment came back without a HOME")
                 })?;
-                // The distro's claude, not ours — its version gates its flags.
+                // The host's claude, not ours — its version gates its flags.
                 let hr = HostRef {
                     host: h,
                     local: &self.env,
@@ -794,11 +804,41 @@ impl Core {
                     .run_ok("claude", &["--version"], None)
                     .ok()
                     .and_then(|s| parse_claude_version(&s));
+                let hook_plugin_dir = match h {
+                    Host::Local => unreachable!(),
+                    // The plugin sits on the app's disk; a claude inside WSL
+                    // reads it through the drive mounts.
+                    Host::Wsl { .. } => self
+                        .hooks
+                        .get()
+                        .map(|s| host::win_path_for_wsl(&s.plugin_dir.to_string_lossy())),
+                    // An SSH host cannot see our disk at all: the plugin is
+                    // provisioned into the host, and its URL points back
+                    // through the reverse tunnel on the standing connection.
+                    Host::Ssh { host } => self.hooks.get().and_then(|server| {
+                        let remote_port =
+                            20000 + (uuid::Uuid::new_v4().as_u128() % 40000) as u16;
+                        if !host::open_ssh_master(&self.env, host, remote_port, server.port) {
+                            return None;
+                        }
+                        let url =
+                            format!("http://127.0.0.1:{remote_port}/h/{}", server.token);
+                        let dir = format!("{home}/.agentdesk/plugin");
+                        for (rel, contents) in hooks::plugin_files(&url) {
+                            if let Err(e) = hr.write_file(&format!("{dir}/{rel}"), &contents) {
+                                eprintln!("[core] provisioning hooks on `{host}` failed: {e:#}");
+                                return None;
+                            }
+                        }
+                        Some(dir)
+                    }),
+                };
                 HostEnv {
                     host: h.clone(),
                     env,
                     claude_version,
                     worktree_root: format!("{home}/.agentdesk/worktrees"),
+                    hook_plugin_dir,
                 }
             }
         });
@@ -1637,11 +1677,11 @@ impl Core {
 
         let port = match &he.host {
             Host::Local => free_port()?,
-            // The kernel that owns the port is the distro's; asked from here
+            // The kernel that owns the port is the host's; asked from here
             // the answer would describe the wrong machine. A high port drawn
             // from randomness collides rarely, and a colliding dev server
             // fails loudly in its own terminal.
-            Host::Wsl { .. } => 20000 + (uuid::Uuid::new_v4().as_u128() % 40000) as u16,
+            _ => 20000 + (uuid::Uuid::new_v4().as_u128() % 40000) as u16,
         };
         let id = uuid::Uuid::new_v4().to_string();
         let at = now_ms();
@@ -1675,7 +1715,7 @@ impl Core {
                     Some(wt_loc.path.clone()),
                     script_env.to_vec(),
                 ),
-                Host::Wsl { .. } => {
+                _ => {
                     let envs = host::pty_env(&he.env, &script_env);
                     let (p, a, _) = he.host.wrap(
                         "sh",
@@ -2027,21 +2067,13 @@ impl Core {
         let he = self.host_env(&loc.host)?;
 
         let mut session_env = Vec::new();
-        let plugin_dir = self.hooks.get().map(|server| {
-            // Identity only: the listener URL is baked into the plugin at
-            // startup, because the port changes every run.
+        // Which plugin dir — and whether there is one — was settled when the
+        // host was first contacted; see `host_env`. Only the session's
+        // identity is per-launch.
+        let plugin_dir = he.hook_plugin_dir.clone();
+        if plugin_dir.is_some() {
             session_env.push(("AGENTDESK_SESSION_ID".to_string(), id.to_string()));
-            let dir = server.plugin_dir.to_string_lossy().to_string();
-            // The plugin sits on the app's disk; a claude inside WSL reads
-            // it through the drive mounts. (Its hook URL points at localhost,
-            // which reaches the app under mirrored networking; under NAT the
-            // reports fail soft and the session runs without status — the
-            // README says which switch buys them back.)
-            match &he.host {
-                Host::Local => dir,
-                Host::Wsl { .. } => host::win_path_for_wsl(&dir),
-            }
-        });
+        }
 
         // Cross-session messaging addresses a session by name, and left to
         // itself the CLI derives one from the worktree's directory — a slug
@@ -2088,7 +2120,7 @@ impl Core {
         let (program, args, outer_cwd, outer_env): (String, Vec<String>, Option<String>, Vec<(String, String)>) =
             match &he.host {
                 Host::Local => (program, args, Some(loc.path.clone()), session_env),
-                Host::Wsl { .. } => {
+                _ => {
                     let envs = host::pty_env(&he.env, &session_env);
                     let (p, a, _) = he.host.wrap(&program, &args, Some(&loc.path), &envs);
                     (p, a, None, Vec::new())
@@ -2282,6 +2314,13 @@ impl Core {
 
     pub fn shutdown(&self) {
         self.ptys.kill_all();
+        // Close the standing SSH connections, tunnels and all — with
+        // ControlPersist they would otherwise outlive the app.
+        for h in self.hosts.lock().unwrap().keys() {
+            if let Host::Ssh { host } = h {
+                host::close_ssh_master(&self.env, host);
+            }
+        }
     }
 
     pub fn sessions(&self) -> Vec<SessionMeta> {

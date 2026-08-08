@@ -98,11 +98,26 @@ terminal's** (see below).
   in the middle, so a multi-line prompt stays one argument, and the session
   identity rides across as an `env` prefix rather than trusting WSLENV.
   Local and WSL cards share one board, each labelled with its world.
-  `ssh://` is reserved and refused with "not yet" — the SSH host is the
-  next milestone on the same seam. Status detection for WSL sessions needs
-  WSL's mirrored networking (`.wslconfig`: `networkingMode=mirrored`) so
-  hooks can reach the app at localhost; under NAT the session runs fine and
-  the badge simply stays quiet
+  Status detection for WSL sessions needs WSL's mirrored networking
+  (`.wslconfig`: `networkingMode=mirrored`) so hooks can reach the app at
+  localhost; under NAT the session runs fine and the badge simply stays
+  quiet
+- **The SSH host** (M10b): the same seam, across a wire. Write a card's
+  repository as `ssh://<host>/<path>`, where `<host>` is an alias from your
+  own `~/.ssh/config` — AgentDesk invents no connection settings, so users,
+  ports, keys and jump hosts are exactly what your terminal uses (key-based
+  auth; a passworded probe fails fast rather than hanging). The remote's
+  login shell is probed for its PATH, worktrees open under the remote
+  `~/.agentdesk/worktrees`, and every command travels as one armoured line —
+  `cd '<dir>' && exec env 'K=V'… '<program>' '<args>'…` — so a multi-line
+  prompt survives the remote shell intact, with `-t` forcing the tty the TUI
+  needs. The first contact opens a standing multiplexed connection
+  (`ControlMaster`), so every later git call rides it instead of
+  re-authenticating, and carries a reverse tunnel; the status plugin is
+  provisioned into the remote home with its URL pointing back through that
+  tunnel, so remote sessions light up the board like local ones. Closed on
+  app exit. The whole route is integration-tested against a real loopback
+  sshd in CI
 - **English and 繁體中文**, following your system language and switchable from
   the environment panel. Native notifications follow the same setting
 

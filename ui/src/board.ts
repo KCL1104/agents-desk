@@ -144,12 +144,12 @@ export function repoName(path: string): string {
 
 /**
  * The badge a card wears when its repository lives in another world:
- * `wsl://Ubuntu/home/me/app` → `wsl:Ubuntu`. Local paths wear none.
- * Mirrors host.rs `label`.
+ * `wsl://Ubuntu/home/me/app` → `wsl:Ubuntu`, `ssh://devbox/...` →
+ * `ssh:devbox`. Local paths wear none. Mirrors host.rs `label`.
  */
 export function hostLabel(path: string): string | null {
-  const m = /^wsl:\/\/([^/]+)\//.exec(path);
-  return m ? `wsl:${m[1]}` : null;
+  const m = /^(wsl|ssh):\/\/([^/]+)\//.exec(path);
+  return m ? `${m[1]}:${m[2]}` : null;
 }
 
 /** Cards of one column, in their stored order. */

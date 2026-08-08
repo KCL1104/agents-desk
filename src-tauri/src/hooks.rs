@@ -335,29 +335,39 @@ fn hooks_json(url: &str) -> serde_json::Value {
     })
 }
 
-/// Write (or refresh) the plugin so an app upgrade updates the hooks too.
-///
-/// The listener port changes every run, so the URL is baked in at startup
-/// rather than read from the environment at hook time.
-fn write_plugin(dir: &Path, url: &str) -> Result<()> {
-    let manifest_dir = dir.join(".claude-plugin");
-    let hooks_dir = dir.join("hooks");
-    std::fs::create_dir_all(&manifest_dir)?;
-    std::fs::create_dir_all(&hooks_dir)?;
-
+/// The plugin as files, for provisioning into a host that cannot see our
+/// disk: an SSH host gets these written into its own filesystem, with a URL
+/// that points back through the reverse tunnel.
+pub fn plugin_files(url: &str) -> Vec<(&'static str, String)> {
     let manifest = serde_json::json!({
         "name": "agentdesk-status",
         "version": env!("CARGO_PKG_VERSION"),
         "description": "Reports session status to the AgentDesk window. Adds no tools and changes no behaviour."
     });
-    std::fs::write(
-        manifest_dir.join("plugin.json"),
-        serde_json::to_string_pretty(&manifest)?,
-    )?;
-    std::fs::write(
-        hooks_dir.join("hooks.json"),
-        serde_json::to_string_pretty(&hooks_json(url))?,
-    )?;
+    vec![
+        (
+            ".claude-plugin/plugin.json",
+            serde_json::to_string_pretty(&manifest).unwrap_or_default(),
+        ),
+        (
+            "hooks/hooks.json",
+            serde_json::to_string_pretty(&hooks_json(url)).unwrap_or_default(),
+        ),
+    ]
+}
+
+/// Write (or refresh) the plugin so an app upgrade updates the hooks too.
+///
+/// The listener port changes every run, so the URL is baked in at startup
+/// rather than read from the environment at hook time.
+fn write_plugin(dir: &Path, url: &str) -> Result<()> {
+    for (rel, contents) in plugin_files(url) {
+        let path = dir.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, contents)?;
+    }
     Ok(())
 }
 

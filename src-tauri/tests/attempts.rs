@@ -994,22 +994,289 @@ fn a_wsl_repository_runs_its_whole_attempt_inside_the_distro() {
     );
 }
 
-/// The other host scheme is spoken for but not spoken: a person typing it
-/// learns the truth instead of chasing a phantom "no such directory".
+/// A host nobody can reach fails at first contact, in the dialog, with the
+/// probe's own words — never as a phantom "no such directory".
 #[test]
-fn an_ssh_repository_is_refused_with_not_yet() {
-    let h = Harness::new("sshrefuse");
+fn an_unreachable_ssh_host_fails_the_card_with_the_probes_reason() {
+    if std::env::var("AGENTDESK_SSH_TEST").is_err() {
+        eprintln!("skipping: set AGENTDESK_SSH_TEST=1 to run the ssh tests");
+        return;
+    }
+    let h = Harness::new("sshghost");
     let _guard = h.rt.enter();
     let err = h
         .core
         .create_task(
             "x".into(),
             "y".into(),
-            "ssh://devbox/home/me/app".into(),
+            "ssh://agentdesk-no-such-host/home/me/app".into(),
             "main".into(),
         )
-        .expect_err("ssh:// must be refused, not misread");
-    assert!(err.to_string().contains("not supported yet"), "{err}");
+        .expect_err("an unreachable host cannot back a card");
+    assert!(
+        err.to_string().contains("agentdesk-no-such-host"),
+        "the error must name the host: {err}"
+    );
+}
+
+/* ------------------------------- SSH host ------------------------------ */
+
+/// A real sshd on a loopback port, a real ssh steered through a private
+/// config by a wrapper on the harness PATH, and this machine standing in for
+/// the remote. Everything is real — the login-shell probe, multiplexing, the
+/// reverse tunnel, remote plugin provisioning — except the distance.
+struct SshFixture {
+    sshd: std::process::Child,
+    /// The stub agent we wrote onto the remote login PATH, to remove after.
+    stub: Option<PathBuf>,
+    /// Whether the stub answers to `claude` there (full assertions), or only
+    /// to `codex` (mechanics only — a real claude was shadowing the name).
+    claude_stubbed: bool,
+}
+
+impl SshFixture {
+    /// `None` skips the test: no sshd on this machine, or no way to put the
+    /// stub on the remote login PATH without touching anything real.
+    fn start(h: &Harness) -> Option<Self> {
+        let sshd_bin = Path::new("/usr/sbin/sshd");
+        if !sshd_bin.exists() {
+            eprintln!("skipping: /usr/sbin/sshd is not installed");
+            return None;
+        }
+        let dir = h.root.join("sshd");
+        std::fs::create_dir_all(&dir).unwrap();
+        let keygen = |path: &Path| {
+            std::process::Command::new("ssh-keygen")
+                .args(["-q", "-t", "ed25519", "-N", "", "-f"])
+                .arg(path)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        };
+        if !keygen(&dir.join("hostkey")) || !keygen(&dir.join("userkey")) {
+            eprintln!("skipping: ssh-keygen unavailable");
+            return None;
+        }
+        std::fs::copy(dir.join("userkey.pub"), dir.join("authorized_keys")).unwrap();
+
+        let port = std::net::TcpListener::bind(("127.0.0.1", 0))
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let user = String::from_utf8_lossy(
+            &std::process::Command::new("id").arg("-un").output().unwrap().stdout,
+        )
+        .trim()
+        .to_string();
+
+        std::fs::write(
+            dir.join("sshd_config"),
+            format!(
+                "Port {port}\nListenAddress 127.0.0.1\nHostKey {hk}\nPidFile {pid}\n\
+                 AuthorizedKeysFile {ak}\nStrictModes no\nUsePAM no\n\
+                 PasswordAuthentication no\nPermitRootLogin prohibit-password\n\
+                 AllowTcpForwarding yes\n",
+                hk = dir.join("hostkey").display(),
+                pid = dir.join("sshd.pid").display(),
+                ak = dir.join("authorized_keys").display(),
+            ),
+        )
+        .unwrap();
+
+        let sshd = std::process::Command::new(sshd_bin)
+            .args(["-f"])
+            .arg(dir.join("sshd_config"))
+            .args(["-D", "-e"])
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()?;
+        let up = wait_for(Duration::from_secs(5), || {
+            std::net::TcpStream::connect(("127.0.0.1", port)).is_ok()
+        });
+        if !up {
+            eprintln!("skipping: sshd never came up");
+            return None;
+        }
+
+        // The client side: a private config, reached through a wrapper `ssh`
+        // that the harness PATH puts in front of the real one — the same
+        // trick as the stand-in wsl.exe, except everything behind it is real.
+        std::fs::write(
+            dir.join("ssh_config"),
+            format!(
+                "Host agentdesk-test\n  HostName 127.0.0.1\n  Port {port}\n  User {user}\n\
+                 \x20 IdentityFile {ik}\n  IdentitiesOnly yes\n  StrictHostKeyChecking no\n\
+                 \x20 UserKnownHostsFile /dev/null\n  LogLevel ERROR\n",
+                ik = dir.join("userkey").display(),
+            ),
+        )
+        .unwrap();
+        let wrapper = h.root.join("bin").join("ssh");
+        std::fs::write(
+            &wrapper,
+            format!(
+                "#!/bin/bash\nexec /usr/bin/ssh -F {} \"$@\"\n",
+                dir.join("ssh_config").display()
+            ),
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        // A stub agent on the REMOTE login PATH — which is this machine's
+        // real one, so nothing real may be touched: only a free name in a
+        // writable standard directory, removed afterwards. `claude` when the
+        // name is free, `codex` when a real claude is shadowing it.
+        let logs = h.root.join("logs");
+        let remote_stub = |name: &str| -> Option<PathBuf> {
+            for cand in ["/usr/local/bin", "/usr/bin"] {
+                let path = Path::new(cand).join(name);
+                if path.exists() {
+                    continue; // never clobber anything real
+                }
+                let body = format!(
+                    "#!/bin/bash\nif [ \"$1\" = \"--version\" ]; then echo \"2.1.226 (Claude Code)\"; exit 0; fi\n\
+                     printf '%s\\0' \"$PWD\" \"$@\" > \"{logs}/${{AGENTDESK_SESSION_ID:-unknown}}.$$\"\n\
+                     exec cat > \"{logs}/stdin.${{AGENTDESK_SESSION_ID:-unknown}}.$$\"\n",
+                    logs = logs.display()
+                );
+                if std::fs::write(&path, &body).is_err() {
+                    continue; // not writable here; try the next
+                }
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
+                }
+                // Exact match through the remote login shell, or it does not
+                // count: a real claude earlier on the PATH must never be the
+                // thing a test launches.
+                let seen = std::process::Command::new(&wrapper)
+                    .args(["agentdesk-test", &format!("$SHELL -lc 'command -v {name}'")])
+                    .output()
+                    .ok();
+                let found = seen
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim() == path.to_string_lossy())
+                    .unwrap_or(false);
+                if found {
+                    return Some(path);
+                }
+                let _ = std::fs::remove_file(&path);
+            }
+            None
+        };
+
+        let (stub, claude_stubbed) = match remote_stub("claude") {
+            Some(p) => (Some(p), true),
+            None => (remote_stub("codex"), false),
+        };
+        if stub.is_none() {
+            eprintln!("skipping: no writable directory on the remote login PATH for the stub");
+            sshd_cleanup(&mut Some(sshd));
+            return None;
+        }
+
+        Some(Self {
+            sshd,
+            stub,
+            claude_stubbed,
+        })
+    }
+}
+
+fn sshd_cleanup(child: &mut Option<std::process::Child>) {
+    if let Some(mut c) = child.take() {
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+}
+
+impl Drop for SshFixture {
+    fn drop(&mut self) {
+        let _ = self.sshd.kill();
+        let _ = self.sshd.wait();
+        if let Some(p) = &self.stub {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+}
+
+/// M10b end to end against a real sshd: the card checks out, the worktree
+/// opens in the remote home, the agent launches through a forced-tty ssh with
+/// its argv armoured and its identity across, the diff reads back, the hook
+/// plugin is provisioned remotely with a tunnel URL, and closing returns the
+/// tree. Gated: set AGENTDESK_SSH_TEST=1 (CI does).
+#[test]
+fn an_ssh_repository_runs_its_whole_attempt_on_the_remote() {
+    if std::env::var("AGENTDESK_SSH_TEST").is_err() {
+        eprintln!("skipping: set AGENTDESK_SSH_TEST=1 to run the ssh tests");
+        return;
+    }
+    let h = Harness::new("sshfull");
+    let _guard = h.rt.enter();
+    let Some(fx) = SshFixture::start(&h) else {
+        return;
+    };
+
+    let repo_url = format!("ssh://agentdesk-test{}", h.repo.display());
+    let task = h
+        .core
+        .create_task("修好登入".into(), "make it work".into(), repo_url, "main".into())
+        .expect("an ssh:// repository must be checkable over the wire");
+
+    let agent = if fx.claude_stubbed { "claude" } else { "codex" };
+    let a = h.start(&task, agent);
+
+    // Remote paths, remote home.
+    assert!(a.worktree_path.starts_with("ssh://agentdesk-test/"), "{}", a.worktree_path);
+    let inner = a.worktree_path.strip_prefix("ssh://agentdesk-test").unwrap();
+    let home = dirs::home_dir().unwrap();
+    assert!(
+        inner.starts_with(&format!("{}/.agentdesk/worktrees", home.display())),
+        "the worktree left the remote home: {inner}"
+    );
+    assert!(Path::new(inner).is_dir());
+
+    // The agent runs there: right cwd, identity across the wire (the launch
+    // record's very name is the session id), and for a claude stub the
+    // prompt arrived whole as the last word of an armoured command line.
+    let launch = h.launches(&a.session_id, 1).pop().unwrap();
+    assert_eq!(
+        std::fs::canonicalize(&launch.cwd).unwrap(),
+        std::fs::canonicalize(inner).unwrap()
+    );
+    if fx.claude_stubbed {
+        assert_eq!(launch.args.last(), Some(&a.prompt));
+        assert!(a.prompt.contains('\n'), "the prompt under test must be multi-line");
+        assert!(
+            launch.args.windows(2).any(|w| w[0] == "--name" && w[1] == "修好登入 #1"),
+            "{:?}",
+            launch.args
+        );
+    }
+
+    // The hook plugin was provisioned into the remote home, its URL pointing
+    // back through the reverse tunnel — never at the app's own listener
+    // address, which means nothing on the remote.
+    let hooks_file = home.join(".agentdesk/plugin/hooks/hooks.json");
+    let hooks_text = std::fs::read_to_string(&hooks_file).expect("remote plugin missing");
+    assert!(hooks_text.contains("http://127.0.0.1:"), "{hooks_text}");
+
+    // Diff over the wire; close returns the tree and keeps the evidence.
+    std::fs::write(Path::new(inner).join("app.txt"), "fixed over ssh\n").unwrap();
+    assert!(h.core.attempt_diff(&a.attempt_id).unwrap().contains("fixed over ssh"));
+    h.core.finish_attempt(&a.attempt_id, Outcome::Discarded).unwrap();
+    assert!(!Path::new(inner).exists());
+    assert!(h.core.attempt_diff(&a.attempt_id).unwrap().contains("fixed over ssh"));
+
+    // Tidy the remote worktree directory this repo was given.
+    if let Some(parent) = Path::new(inner).parent() {
+        let _ = std::fs::remove_dir_all(parent);
+    }
 }
 
 /* ----------------------- cross-session messaging ----------------------- */

@@ -75,11 +75,22 @@ App 提供的是終端機分頁給不了的：多 session 管理、跨重啟的�
   scripts 走 distro 的 `sh`。指令以
   `wsl.exe -d <distro> --cd <目錄> -e env K=V… <程式> <參數…>` 過境 ——
   中間沒有 shell，多行 prompt 保持一個參數；session 身分用 `env` 前綴帶過去，
-  不賭 WSLENV。本機卡和 WSL 卡同一個看板，各自標明自己的世界。`ssh://`
-  已保留、會明說「還沒支援」—— SSH host 是同一道接縫上的下一個里程碑。
+  不賭 WSLENV。本機卡和 WSL 卡同一個看板，各自標明自己的世界。
   WSL session 的狀態偵測需要 WSL 的 mirrored networking（`.wslconfig` 設
   `networkingMode=mirrored`），hooks 才打得到 app 的 localhost；NAT 模式下
   session 照跑，只是徽章不亮
+- **SSH host**（M10b）：同一道接縫，跨一條線。卡片 repo 寫成
+  `ssh://<host>/<路徑>`，`<host>` 就是你 `~/.ssh/config` 裡的別名 ——
+  AgentDesk 不發明任何連線設定，帳號、port、金鑰、跳板全部跟你終端機用的
+  一模一樣（需要金鑰認證；要密碼的探測會快速失敗而不是掛住）。遠端的
+  login shell 會被探測出 PATH，worktree 開在遠端自己的
+  `~/.agentdesk/worktrees`，每個指令都以單一一條武裝過的命令列過境 ——
+  `cd '<目錄>' && exec env 'K=V'… '<程式>' '<參數>'…` —— 多行 prompt 穿過
+  遠端 shell 毫髮無傷，`-t` 強制配置 TUI 需要的 tty。第一次接觸就開一條
+  常駐的多工連線（`ControlMaster`），之後每個 git 呼叫都搭它、不再重新
+  握手，反向隧道也掛在上面；狀態 plugin 佈建進遠端家目錄，URL 指回隧道，
+  所以遠端 session 跟本機一樣會點亮看板。app 關閉時收線。整條路在 CI 裡
+  對著真的 loopback sshd 做整合測試
 
 - **中英雙語**：跟隨系統語言，也可以在環境面板手動切換。系統原生通知會跟著一起換
 

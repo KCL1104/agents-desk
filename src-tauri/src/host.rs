@@ -13,7 +13,7 @@
 //! ```text
 //! /Users/me/code/app              the machine the app runs on
 //! wsl://Ubuntu/home/me/code/app   the Ubuntu distro under WSL
-//! ssh://devbox/home/me/app        reserved — refused until the SSH host lands
+//! ssh://devbox/home/me/app        the `devbox` alias in ~/.ssh/config
 //! ```
 //!
 //! Inside a non-local host every path is the host's own (POSIX), and is
@@ -38,6 +38,10 @@ use crate::shell_env::ShellEnv;
 pub enum Host {
     Local,
     Wsl { distro: String },
+    /// A host from the user's own `~/.ssh/config`, named by its alias there.
+    /// The alias is the whole configuration: user, port, key, jump hosts —
+    /// AgentDesk invents no connection settings of its own.
+    Ssh { host: String },
 }
 
 /// A stored path, split into who runs it and what it is called there.
@@ -49,8 +53,7 @@ pub struct Located {
 }
 
 /// Read a stored path. Plain paths are local, `wsl://distro/...` is that
-/// distro, and `ssh://` is named so its refusal can say "not yet" instead of
-/// "no such directory".
+/// distro, `ssh://alias/...` is that host from the user's own ssh config.
 pub fn locate(raw: &str) -> Result<Located> {
     if let Some(rest) = raw.strip_prefix("wsl://") {
         let (distro, path) = rest
@@ -66,10 +69,19 @@ pub fn locate(raw: &str) -> Result<Located> {
             path: format!("/{path}"),
         });
     }
-    if raw.starts_with("ssh://") {
-        return Err(anyhow!(
-            "ssh:// repositories are not supported yet — WSL landed first"
-        ));
+    if let Some(rest) = raw.strip_prefix("ssh://") {
+        let (alias, path) = rest
+            .split_once('/')
+            .ok_or_else(|| anyhow!("`{raw}` names a host but no path — ssh://<host>/<path>"))?;
+        if alias.is_empty() {
+            return Err(anyhow!("`{raw}` names no host — ssh://<host>/<path>"));
+        }
+        return Ok(Located {
+            host: Host::Ssh {
+                host: alias.to_string(),
+            },
+            path: format!("/{path}"),
+        });
     }
     Ok(Located {
         host: Host::Local,
@@ -82,6 +94,7 @@ pub fn stored(host: &Host, path: &str) -> String {
     match host {
         Host::Local => path.to_string(),
         Host::Wsl { distro } => format!("wsl://{distro}{path}"),
+        Host::Ssh { host } => format!("ssh://{host}{path}"),
     }
 }
 
@@ -90,6 +103,7 @@ pub fn label(host: &Host) -> Option<String> {
     match host {
         Host::Local => None,
         Host::Wsl { distro } => Some(format!("wsl:{distro}")),
+        Host::Ssh { host } => Some(format!("ssh:{host}")),
     }
 }
 
@@ -120,7 +134,7 @@ impl Host {
                 .join(leaf)
                 .to_string_lossy()
                 .to_string(),
-            Host::Wsl { .. } => format!("{}/{leaf}", base.trim_end_matches('/')),
+            _ => format!("{}/{leaf}", base.trim_end_matches('/')),
         }
     }
 
@@ -155,6 +169,13 @@ impl Host {
                 wrapped.push(program.to_string());
                 wrapped.extend(args.iter().cloned());
                 ("wsl.exe".to_string(), wrapped, None)
+            }
+            Host::Ssh { host } => {
+                let mut a = ssh_base_args(true);
+                a.push("--".to_string());
+                a.push(host.clone());
+                a.push(remote_command(program, args, cwd, envs));
+                ("ssh".to_string(), a, None)
             }
         }
     }
@@ -191,6 +212,50 @@ impl Host {
                     resolved: true,
                 })
             }
+            Host::Ssh { host } => {
+                // The remote's own login shell answers, whatever it is:
+                // sshd runs the command through `$SHELL -c`, and `-l` inside
+                // sources the profile that version managers install into.
+                // The marker discards whatever the rc files echo on the way,
+                // exactly as the local probe does.
+                let probe = format!(
+                    "$SHELL -lc {}",
+                    sh_quote(&format!(
+                        "printf {}; env -0",
+                        crate::shell_env::MARKER
+                    ))
+                );
+                let mut a = ssh_base_args(false);
+                a.push("--".to_string());
+                a.push(host.clone());
+                a.push(probe);
+                let out = std::process::Command::new(ssh_exe(local))
+                    .args(a)
+                    .output()
+                    .map_err(|e| anyhow!("running ssh for `{host}`: {e}"))?;
+                if !out.status.success() {
+                    return Err(anyhow!(
+                        "could not read `{host}`'s environment: {}",
+                        String::from_utf8_lossy(&out.stderr).trim()
+                    ));
+                }
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                let dump = stdout
+                    .split_once(crate::shell_env::MARKER)
+                    .map(|(_, after)| after)
+                    .ok_or_else(|| {
+                        anyhow!("`{host}`'s shell answered without the environment marker")
+                    })?;
+                let vars = crate::shell_env::parse_env0(dump);
+                if vars.get("PATH").is_none() {
+                    return Err(anyhow!("`{host}`'s environment came back without a PATH"));
+                }
+                Ok(ShellEnv {
+                    vars,
+                    shell: format!("ssh:{host}"),
+                    resolved: true,
+                })
+            }
         }
     }
 }
@@ -202,6 +267,141 @@ fn wsl_exe(local: &ShellEnv) -> std::path::PathBuf {
     local
         .which("wsl.exe")
         .unwrap_or_else(|| std::path::PathBuf::from("wsl.exe"))
+}
+
+/// The user's own ssh — their config, their keys, their agent.
+fn ssh_exe(local: &ShellEnv) -> std::path::PathBuf {
+    local
+        .which("ssh")
+        .unwrap_or_else(|| std::path::PathBuf::from("ssh"))
+}
+
+/// Quote one word for a POSIX shell. Single quotes swallow everything except
+/// a single quote, which is closed around: `it's` → `'it'\''s'`. This is the
+/// whole difference between WSL and SSH delivery: `wsl.exe -e` hands argv
+/// over intact, while ssh gives the remote *shell* a string — so every word,
+/// multi-line prompt included, is armoured here and unwrapped exactly once
+/// there.
+pub fn sh_quote(word: &str) -> String {
+    format!("'{}'", word.replace('\'', r"'\''"))
+}
+
+/// The one command line an SSH invocation carries: enter the directory, set
+/// the environment, become the program. `exec` so the remote shell does not
+/// linger between the PTY and the agent.
+fn remote_command(
+    program: &str,
+    args: &[String],
+    cwd: Option<&str>,
+    envs: &[(String, String)],
+) -> String {
+    let mut cmd = String::new();
+    if let Some(dir) = cwd {
+        cmd.push_str(&format!("cd {} && ", sh_quote(dir)));
+    }
+    cmd.push_str("exec env");
+    for (k, v) in envs {
+        cmd.push(' ');
+        cmd.push_str(&sh_quote(&format!("{k}={v}")));
+    }
+    cmd.push(' ');
+    cmd.push_str(&sh_quote(program));
+    for a in args {
+        cmd.push(' ');
+        cmd.push_str(&sh_quote(a));
+    }
+    cmd
+}
+
+/// Where this machine keeps its SSH control sockets: `~/.agentdesk/ssh/%C`,
+/// `%C` being ssh's own short hash of the connection — short, because a unix
+/// socket path has ~100 bytes to live in.
+pub fn ssh_control_path() -> Option<String> {
+    let dir = dirs::home_dir()?.join(".agentdesk").join("ssh");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join("%C").to_string_lossy().to_string())
+}
+
+/// Open — or confirm — the standing connection to an SSH host, carrying the
+/// hook tunnel: remote `127.0.0.1:remote_port` forwards back to the app's
+/// listener. Returns whether a master with the tunnel is up.
+///
+/// Best effort end to end, by the hooks rule: a host whose tunnel could not
+/// be raised runs sessions that simply show no status. `-f -N` backgrounds
+/// the master after auth; `ControlPersist=yes` keeps it for every later
+/// command, and `Core::shutdown` closes it on the way out.
+pub fn open_ssh_master(local: &ShellEnv, host: &str, remote_port: u16, local_port: u16) -> bool {
+    // Already up from an earlier contact this run? Then its tunnel is too.
+    let check = std::process::Command::new(ssh_exe(local))
+        .args(ssh_base_args(false))
+        .args(["-O", "check", "--", host])
+        .output();
+    if matches!(&check, Ok(o) if o.status.success()) {
+        return true;
+    }
+
+    let out = std::process::Command::new(ssh_exe(local))
+        .args(ssh_base_args(false))
+        .args([
+            "-f",
+            "-N",
+            "-R",
+            &format!("127.0.0.1:{remote_port}:127.0.0.1:{local_port}"),
+            "--",
+            host,
+        ])
+        .output();
+    match out {
+        Ok(o) if o.status.success() => true,
+        Ok(o) => {
+            eprintln!(
+                "[host] ssh master for `{host}` failed: {}",
+                String::from_utf8_lossy(&o.stderr).trim()
+            );
+            false
+        }
+        Err(e) => {
+            eprintln!("[host] ssh master for `{host}` failed to start: {e}");
+            false
+        }
+    }
+}
+
+/// Close the standing connection, tunnel and all. Best effort — the host may
+/// already be gone, and so may the socket.
+pub fn close_ssh_master(local: &ShellEnv, host: &str) {
+    let _ = std::process::Command::new(ssh_exe(local))
+        .args(ssh_base_args(false))
+        .args(["-O", "exit", "--", host])
+        .output();
+}
+
+/// The standing options every ssh invocation carries. Multiplexing makes the
+/// second and every later command ride the first connection instead of
+/// re-authenticating — a `git status` should cost a round trip, not a
+/// handshake. `BatchMode` on non-interactive calls fails fast instead of
+/// hanging on a password prompt nothing can answer; the interactive PTY is
+/// exactly where a prompt *can* be answered, so it does not get the flag.
+fn ssh_base_args(tty: bool) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(path) = ssh_control_path() {
+        args.extend([
+            "-o".to_string(),
+            "ControlMaster=auto".to_string(),
+            "-o".to_string(),
+            format!("ControlPath={path}"),
+            "-o".to_string(),
+            "ControlPersist=yes".to_string(),
+        ]);
+    }
+    if tty {
+        // A command is given, so ssh will not allocate a remote tty on its
+        // own — and the whole point of the session is the TUI on one.
+        args.push("-t".to_string());
+    } else {
+        args.extend(["-o".to_string(), "BatchMode=yes".to_string()]);
+    }
+    args
 }
 
 /// A host together with both environments commands need: the app machine's
@@ -243,6 +443,16 @@ impl HostRef<'_> {
                     .args(wrapped)
                     .output()?)
             }
+            Host::Ssh { host } => {
+                let carried = carry_env(self.env);
+                let mut a = ssh_base_args(false);
+                a.push("--".to_string());
+                a.push(host.clone());
+                a.push(remote_command(program, &owned, cwd, &carried));
+                Ok(std::process::Command::new(ssh_exe(self.local))
+                    .args(a)
+                    .output()?)
+            }
         }
     }
 
@@ -263,7 +473,7 @@ impl HostRef<'_> {
     pub fn is_dir(&self, path: &str) -> bool {
         match self.host {
             Host::Local => std::path::Path::new(path).is_dir(),
-            Host::Wsl { .. } => self
+            _ => self
                 .run("test", &["-d", path], None)
                 .map(|o| o.status.success())
                 .unwrap_or(false),
@@ -274,7 +484,7 @@ impl HostRef<'_> {
     pub fn exists(&self, path: &str) -> bool {
         match self.host {
             Host::Local => std::path::Path::new(path).exists(),
-            Host::Wsl { .. } => self
+            _ => self
                 .run("test", &["-e", path], None)
                 .map(|o| o.status.success())
                 .unwrap_or(false),
@@ -284,7 +494,7 @@ impl HostRef<'_> {
     pub fn mkdir_p(&self, path: &str) -> Result<()> {
         match self.host {
             Host::Local => Ok(std::fs::create_dir_all(path)?),
-            Host::Wsl { .. } => {
+            _ => {
                 self.run_ok("mkdir", &["-p", path], None)?;
                 Ok(())
             }
@@ -301,7 +511,7 @@ impl HostRef<'_> {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
                 Err(e) => Err(e.into()),
             },
-            Host::Wsl { .. } => {
+            _ => {
                 if !self.exists(path) {
                     return Ok(None);
                 }
@@ -314,6 +524,30 @@ impl HostRef<'_> {
                     ));
                 }
                 Ok(Some(String::from_utf8_lossy(&out.stdout).into_owned()))
+            }
+        }
+    }
+
+    /// Write a file inside the host, creating its directory. The content
+    /// travels as an *argument*, not stdin — one path through every doorway,
+    /// and the quoting layer already knows how to armour it.
+    pub fn write_file(&self, path: &str, contents: &str) -> Result<()> {
+        match self.host {
+            Host::Local => {
+                if let Some(parent) = std::path::Path::new(path).parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                Ok(std::fs::write(path, contents)?)
+            }
+            _ => {
+                let dir = path.rsplit_once('/').map(|(d, _)| d).unwrap_or(".");
+                let script = format!(
+                    "mkdir -p {} && printf '%s' \"$1\" > {}",
+                    sh_quote(dir),
+                    sh_quote(path)
+                );
+                self.run_ok("sh", &["-c", &script, "_", contents], None)?;
+                Ok(())
             }
         }
     }
@@ -374,12 +608,75 @@ mod tests {
         assert!(locate("wsl:///home/me").is_err());
     }
 
-    /// Reserved, and refused with "not yet" — a person typing it should learn
-    /// the truth, not chase a phantom "no such directory".
     #[test]
-    fn ssh_urls_are_refused_as_not_yet_rather_than_misread() {
-        let err = locate("ssh://devbox/home/me/app").unwrap_err();
-        assert!(err.to_string().contains("not supported yet"), "{err}");
+    fn an_ssh_url_names_the_alias_and_keeps_the_posix_path() {
+        let l = locate("ssh://devbox/home/me/app").unwrap();
+        assert_eq!(
+            l.host,
+            Host::Ssh {
+                host: "devbox".into()
+            }
+        );
+        assert_eq!(l.path, "/home/me/app");
+        assert_eq!(stored(&l.host, &l.path), "ssh://devbox/home/me/app");
+        assert_eq!(label(&l.host).as_deref(), Some("ssh:devbox"));
+        assert!(locate("ssh://").is_err());
+        assert!(locate("ssh://devbox").is_err());
+    }
+
+    /// The quoting layer is the whole difference between the two doorways:
+    /// wsl.exe hands argv over intact, ssh hands the remote shell a string.
+    /// One word must survive anything a prompt can contain.
+    #[test]
+    fn shell_quoting_armours_what_prompts_actually_contain() {
+        assert_eq!(sh_quote("plain"), "'plain'");
+        assert_eq!(sh_quote("it's"), r"'it'\''s'");
+        assert_eq!(sh_quote("多行
+prompt"), "'多行
+prompt'");
+        assert_eq!(sh_quote("$HOME `id` \"x\""), "'$HOME `id` \"x\"'");
+    }
+
+    /// The one command line an SSH invocation carries: cd, env, exec — every
+    /// word armoured exactly once.
+    #[test]
+    fn the_remote_command_enters_sets_and_becomes() {
+        let cmd = remote_command(
+            "claude",
+            &["--continue".into(), "it's
+done".into()],
+            Some("/home/me/wt"),
+            &[("AGENTDESK_SESSION_ID".into(), "s1".into())],
+        );
+        assert_eq!(
+            cmd,
+            r"cd '/home/me/wt' && exec env 'AGENTDESK_SESSION_ID=s1' 'claude' '--continue' 'it'\''s
+done'"
+        );
+    }
+
+    /// The PTY path forces a remote tty (`-t`) — a command being given stops
+    /// ssh allocating one on its own, and the TUI is the whole point — and
+    /// the command travels as ONE trailing argument.
+    #[test]
+    fn wrapping_for_ssh_forces_a_tty_and_carries_one_command_string() {
+        let host = Host::Ssh {
+            host: "devbox".into(),
+        };
+        let (prog, args, outer_cwd) = host.wrap(
+            "claude",
+            &["多行
+prompt".into()],
+            Some("/home/me/wt"),
+            &[],
+        );
+        assert_eq!(prog, "ssh");
+        assert!(args.contains(&"-t".to_string()));
+        assert!(!args.contains(&"BatchMode=yes".to_string()), "the PTY is where a prompt CAN be answered");
+        let host_pos = args.iter().position(|a| a == "devbox").unwrap();
+        assert_eq!(args.len(), host_pos + 2, "everything after the host is one command string");
+        assert!(args[host_pos + 1].starts_with("cd '/home/me/wt' && exec env"));
+        assert_eq!(outer_cwd, None);
     }
 
     /// The wrapped command line is the contract with wsl.exe: no shell in the

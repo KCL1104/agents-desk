@@ -63,10 +63,17 @@ jobs:
           npm ci
           npm run build
 
+      - name: Install sshd for the SSH host tests
+        run: sudo apt-get install -y openssh-server
+
       - name: Test
         working-directory: src-tauri
         # Tests that need the `claude` binary detect its absence and skip
         # themselves; the git-backed worktree tests set up their own repos.
+        # AGENTDESK_SSH_TEST opts in the real-sshd integration tests, which
+        # run a loopback sshd of their own and clean up after themselves.
+        env:
+          AGENTDESK_SSH_TEST: "1"
         run: cargo test --locked
 
       # Advisory only. The tree is not rustfmt-clean today, and reformatting it is
