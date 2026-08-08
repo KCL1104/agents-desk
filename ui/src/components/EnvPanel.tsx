@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { LOCALE_NAME, LOCALES, useI18n, type Locale } from '../i18n';
 import { api } from '../api';
 import { joinArgs, splitArgs } from '../profiles';
-import type { BootStatus } from '../types';
+import type { BootStatus, NotifyPrefs } from '../types';
 import { Modal } from './Modal';
 import {
   applyTheme,
@@ -52,6 +52,8 @@ export function EnvPanel({ boot, onClose }: { boot: BootStatus; onClose: () => v
 
         <Theming />
 
+        <Notifications />
+
         <Profiles onDirty={setDirty} />
 
         {/* The doctor half: what the agents actually inherit. */}
@@ -96,6 +98,74 @@ export function EnvPanel({ boot, onClose }: { boot: BootStatus; onClose: () => v
           </button>
         </div>
     </Modal>
+  );
+}
+
+/**
+ * Which notifications the desk raises. Three toggles, applied on click —
+ * a preference is not a form — and a test button, because "is it even
+ * working" is otherwise only answerable by waiting for an agent to block.
+ * They fire only while the window is elsewhere; in front of the app the
+ * interface itself already says everything.
+ */
+function Notifications() {
+  const { t } = useI18n();
+  const [prefs, setPrefs] = useState<NotifyPrefs | null>(null);
+  const [tested, setTested] = useState(false);
+
+  useEffect(() => {
+    void api
+      .notifyPrefs()
+      .then(setPrefs)
+      .catch(() => {
+        /* the panel's other sections still work; the row simply stays out */
+      });
+  }, []);
+
+  if (prefs === null) return null;
+
+  const toggle = (key: keyof NotifyPrefs) => {
+    const next = { ...prefs, [key]: !prefs[key] };
+    setPrefs(next);
+    void api.setNotifyPrefs(next).catch(() => {
+      // The next open re-reads what actually stuck.
+      setPrefs(prefs);
+    });
+  };
+
+  const rows: { key: keyof NotifyPrefs; label: string }[] = [
+    { key: 'permission', label: t('notify.permission') },
+    { key: 'input', label: t('notify.input') },
+    { key: 'done', label: t('notify.done') },
+  ];
+
+  return (
+    <div data-testid="notifications">
+      <h3 className="modal-section">{t('env.notifications')}</h3>
+      <p className="muted small">{t('notify.hint')}</p>
+      {rows.map(({ key, label }) => (
+        <label className="notify-row" key={key}>
+          <input
+            type="checkbox"
+            checked={prefs[key]}
+            data-testid={`notify-${key}`}
+            onChange={() => toggle(key)}
+          />
+          {label}
+        </label>
+      ))}
+      <div className="row notify-test-row">
+        <button
+          data-testid="notify-test"
+          onClick={() => {
+            setTested(true);
+            void api.testNotification().catch(() => setTested(false));
+          }}
+        >
+          {tested ? t('notify.sent') : t('notify.test')}
+        </button>
+      </div>
+    </div>
   );
 }
 

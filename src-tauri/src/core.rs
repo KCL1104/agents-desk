@@ -7,7 +7,7 @@
 //! rewritten.
 
 use anyhow::{anyhow, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -210,7 +210,7 @@ fn now_ms() -> u64 {
 ///
 /// A profile may not take one of these names: "claude" meaning something
 /// other than `claude` is exactly the confusion names exist to prevent.
-const BARE_AGENTS: [&str; 4] = ["claude", "codex", "gemini", "aider"];
+pub const BARE_AGENTS: [&str; 4] = ["claude", "codex", "gemini", "aider"];
 
 /// One entry in a launch dialog's list: a bare agent, or a named profile.
 #[derive(Debug, Clone, Serialize)]
@@ -370,11 +370,45 @@ struct PendingEvent {
 }
 
 /// Routes PTY output onto the UI bus and keeps session status in step.
+/// Which notifications the desk raises, chosen in the environment panel.
+///
+/// Blocked states default on — a stuck agent is the one thing this app
+/// exists to surface. A finished turn defaults off: every turn ends, and a
+/// default that noisy would get the whole channel disabled at the OS.
+///
+/// `#[serde(default)]` so a settings row written by an older build (or a
+/// future one with more fields) reads as "the defaults, plus what it said".
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NotifyPrefs {
+    /// A permission decision, or the folder-trust gate.
+    pub permission: bool,
+    /// The idle prompt — waiting on a reply.
+    pub input: bool,
+    /// A turn ended. Pairs with the unread dot in the interface.
+    pub done: bool,
+}
+
+impl Default for NotifyPrefs {
+    fn default() -> Self {
+        Self {
+            permission: true,
+            input: true,
+            done: false,
+        }
+    }
+}
+
+const NOTIFY_PREFS_KEY: &str = "notify_prefs";
+
 struct Router {
     sink: Arc<dyn UiSink>,
     /// The same cell the core holds, so a notification never has to upgrade
     /// the weak core reference just to know what language to speak.
     locale: Arc<crate::i18n::LocaleCell>,
+    /// Shared with the core the same way the locale is: written from a
+    /// command once in a while, read on every hook.
+    notify_prefs: Arc<Mutex<NotifyPrefs>>,
     sessions: Arc<Mutex<HashMap<String, SessionMeta>>>,
     /// Set once the core exists, so an exiting terminal can let the queue know
     /// a slot just came free. Weak, because the core owns this router.
@@ -497,10 +531,24 @@ impl HookHandler for Router {
             }
 
             // Only announce a transition *into* needing a human, so a session
-            // that reports the same state twice does not notify twice.
+            // that reports the same state twice does not notify twice. A
+            // turn ending (Stop → idle) is its own class, off by default —
+            // and each class answers to its toggle in the environment panel.
             let entering = status.needs_you() && !s.status.needs_you();
+            let turn_done = status == Status::Idle && s.status != Status::Idle;
             s.status = status;
-            entering.then(|| (s.title.clone(), s.cwd.clone()))
+            let prefs = *self.notify_prefs.lock().unwrap();
+            let fire = if entering {
+                match status {
+                    Status::WaitingPermission | Status::AwaitingTrust => prefs.permission,
+                    _ => prefs.input,
+                }
+            } else if turn_done {
+                prefs.done
+            } else {
+                false
+            };
+            fire.then(|| (s.title.clone(), s.cwd.clone()))
         };
 
         for e in timeline {
@@ -515,6 +563,7 @@ impl HookHandler for Router {
             let body = match status {
                 Status::WaitingPermission => crate::i18n::waiting_permission(locale),
                 Status::AwaitingTrust => crate::i18n::awaiting_trust(locale),
+                Status::Idle => crate::i18n::turn_done(locale),
                 _ => crate::i18n::waiting_input(locale),
             };
             self.sink.emit(
@@ -602,6 +651,8 @@ pub struct Core {
     /// The installed Claude Code's version, measured once at startup.
     /// `None` means unknown, and unknown keeps every version-gated flag off.
     claude_version: Option<(u64, u64, u64)>,
+    /// Which notifications to raise — the router's copy of the same cell.
+    notify_prefs: Arc<Mutex<NotifyPrefs>>,
     /// Everything known about each execution environment, resolved on first
     /// use and kept: a WSL distro's login environment costs a probe, and the
     /// answer does not change under a running app.
@@ -718,6 +769,17 @@ impl Core {
 
         let locale = Arc::new(crate::i18n::LocaleCell::default());
 
+        // A malformed row reads as the defaults — same contract as the
+        // profiles: a bad setting must not keep the app from starting.
+        let notify_prefs = Arc::new(Mutex::new(
+            store
+                .setting(NOTIFY_PREFS_KEY)
+                .ok()
+                .flatten()
+                .and_then(|raw| serde_json::from_str(&raw).ok())
+                .unwrap_or_default(),
+        ));
+
         let claude_version = probe_claude_version(&env).await;
         if let Some((a, b, c)) = claude_version {
             eprintln!("[core] claude {a}.{b}.{c}");
@@ -726,6 +788,7 @@ impl Core {
         let router = Arc::new(Router {
             sink: Arc::clone(&sink),
             locale: Arc::clone(&locale),
+            notify_prefs: Arc::clone(&notify_prefs),
             sessions: Arc::clone(&sessions),
             core: OnceLock::new(),
             events: events_tx,
@@ -744,6 +807,7 @@ impl Core {
             data_dir: data_dir.clone(),
             worktrees: Worktrees::new(worktree_root),
             claude_version,
+            notify_prefs,
             hosts: Mutex::new(HashMap::new()),
         });
 
@@ -2364,6 +2428,36 @@ impl Core {
     /// cross-session messaging between this desk's sessions.
     pub fn named_sessions(&self) -> bool {
         self.claude_version >= Some(NAMED_SESSIONS_SINCE)
+    }
+
+    /* ------------------------- notifications ----------------------- */
+
+    pub fn notify_prefs(&self) -> NotifyPrefs {
+        *self.notify_prefs.lock().unwrap()
+    }
+
+    pub fn set_notify_prefs(&self, prefs: NotifyPrefs) -> Result<()> {
+        *self.notify_prefs.lock().unwrap() = prefs;
+        self.store
+            .set_setting(NOTIFY_PREFS_KEY, &serde_json::to_string(&prefs)?)
+    }
+
+    /// A notification fired on request, so the panel's toggles can be
+    /// checked against the OS without waiting for an agent to block.
+    ///
+    /// `force`, because the person pressing the button is by definition
+    /// focused on the window — the focus gate would swallow exactly the
+    /// notification being tested.
+    pub fn test_notification(&self) {
+        let locale = self.locale.get();
+        self.sink.emit(
+            "notify",
+            serde_json::json!({
+                "title": crate::i18n::test_title(locale),
+                "body": crate::i18n::test_body(locale),
+                "force": true,
+            }),
+        );
     }
 
     /* --------------------------- helpers --------------------------- */

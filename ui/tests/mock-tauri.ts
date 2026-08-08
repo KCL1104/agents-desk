@@ -95,6 +95,8 @@ declare global {
       runScripts: string[];
       /** Named launch profiles, as the settings table holds them. */
       profiles: Array<{ name: string; agent: string; args: string[] }>;
+      /** Which notifications the desk raises, as the core defaults them. */
+      notifyPrefs: { permission: boolean; input: boolean; done: boolean };
       maxConcurrent: number;
       /** How many attempts hold a terminal right now. */
       running(): number;
@@ -134,6 +136,18 @@ export function installMock(): void {
     if (localStorage.getItem('agentdesk.locale') === null) {
       localStorage.setItem('agentdesk.locale', 'zh-TW');
     }
+    // Pre-answer the one-shot surfaces the same way: a suite about the
+    // board must not fight a welcome dialog or a coaching card. The specs
+    // about those surfaces remove these keys in their own init script.
+    if (localStorage.getItem('agentdesk.welcomed') === null) {
+      localStorage.setItem('agentdesk.welcomed', '1');
+    }
+    if (localStorage.getItem('agentdesk.coach') === null) {
+      localStorage.setItem(
+        'agentdesk.coach',
+        JSON.stringify({ attempt: true, mode: true, finish: true, terminal: true }),
+      );
+    }
   } catch {
     /* storage unavailable; detection falls back to the browser locale */
   }
@@ -160,6 +174,7 @@ export function installMock(): void {
     dirtyWorktrees: new Set<string>(),
     runScripts: [] as string[],
     profiles: [] as Array<{ name: string; agent: string; args: string[] }>,
+    notifyPrefs: { permission: true, input: true, done: false },
     calls: [] as Array<{ cmd: string; args: unknown }>,
     listeners: new Map<string, number[]>(),
     cbSeq: 0,
@@ -306,6 +321,14 @@ export function installMock(): void {
       path: '/usr/local/bin:/usr/bin:/bin',
       claude: '/usr/local/bin/claude',
       claudeVersion: '2.1.226',
+      // The detection report the first-run panel renders: claude found,
+      // the rest absent — the commonest real machine.
+      agents: [
+        { name: 'claude', path: '/usr/local/bin/claude' },
+        { name: 'codex', path: null },
+        { name: 'gemini', path: null },
+        { name: 'aider', path: null },
+      ],
       messaging: true,
       db: '/tmp/agentdesk.db',
       hookUrl: 'http://127.0.0.1:1/h/tok',
@@ -703,6 +726,15 @@ export function installMock(): void {
       mock.profiles = profiles;
       return null;
     },
+
+    notify_prefs: () => mock.notifyPrefs,
+
+    set_notify_prefs: (args) => {
+      mock.notifyPrefs = args.prefs as { permission: boolean; input: boolean; done: boolean };
+      return null;
+    },
+
+    test_notification: () => null,
 
     list_run_scripts: () => mock.runScripts,
 

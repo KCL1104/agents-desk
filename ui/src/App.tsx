@@ -48,6 +48,9 @@ import {
 import { ColumnPicker } from './components/ColumnPicker';
 import { EnvPanel } from './components/EnvPanel';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
+import { WelcomeDialog } from './components/WelcomeDialog';
+import { CoachMark } from './components/CoachMark';
+import { coachSeen, markCoachSeen, type CoachId } from './coach';
 import { useSize } from './useSize';
 
 /** Terminals start at a sane size; the pane refits within a frame of mounting. */
@@ -57,6 +60,7 @@ const INITIAL_ROWS = 32;
 type View = 'terminal' | 'board' | 'overview';
 const VIEW_KEY = 'agentdesk.view';
 const TAB_KEY = 'agentdesk.activeTab';
+const WELCOME_KEY = 'agentdesk.welcomed';
 
 /** Centre-drop within auto mode: the two trade places in the running order. */
 function swapIds(ids: readonly string[], movingId: string, targetId: string): string[] {
@@ -115,6 +119,16 @@ export default function App() {
   const [inspectId, setInspectId] = useState<string | null>(null);
   /** The shortcuts cheat sheet (⌘/Ctrl+/). */
   const [showKeys, setShowKeys] = useState(false);
+  /** The first-run panel: what the environment probe found, and the mental
+   *  model in three sentences. Shown once, never to a desk already in use. */
+  const [showWelcome, setShowWelcome] = useState(false);
+  /** The one coaching card on screen, if any. One at a time: a second
+   *  trigger while one is up simply stays unseen for its next occasion. */
+  const [coach, setCoach] = useState<CoachId | null>(null);
+
+  const teach = useCallback((id: CoachId) => {
+    setCoach((cur) => (cur !== null || coachSeen(id) ? cur : id));
+  }, []);
   /** Review feedback in progress, per attempt. Held here because the drawer
    *  unmounts on ⌘I and follows focus between panes — the dialogs already
    *  promise a stray click cannot discard typed text, and the flagship loop
@@ -375,6 +389,33 @@ export default function App() {
     });
   }, [sessions, view, focusedId, zoomed]);
 
+  // The first-run panel, decided once at readiness. A desk already in use
+  // has nothing to introduce — it gets the flag set silently instead, so
+  // an upgrade never greets a veteran.
+  useEffect(() => {
+    if (!loaded || !boot?.ready) return;
+    if (localStorage.getItem(WELCOME_KEY) !== null) return;
+    if (sessions.length > 0 || tasks.length > 0) {
+      localStorage.setItem(WELCOME_KEY, '1');
+      return;
+    }
+    setShowWelcome(true);
+    // Deliberately not re-run on sessions/tasks: the question is what the
+    // desk held at the moment it became ready, not after the first card.
+  }, [loaded, boot?.ready]);
+
+  // The first sight of the Finish footer: an outcome is final, and that is
+  // better learned before the second click than after it.
+  useEffect(() => {
+    if (inspected && inspected.outcome === null) teach('finish');
+  }, [inspected, teach]);
+
+  // The first time the caret lands in a pane: which keys leave it, and that
+  // Ctrl+letter belongs to the shell in there.
+  useEffect(() => {
+    if (view === 'terminal' && focusedId !== null) teach('terminal');
+  }, [view, focusedId, teach]);
+
   // Looking at it is what reads it — including coming back to a window that
   // was elsewhere when the turn ended, which no state change announces.
   useEffect(() => {
@@ -623,6 +664,10 @@ export default function App() {
           INITIAL_ROWS,
         );
         setStarting(null);
+        // The first start is the moment its concept bites: what a worktree
+        // is on an ordinary launch, what fewer prompts mean on a ⚡ one.
+        // The sharper edge wins when both are new.
+        teach(mode !== 'normal' ? 'mode' : 'attempt');
         // Over the limit it waits its turn instead of starting. There is no
         // terminal to go to yet, so the board is where you want to be left —
         // the card says where it is in the queue.
@@ -631,7 +676,7 @@ export default function App() {
         setDialogError(String(e));
       }
     },
-    [onOpen],
+    [onOpen, teach],
   );
 
   /** Put a terminal back on an attempt — the state every attempt is in after
@@ -1034,6 +1079,39 @@ export default function App() {
       )}
       {showEnv && <EnvPanel boot={boot} onClose={() => setShowEnv(false)} />}
       {showKeys && <ShortcutsDialog onClose={() => setShowKeys(false)} />}
+      {showWelcome && (
+        <WelcomeDialog
+          boot={boot}
+          onClose={() => {
+            localStorage.setItem(WELCOME_KEY, '1');
+            setShowWelcome(false);
+          }}
+          onNewTask={() => {
+            localStorage.setItem(WELCOME_KEY, '1');
+            setShowWelcome(false);
+            setView('board');
+            setDialogError(null);
+            setShowNewTask(true);
+          }}
+          onNewSession={() => {
+            localStorage.setItem(WELCOME_KEY, '1');
+            setShowWelcome(false);
+            setShowNew(true);
+          }}
+        />
+      )}
+
+      {/* One coaching card at most, above the board but under any dialog —
+          teaching must never block the thing it teaches. */}
+      {coach && (
+        <CoachMark
+          id={coach}
+          onDismiss={() => {
+            markCoachSeen(coach);
+            setCoach(null);
+          }}
+        />
+      )}
     </div>
   );
 }

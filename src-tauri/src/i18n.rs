@@ -86,6 +86,29 @@ pub fn waiting_input(locale: Locale) -> &'static str {
     }
 }
 
+/// A turn ended while the window was elsewhere. Opt-in — every turn ends.
+pub fn turn_done(locale: Locale) -> &'static str {
+    match locale {
+        Locale::En => "finished its turn",
+        Locale::ZhTw => "完成了一輪，等你看",
+    }
+}
+
+/// The notification the environment panel's test button fires.
+pub fn test_title(locale: Locale) -> &'static str {
+    match locale {
+        Locale::En => "Notifications are working",
+        Locale::ZhTw => "通知正常",
+    }
+}
+
+pub fn test_body(locale: Locale) -> &'static str {
+    match locale {
+        Locale::En => "This is what a session's notification looks like.",
+        Locale::ZhTw => "session 的通知就長這樣。",
+    }
+}
+
 /// Title of the notification raised when a queued card cannot be started.
 pub fn queued_start_failed(locale: Locale) -> &'static str {
     match locale {
@@ -134,6 +157,7 @@ mod tests {
             waiting_permission(Locale::En),
             awaiting_trust(Locale::En),
             waiting_input(Locale::En),
+            turn_done(Locale::En),
         ] {
             let first = body.chars().next().unwrap();
             assert!(first.is_lowercase(), "{body:?} should not start capitalised");

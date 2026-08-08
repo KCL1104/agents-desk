@@ -34,8 +34,11 @@ impl UiSink for TauriSink {
         if event == "notify" {
             // Only when the window is unfocused: with the app in front of
             // you, the in-app banner already says it, and an OS notification
-            // on top would just be an echo.
-            if !FOCUSED.load(Ordering::Relaxed) {
+            // on top would just be an echo. `force` is the test button's
+            // exemption — the person pressing it is focused by definition,
+            // and the gate would swallow exactly what they asked to see.
+            let force = payload["force"].as_bool().unwrap_or(false);
+            if force || !FOCUSED.load(Ordering::Relaxed) {
                 let title = payload["title"].as_str().unwrap_or("AgentDesk");
                 let body = payload["body"].as_str().unwrap_or_default();
                 if let Err(e) = self.0.notification().builder().title(title).body(body).show() {
@@ -109,6 +112,13 @@ fn boot_status(state: State<'_, AppState>) -> serde_json::Value {
             "path": c.env.path(),
             "claude": c.env.which("claude").map(|p| p.to_string_lossy().to_string()),
             "claudeVersion": c.claude_version(),
+            // Every agent CLI this environment can actually see — the
+            // first-run panel's detection report, from the same resolved
+            // PATH the sessions get.
+            "agents": core::BARE_AGENTS.iter().map(|a| serde_json::json!({
+                "name": a,
+                "path": c.env.which(a).map(|p| p.to_string_lossy().to_string()),
+            })).collect::<Vec<_>>(),
             // Whether this desk's claude sessions can name themselves and,
             // with that, message each other across cards.
             "messaging": c.named_sessions(),
@@ -463,6 +473,32 @@ fn run_script(
         .map_err(|e| format!("{e:#}"))
 }
 
+/* -------------------------- notifications -------------------------- */
+
+/// Which notifications the desk raises. Read by the environment panel.
+#[tauri::command]
+fn notify_prefs(state: State<'_, AppState>) -> StdResult<core::NotifyPrefs, String> {
+    Ok(state.core()?.notify_prefs())
+}
+
+#[tauri::command]
+fn set_notify_prefs(
+    state: State<'_, AppState>,
+    prefs: core::NotifyPrefs,
+) -> StdResult<(), String> {
+    state
+        .core()?
+        .set_notify_prefs(prefs)
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// Fire one now — the only honest way to check the channel reaches the OS.
+#[tauri::command]
+fn test_notification(state: State<'_, AppState>) -> StdResult<(), String> {
+    state.core()?.test_notification();
+    Ok(())
+}
+
 /* ---------------------------- profiles ----------------------------- */
 
 /// Everything a launch dialog can offer: bare agents, then profiles.
@@ -565,6 +601,9 @@ fn main() {
             list_launchers,
             list_profiles,
             save_profiles,
+            notify_prefs,
+            set_notify_prefs,
+            test_notification,
             cancel_queued,
             concurrency,
             set_concurrency,

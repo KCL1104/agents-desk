@@ -219,6 +219,33 @@ export const en = {
   /* ------------------------------ unseen ------------------------------ */
   'unseen.label': 'finished, not yet seen',
 
+  /* ----------------------------- welcome ------------------------------ */
+  'welcome.title': 'Welcome to AgentDesk',
+  'welcome.found': 'What this machine has',
+  'welcome.model': 'How it works',
+  'welcome.model1': 'A card is a repo, a base branch, and something to do.',
+  'welcome.model2':
+    'Starting an attempt opens an isolated git worktree with a real terminal — the agent can only touch its own branch, never your checkout.',
+  'welcome.model3':
+    'Finishing merges the branch back, opens a PR, or discards it. Either way the diff is frozen and kept.',
+  'welcome.newCard': 'Create the first card',
+  'welcome.newSession': 'Open an ad-hoc session',
+
+  /* ------------------------------ coach ------------------------------- */
+  'coach.gotIt': 'Got it',
+  'coach.attempt.title': 'This attempt has its own worktree',
+  'coach.attempt.body':
+    'Every attempt opens an isolated branch and folder from the base — the agent only ever touches its own copy. A brand-new folder makes Claude Code ask for trust first; the prompt goes out once you answer.',
+  'coach.mode.title': 'This session will ask less',
+  'coach.mode.body':
+    'With fewer prompts, the agent runs on its own judgement. The safety boundary is the worktree: it can only spend this attempt’s branch, never your checkout. The card and the pane wear the badge the whole time.',
+  'coach.finish.title': 'Finishing is final',
+  'coach.finish.body':
+    'Merge folds the branch back and takes the worktree; discard takes it too. Both freeze the diff first, so the record survives — but nothing here can be reopened to type into. To compare agents, start a second attempt before deciding.',
+  'coach.terminal.title': 'This is a real terminal',
+  'coach.terminal.body':
+    'Ctrl+letter belongs to the shell in here — the app’s shortcuts take Shift (Ctrl+Shift+E), the way Ctrl+Shift+C copies. ⌘/Ctrl+Alt+←→ moves between panes; ⌘/Ctrl+1/2/3 switches views.',
+
   /* ------------------------------ stats ------------------------------- */
   'stats.ahead': '{n} commits {branch} does not have yet',
   'stats.behind': '{branch} has moved on by {n} commits — rebase before merging',
@@ -276,6 +303,14 @@ export const en = {
   'env.profiles': 'Agent profiles',
   'env.profilesHint':
     'A named way to launch an agent — the CLI plus the flags it always gets. Profiles appear in both launch dialogs.',
+  'env.notifications': 'Notifications',
+  'notify.hint':
+    'Raised only while the window is elsewhere — in front of the app, the interface itself already says it.',
+  'notify.permission': 'Permission and folder-trust prompts',
+  'notify.input': 'Waiting on your reply',
+  'notify.done': 'A turn finished',
+  'notify.test': 'Send a test notification',
+  'notify.sent': 'Sent ✓',
 
   /* ----------------------------- profiles ------------------------------ */
   'profile.namePlaceholder': 'opus, quiet claude, …',
@@ -511,6 +546,32 @@ export const zhTW: Record<MessageKey, string> = {
   /* ------------------------------ unseen ------------------------------ */
   'unseen.label': '已完成，還沒看過',
 
+  /* ----------------------------- welcome ------------------------------ */
+  'welcome.title': '歡迎使用 AgentDesk',
+  'welcome.found': '這台機器上找到的',
+  'welcome.model': '怎麼運作',
+  'welcome.model1': '一張卡片 = 一個 repo、一個 base 分支、一件要做的事。',
+  'welcome.model2':
+    '開始 attempt 會開一個隔離的 git worktree 和一個真終端 —— agent 只碰得到自己的分支，碰不到你的 checkout。',
+  'welcome.model3': '結束時把分支合回去、開 PR、或丟棄。無論哪種，diff 都會先凍結保留。',
+  'welcome.newCard': '開第一張卡',
+  'welcome.newSession': '先開個臨時 session',
+
+  /* ------------------------------ coach ------------------------------- */
+  'coach.gotIt': '知道了',
+  'coach.attempt.title': '這個 attempt 有自己的 worktree',
+  'coach.attempt.body':
+    '每次開始都會從 base 分支開一個隔離的分支和資料夾 —— agent 只動得到它自己的這份。全新的資料夾會先觸發 Claude Code 的信任確認；答完，prompt 才送出。',
+  'coach.mode.title': '這個 session 會少問你',
+  'coach.mode.body':
+    '減少詢問之後，agent 憑自己的判斷往下跑。安全邊界是 worktree：它只花得掉這個 attempt 自己的分支，碰不到你的 checkout。卡片和 pane 會一直戴著這個徽章。',
+  'coach.finish.title': '結束是最終的',
+  'coach.finish.body':
+    '合併會把分支收回 base 並收回 worktree；丟棄也一樣。兩者都會先凍結 diff，紀錄留得下來 —— 但之後只能讀，不能再進去改。想比較兩個 agent，先開第二個 attempt 再做決定。',
+  'coach.terminal.title': '這是一個真終端',
+  'coach.terminal.body':
+    '在這裡 Ctrl+字母屬於 shell —— app 的快捷鍵要加 Shift（Ctrl+Shift+E），就像 Ctrl+Shift+C 是複製。⌘/Ctrl+Alt+←→ 在 pane 之間移動；⌘/Ctrl+1/2/3 切換視圖。',
+
   /* ------------------------------ stats ------------------------------- */
   'stats.ahead': '有 {n} 個 {branch} 還沒有的 commit',
   'stats.behind': '{branch} 已經前進了 {n} 個 commit —— 合併前先 rebase',
@@ -566,6 +627,13 @@ export const zhTW: Record<MessageKey, string> = {
   'env.profiles': 'Agent 設定檔',
   'env.profilesHint':
     '具名的啟動方式 —— 哪個 CLI、加上它每次都帶的參數。設定檔會出現在兩個啟動對話框裡。',
+  'env.notifications': '通知',
+  'notify.hint': '只在視窗不在前景時才發 —— 人在 app 前面時，畫面本身就會說。',
+  'notify.permission': '授權與資料夾信任',
+  'notify.input': '等你回覆',
+  'notify.done': '完成一輪',
+  'notify.test': '送一則測試通知',
+  'notify.sent': '已送出 ✓',
 
   /* ----------------------------- profiles ------------------------------ */
   'profile.namePlaceholder': 'opus、安靜的 claude、…',

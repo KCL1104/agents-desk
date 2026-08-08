@@ -5,6 +5,7 @@ import type {
   BootStatus,
   Launcher,
   Lifecycle,
+  NotifyPrefs,
   Outcome,
   PermissionMode,
   Profile,
@@ -118,6 +119,12 @@ export const api = {
       message. Only for CLIs whose input conventions are measured. */
   sendFollowup: (id: string, text: string) =>
     invoke<void>('send_followup', { id, text }),
+
+  /** Which notifications the desk raises, chosen in the environment panel. */
+  notifyPrefs: () => invoke<NotifyPrefs>('notify_prefs'),
+  setNotifyPrefs: (prefs: NotifyPrefs) => invoke<void>('set_notify_prefs', { prefs }),
+  /** Fire one now — the only honest way to check the channel reaches the OS. */
+  testNotification: () => invoke<void>('test_notification'),
 
   /** Everything a launch dialog can offer: bare agents, then profiles. */
   listLaunchers: () => invoke<Launcher[]>('list_launchers'),

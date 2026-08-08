@@ -112,6 +112,14 @@ export interface SessionMeta {
   attempt_id: string | null;
 }
 
+/** Which notifications the desk raises. Mirrors core.rs NotifyPrefs —
+    blocked states default on, a finished turn defaults off. */
+export interface NotifyPrefs {
+  permission: boolean;
+  input: boolean;
+  done: boolean;
+}
+
 /** A named way to launch an agent. Mirrors store.rs Profile. */
 export interface Profile {
   name: string;
@@ -141,6 +149,9 @@ export interface BootStatus {
   claude?: string | null;
   /** The installed Claude Code's version, measured at startup. */
   claudeVersion?: string | null;
+  /** Every agent CLI the resolved environment can see — the first-run
+      panel's detection report, from the same PATH the sessions get. */
+  agents?: Array<{ name: string; path: string | null }>;
   /** Whether this desk's claude sessions can name themselves and, with
       that, message each other across cards. */
   messaging?: boolean;
