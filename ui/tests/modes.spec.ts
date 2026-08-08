@@ -9,7 +9,7 @@ async function boardWithCard(page: Page) {
   await expect(page.locator('.tab')).toHaveCount(1);
   await page.getByTestId('view-board').click();
 
-  await page.getByRole('button', { name: '新增卡片' }).click();
+  await page.getByRole('button', { name: '新增卡片', exact: true }).click();
   await page.getByTestId('task-title').fill('修好登入');
   await page.getByTestId('task-prompt').fill('把它修好');
   await page.getByTestId('task-repo').fill(REPO);
@@ -44,7 +44,9 @@ test.describe('permission modes', () => {
     // The badge: quiet autonomy that looked like supervision would be worse
     // than either.
     await expect(page.getByTestId('mode-k1')).toBeVisible();
-    await expect(page.getByTestId('mode-k1')).toHaveText('⚡');
+    // Drawn, not the unicode ⚡ — the emoji-font roulette is the reason.
+    await expect(page.getByTestId('mode-k1').locator('.icon-glyph')).toBeVisible();
+    await expect(page.getByTestId('mode-k1')).toHaveClass(/yolo/);
   });
 
   test('the default asks as usual and wears no badge', async ({ page }) => {

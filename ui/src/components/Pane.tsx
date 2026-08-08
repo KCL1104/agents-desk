@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import type * as React from 'react';
 import { useT } from '../i18n';
+import { Icon } from './Icon';
 import { TerminalView } from './TerminalView';
 import {
   decodeDrag,
@@ -145,7 +146,7 @@ export function Pane({
             data-testid={`pane-mode-${session.id}`}
             title={t(mode === 'yolo' ? 'mode.yolo' : 'mode.accept_edits')}
           >
-            {mode === 'yolo' ? '⚡' : '✎'}
+            <Icon name={mode === 'yolo' ? 'bolt' : 'pencil'} />
           </span>
         )}
         <button

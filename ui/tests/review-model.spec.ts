@@ -4,6 +4,7 @@ import {
   composeReview,
   followupSendable,
   parseDiff,
+  tint,
   type ReviewComment,
 } from '../src/review';
 import { translator } from '../src/i18n/messages';
@@ -95,6 +96,51 @@ test.describe('the diff, read back into places feedback can point at', () => {
     expect(followupSendable('claude')).toBe(true);
     for (const other of ['codex', 'gemini', 'aider']) {
       expect(followupSendable(other)).toBe(false);
+    }
+  });
+});
+
+test.describe('tint — strings and comments, nothing else', () => {
+  const concat = (s: string) => tint(s).map((r) => r.text).join('');
+
+  test('strings and line comments are found by shape', () => {
+    const runs = tint('+  const x = "hello"; // greet');
+    expect(runs.find((r) => r.cls === 'str')?.text).toBe('"hello"');
+    expect(runs.find((r) => r.cls === 'com')?.text).toBe('// greet');
+  });
+
+  test('the conservative guards hold: URLs, hex colors, shebangs stay code', () => {
+    expect(tint('+  fetch("https://example.com")').filter((r) => r.cls === 'com')).toHaveLength(0);
+    expect(tint('+  color: #ffffff;').filter((r) => r.cls === 'com')).toHaveLength(0);
+    expect(tint('+#!/bin/sh').filter((r) => r.cls === 'com')).toHaveLength(0);
+    // But a real python comment — hash, space — tints.
+    expect(tint('+x = 1  # count').find((r) => r.cls === 'com')?.text).toBe('# count');
+  });
+
+  test('a // inside a string stays string; a quote inside a comment stays comment', () => {
+    const url = tint('+  s = "a // b"');
+    expect(url.find((r) => r.cls === 'str')?.text).toBe('"a // b"');
+    expect(url.filter((r) => r.cls === 'com')).toHaveLength(0);
+    const q = tint("+  // it's fine");
+    expect(q.find((r) => r.cls === 'com')?.text).toBe("// it's fine");
+  });
+
+  test('a block comment that closes mid-line releases the code after it', () => {
+    const runs = tint('+  a /* note */ b');
+    expect(runs.find((r) => r.cls === 'com')?.text).toBe('/* note */');
+    expect(runs[runs.length - 1]).toEqual({ text: ' b', cls: null });
+  });
+
+  test('the runs always concatenate back to the exact input', () => {
+    for (const line of [
+      '+  const x = "hello"; // greet',
+      "-  escaped = 'it\\'s'",
+      '+  /* open ended',
+      '   plain context line',
+      '+  weird = `tpl ${x}` // tail',
+      '+#!/bin/sh',
+    ]) {
+      expect(concat(line)).toBe(line);
     }
   });
 });

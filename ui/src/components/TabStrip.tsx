@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useT } from '../i18n';
 import { needsYou, type SessionMeta, type Tab } from '../types';
+import { Icon } from './Icon';
 
 interface Props {
   tabs: Tab[];
@@ -112,7 +113,8 @@ export function TabStrip({
                     grammar — so it never reads as the busy dot. */}
                 {waiting > 0 ? (
                   <span className="tab-badge waiting" title={tr('tabs.waiting')}>
-                    ⚠{waiting}
+                    <Icon name="warn" />
+                    {waiting}
                   </span>
                 ) : unread > 0 ? (
                   <span className="tab-badge unseen" title={tr('tabs.unseen')}>
@@ -120,7 +122,7 @@ export function TabStrip({
                   </span>
                 ) : busy ? (
                   <span className="tab-badge busy" title={tr('tabs.busy')}>
-                    ●
+                    <Icon name="dot" />
                   </span>
                 ) : null}
                 {tabs.length > 1 && (

@@ -596,7 +596,9 @@ test.describe('tabs', () => {
     // Sitting in tab two while an agent in tab one is blocked is exactly the
     // failure this app exists to prevent.
     await report(page, 's1', 'waiting_permission');
-    await expect(page.locator('.tab').first().locator('.tab-badge.waiting')).toHaveText('⚠1');
+    const badge = page.locator('.tab').first().locator('.tab-badge.waiting');
+    await expect(badge).toHaveText('1');
+    await expect(badge.locator('.icon-glyph')).toBeVisible();
   });
 
   test('closing a tab leaves its sessions running', async ({ page }) => {

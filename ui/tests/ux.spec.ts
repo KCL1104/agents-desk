@@ -16,7 +16,7 @@ async function toBoard(page: Page) {
 }
 
 async function newCard(page: Page, title: string) {
-  await page.getByRole('button', { name: '新增卡片' }).click();
+  await page.getByRole('button', { name: '新增卡片', exact: true }).click();
   await expect(page.locator('.modal')).toBeVisible();
   await page.getByTestId('task-title').fill(title);
   await page.getByTestId('task-prompt').fill('把它修好');
@@ -63,7 +63,7 @@ test.describe('dialogs behave like dialogs', () => {
   test('Escape closes a clean dialog', async ({ page }) => {
     await boot(page);
     await toBoard(page);
-    await page.getByRole('button', { name: '新增卡片' }).click();
+    await page.getByRole('button', { name: '新增卡片', exact: true }).click();
     await expect(page.locator('.modal')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.locator('.modal')).toHaveCount(0);
@@ -72,7 +72,7 @@ test.describe('dialogs behave like dialogs', () => {
   test('a stray backdrop click cannot discard typed content', async ({ page }) => {
     await boot(page);
     await toBoard(page);
-    await page.getByRole('button', { name: '新增卡片' }).click();
+    await page.getByRole('button', { name: '新增卡片', exact: true }).click();
     await page.getByTestId('task-prompt').fill('好幾分鐘打出來的 prompt');
 
     // Dirty: the backdrop refuses.
@@ -87,7 +87,7 @@ test.describe('dialogs behave like dialogs', () => {
   test('a clean backdrop click still closes', async ({ page }) => {
     await boot(page);
     await toBoard(page);
-    await page.getByRole('button', { name: '新增卡片' }).click();
+    await page.getByRole('button', { name: '新增卡片', exact: true }).click();
     await page.locator('.modal-backdrop').click({ position: { x: 5, y: 5 } });
     await expect(page.locator('.modal')).toHaveCount(0);
   });
@@ -95,7 +95,7 @@ test.describe('dialogs behave like dialogs', () => {
   test('Tab stays inside an open dialog', async ({ page }) => {
     await boot(page);
     await toBoard(page);
-    await page.getByRole('button', { name: '新增卡片' }).click();
+    await page.getByRole('button', { name: '新增卡片', exact: true }).click();
     // Walk far enough to have wrapped at least once.
     for (let i = 0; i < 40; i++) {
       await page.keyboard.press('Tab');
@@ -350,7 +350,7 @@ test.describe('the accessibility tree tells the truth', () => {
   test('dialogs carry their own names', async ({ page }) => {
     await boot(page);
     await toBoard(page);
-    await page.getByRole('button', { name: '新增卡片' }).click();
+    await page.getByRole('button', { name: '新增卡片', exact: true }).click();
     const dialog = page.locator('[role="dialog"]');
     // aria-labelledby resolves to the h2, so the dialog announces as its
     // title, not as an anonymous "dialog".

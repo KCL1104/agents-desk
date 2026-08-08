@@ -6,7 +6,7 @@
 ## 現況
 
 - main = 研究報告 + 六批實作 + checkpoints 決策文件(至 `5b6d3ad`),工作分支 `claude/research-popular-tool-frontend-fax4cb` 與 main 同步。
-- 驗證基線:Playwright 254 passed(沙箱跑法:`npx playwright test --config playwright.local.config.ts`,指向預裝 Chromium)、cargo 331 全綠(容器已裝 GTK/WebKit dev 套件)、`npm run build` 乾淨。
+- 驗證基線:Playwright 262 passed(沙箱跑法:`npx playwright test --config playwright.local.config.ts`,指向預裝 Chromium)、cargo 331 全綠(容器已裝 GTK/WebKit dev 套件)、`npm run build` 乾淨。
 - 慣例備忘:i18n 是雙語 typed catalog,兩語相同的字串要進 `i18n.spec.ts` 的 SHARED 豁免;每個新 Tauri 指令都要在 `tests/mock-tauri.ts` 補 handler;凡動 agent 看得到的 git 狀態(index、worktree、分支)一律禁止。
 
 ## 第八批:收尾(狀態:**完成**)
@@ -33,9 +33,14 @@
 
 量測已完成(本機 2 萬檔:暖快照 ~0.04s ≈ 2× `git status`;WSL 未測,缺口記於 checkpoints.md 成本節)。
 
-### 2. 視覺系統批(狀態:待做;適合配 `/impeccable polish`)
+### 2. 視覺系統批(狀態:**完成**,經 `/impeccable polish`)
 
-型階與間距階 token 化;unicode 字形圖示 → 內嵌 SVG;動效字彙(執行中卡片微光 + 空板 CTA,皆掛 reduced-motion);merged 專色;招牌元素(呼吸卡)命名。另收:diff 語法上色(app 端渲染,哲學安全)。
+- **Token 化**:型階七階(`--fs-micro`…`--fs-hero`,87 個字級全數收編;藥丸形狀改 999px 不佔階)、圓角四階(既有 `--radius` 首次真正被使用)、檢視器共用溝距 `--gutter-x`。間距其餘值為逐面光學調校,刻意不上階(硬套會是 redesign 不是 polish)。
+- **圖示**:`Icon.tsx` 內嵌 SVG(warn/bolt/pencil/flag/play/dot/reload/wrap),一種筆畫一種粗細;標點類字形(✕ ＋ ✓ ▸ ⎇ →)刻意留為文字——它們讀起來是字。全部 aria-hidden,語意都在旁邊的文字或 label 上。
+- **動效字彙**:呼吸(breathe)正式命名為招牌——唯一 attention 級動效;shimmer(執行中卡片的 status edge 微光)是安靜的表親,blocked 時讓位給呼吸;空板 CTA(beckon)把待辦空位變成真按鈕。三者皆掛 reduced-motion 靜態收尾。
+- **merged 專色**:`--merged = color-mix(accent 55%, err 45%)`,CSS 層推導所以自訂主題免改 theme.ts;只有 merged 上色(discarded/superseded 保持中性——放棄不是要宣傳的狀態)。
+- **diff 上色**:`tint()`(review.ts)只認字串與註解——所有語言都同意的兩類,靠形狀就找得到;從 currentColor 混色所以 add 行的字串還是綠的。守門:`://` 不開註解、`#` 要跟空格、`/* */` 行內閉合會放回後面的程式碼;runs 恆等拼回原文(excerpt 比對依賴)。
+- 測試連動:board-cta 使 `新增卡片` 按鈕名撞名,全部 helper 改 `exact: true`(15 檔 26 處)。
 
 ### 3. 其後各項:先決策文件、拍板、再實作
 

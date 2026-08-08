@@ -9,7 +9,7 @@ async function boardWithAttempt(page: Page) {
   await expect(page.locator('.tab')).toHaveCount(1);
   await page.getByTestId('view-board').click();
 
-  await page.getByRole('button', { name: '新增卡片' }).click();
+  await page.getByRole('button', { name: '新增卡片', exact: true }).click();
   await page.getByTestId('task-title').fill('修好登入');
   await page.getByTestId('task-prompt').fill('把它修好');
   await page.getByTestId('task-repo').fill(REPO);
@@ -77,7 +77,7 @@ test.describe('workspace scripts and the multi-repo board', () => {
       ['修好登入', '/Users/test/picked-repo'],
       ['另一個 app 的卡', '/Users/test/other-app'],
     ]) {
-      await page.getByRole('button', { name: '新增卡片' }).click();
+      await page.getByRole('button', { name: '新增卡片', exact: true }).click();
       await page.getByTestId('task-title').fill(title);
       await page.getByTestId('task-prompt').fill('p');
       await page.getByTestId('task-repo').fill(repo);
@@ -106,7 +106,7 @@ test.describe('workspace scripts and the multi-repo board', () => {
     });
     await page.getByTestId('view-board').click();
 
-    await page.getByRole('button', { name: '新增卡片' }).click();
+    await page.getByRole('button', { name: '新增卡片', exact: true }).click();
     await page.getByTestId('task-title').fill('WSL 裡的卡');
     await page.getByTestId('task-prompt').fill('p');
     await page.getByTestId('task-repo').fill('wsl://Ubuntu/home/me/webapp');

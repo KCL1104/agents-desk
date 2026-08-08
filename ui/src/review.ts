@@ -90,6 +90,80 @@ export function commentable(l: DiffLine): boolean {
   return (l.kind === 'add' || l.kind === 'del' || l.kind === 'context') && l.file !== null;
 }
 
+/** One run of a code line, as the diff tints it. */
+export interface TintRun {
+  text: string;
+  /** `str` and `com` are the whole vocabulary — see `tint`. */
+  cls: 'str' | 'com' | null;
+}
+
+/**
+ * Texture for a code line: strings and comments, nothing else.
+ *
+ * Deliberately not syntax highlighting. A real highlighter needs to know
+ * the language, and a half-right guess colors keywords wrongly in exactly
+ * the place people read most carefully. Strings and comments are the two
+ * token families every language agrees on, so they can be found by shape
+ * alone — and marking just them breaks up the wall of uniform green a
+ * large added file otherwise is.
+ *
+ * One left-to-right scan, so a `//` inside a string stays string and a
+ * quote inside a comment stays comment. The conservative guards:
+ * `://` never opens a comment (URLs), and `#` needs a following space
+ * (`#fff`, `#!/bin/sh`, `#region` pass through untinted).
+ *
+ * The runs always concatenate back to the exact input — comment excerpts
+ * and line matching elsewhere compare against the raw text.
+ */
+export function tint(text: string): TintRun[] {
+  const runs: TintRun[] = [];
+  let plain = '';
+  const flush = () => {
+    if (plain !== '') {
+      runs.push({ text: plain, cls: null });
+      plain = '';
+    }
+  };
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '"' || c === "'" || c === '`') {
+      // A string: to the matching unescaped quote, or the end of the line.
+      let j = i + 1;
+      while (j < text.length && text[j] !== c) {
+        if (text[j] === '\\') j += 1;
+        j += 1;
+      }
+      j = Math.min(text.length, j + 1);
+      flush();
+      runs.push({ text: text.slice(i, j), cls: 'str' });
+      i = j;
+      continue;
+    }
+    const twoAhead = text.slice(i, i + 2);
+    if ((twoAhead === '//' && text[i - 1] !== ':') || (c === '#' && text[i + 1] === ' ')) {
+      flush();
+      runs.push({ text: text.slice(i), cls: 'com' });
+      return runs;
+    }
+    // A block comment tints to its close when it closes on this line, and
+    // to the end when it does not — the code after a closed one is code.
+    const block = twoAhead === '/*' ? '*/' : text.slice(i, i + 4) === '<!--' ? '-->' : null;
+    if (block !== null) {
+      const close = text.indexOf(block, i + 2);
+      const j = close === -1 ? text.length : close + block.length;
+      flush();
+      runs.push({ text: text.slice(i, j), cls: 'com' });
+      i = j;
+      continue;
+    }
+    plain += c;
+    i += 1;
+  }
+  flush();
+  return runs;
+}
+
 /**
  * Whether a file's slice of the diff starts folded.
  *

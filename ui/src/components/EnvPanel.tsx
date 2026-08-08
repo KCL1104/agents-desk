@@ -3,6 +3,7 @@ import { LOCALE_NAME, LOCALES, useI18n, type Locale } from '../i18n';
 import { api } from '../api';
 import { joinArgs, splitArgs } from '../profiles';
 import type { BootStatus, NotifyPrefs } from '../types';
+import { Icon } from './Icon';
 import { Modal } from './Modal';
 import {
   applyTheme,
@@ -459,7 +460,7 @@ function Theming() {
                 key={c.label}
                 className={`contrast-chip ${c.ratio >= 4.5 ? 'pass' : 'fail'}`}
               >
-                {c.ratio >= 4.5 ? '✓' : '⚠'} {c.label} {c.ratio.toFixed(1)}
+                {c.ratio >= 4.5 ? '✓' : <Icon name="warn" />} {c.label} {c.ratio.toFixed(1)}
               </span>
             ))}
           </div>

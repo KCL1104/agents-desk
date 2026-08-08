@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, type AttemptStat } from '../api';
 import { useT } from '../i18n';
 import { useArmed } from './armed';
+import { Icon } from './Icon';
 import type { Attempt, Lifecycle, SessionMeta, Task } from '../types';
 import { needsYou } from '../types';
 import {
@@ -264,11 +265,20 @@ export function Board({
                     now={now}
                   />
                 ))}
-                {cards.length === 0 && (
-                  <p className="board-empty muted small">
-                    {col === 'backlog' ? t('board.emptyBacklog') : t('board.emptyDrop')}
-                  </p>
-                )}
+                {cards.length === 0 &&
+                  (col === 'backlog' ? (
+                    // The empty backlog is a door, not a caption: the words
+                    // already say "add a card", so the words are the button.
+                    <button
+                      className="board-empty board-cta muted small"
+                      data-testid="board-cta"
+                      onClick={onNewTask}
+                    >
+                      {t('board.emptyBacklog')}
+                    </button>
+                  ) : (
+                    <p className="board-empty muted small">{t('board.emptyDrop')}</p>
+                  ))}
               </div>
             </section>
           );
@@ -424,11 +434,19 @@ function Card({
   // for it would be the wrong thing to optimise.
   const enter = live.kind === 'session' ? () => onOpenSession(live.session.id) : undefined;
 
+  // The shimmer: mid-turn, and only mid-turn — the breath outranks it, so
+  // a card that is both blocked and busy breathes and does not shimmer.
+  const astir =
+    !waiting &&
+    live.kind === 'session' &&
+    (live.session.status === 'running' || live.session.status === 'starting');
+
   return (
     <article
       className={[
         'board-card',
         waiting ? 'needs-you' : '',
+        astir ? 'astir' : '',
         dragging ? 'dragging' : '',
         insertBefore ? 'insert-before' : '',
         enter ? 'enterable' : '',
@@ -438,6 +456,7 @@ function Card({
       data-testid={`task-${task.id}`}
       data-lifecycle={task.lifecycle}
       data-live={live.kind}
+      data-outcome={live.kind === 'finished' ? (live.attempt.outcome ?? undefined) : undefined}
       // A labeled group, not a button holding buttons. The label is title
       // plus state — the one thing the breathing card shouts must not be
       // silent to AT. Enterable cards put their tab stop on the door; the
@@ -495,7 +514,7 @@ function Card({
             data-testid={`mode-${task.id}`}
             title={t(live.attempt.mode === 'yolo' ? 'mode.yolo' : 'mode.accept_edits')}
           >
-            {live.attempt.mode === 'yolo' ? '⚡' : '✎'}
+            <Icon name={live.attempt.mode === 'yolo' ? 'bolt' : 'pencil'} />
           </span>
         )}
       </header>
@@ -531,7 +550,13 @@ function Card({
       </div>
 
       <div className="board-card-state" data-testid={`state-${task.id}`}>
-        {waiting && <span aria-hidden="true">⚠ </span>}
+        {/* Drawn, not the unicode ⚠: the aria-label above still speaks the
+            word, so AT loses nothing the eye gains in consistency. */}
+        {waiting && (
+          <>
+            <Icon name="warn" />{' '}
+          </>
+        )}
         {liveLabel(live, t)}
         {hasAttempt && <span className="muted small mono"> #{live.attempt.seq}</span>}
         {/* Hooks are Claude Code's; for anyone else 「安靜」 must never be

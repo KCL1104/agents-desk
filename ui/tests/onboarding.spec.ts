@@ -20,7 +20,7 @@ async function bootFresh(page: Page) {
 }
 
 async function newCard(page: Page, title: string) {
-  await page.getByRole('button', { name: '新增卡片' }).click();
+  await page.getByRole('button', { name: '新增卡片', exact: true }).click();
   await page.getByTestId('task-title').fill(title);
   await page.getByTestId('task-prompt').fill('把它修好');
   await page.getByTestId('task-repo').fill(REPO);

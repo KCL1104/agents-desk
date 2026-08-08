@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as React from 'react';
 import { api, subscribe } from './api';
 import { useT } from './i18n';
+import { Icon } from './components/Icon';
 import { needsYou } from './types';
 import type { BootStatus, Lifecycle, PermissionMode, SessionMeta, Status, Tab, Task } from './types';
 import { STATUS_KEY } from './sections';
@@ -942,7 +943,7 @@ export default function App() {
                     data-testid="topbar-mode"
                     title={t(mode === 'yolo' ? 'mode.yolo' : 'mode.accept_edits')}
                   >
-                    {mode === 'yolo' ? '⚡' : '✎'}
+                    <Icon name={mode === 'yolo' ? 'bolt' : 'pencil'} />
                   </span>
                 );
               })()}

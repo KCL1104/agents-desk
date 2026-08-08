@@ -13,7 +13,7 @@ async function boot(page: Page) {
 }
 
 async function newCard(page: Page, title: string, repo = REPO, branch = 'main') {
-  await page.getByRole('button', { name: '新增卡片' }).click();
+  await page.getByRole('button', { name: '新增卡片', exact: true }).click();
   await expect(page.locator('.modal')).toBeVisible();
   await page.getByTestId('task-title').fill(title);
   await page.getByTestId('task-prompt').fill('把它修好');
@@ -90,7 +90,8 @@ test.describe('board', () => {
     // And it lights up again the moment a permission prompt appears — the
     // card is still in 進行中 throughout. Nothing moved it.
     await page.evaluate(() => window.__mock.report('s1', 'waiting_permission'));
-    await expect(page.getByTestId('state-k1')).toHaveText(/⚠.*等你授權/);
+    await expect(page.getByTestId('state-k1')).toHaveText(/等你授權/);
+    await expect(page.getByTestId('state-k1').locator('.icon-glyph')).toBeVisible();
     await expect(page.getByTestId('task-k1')).toHaveClass(/needs-you/);
     await expect(page.locator('[data-testid="col-running"] .board-card')).toHaveCount(1);
   });
@@ -423,7 +424,7 @@ test.describe('the base branch picker', () => {
     await page.evaluate(() => {
       window.__mock.repos['/Users/test/legacy-repo'] = ['develop', 'feature/x'];
     });
-    await page.getByRole('button', { name: '新增卡片' }).click();
+    await page.getByRole('button', { name: '新增卡片', exact: true }).click();
     await page.getByTestId('task-repo').fill('/Users/test/legacy-repo');
 
     // The suggestions arrive in recency order, and the untouched 'main'
@@ -437,7 +438,7 @@ test.describe('the base branch picker', () => {
     await page.evaluate(() => {
       window.__mock.repos['/Users/test/legacy-repo'] = ['develop'];
     });
-    await page.getByRole('button', { name: '新增卡片' }).click();
+    await page.getByRole('button', { name: '新增卡片', exact: true }).click();
     await page.getByTestId('task-branch').fill('release');
     await page.getByTestId('task-repo').fill('/Users/test/legacy-repo');
 
@@ -447,9 +448,50 @@ test.describe('the base branch picker', () => {
 
   test('a path that is not a repository suggests nothing', async ({ page }) => {
     await boot(page);
-    await page.getByRole('button', { name: '新增卡片' }).click();
+    await page.getByRole('button', { name: '新增卡片', exact: true }).click();
     await page.getByTestId('task-repo').fill('/nowhere/at/all');
     await page.getByTestId('task-title').fill('等一下');
     await expect(page.locator('#branch-options option')).toHaveCount(0);
+  });
+});
+
+test.describe('the visual system speaks', () => {
+  test('an empty backlog is a door to the first card', async ({ page }) => {
+    await boot(page);
+    // The placeholder is a real button, and it opens the same dialog ＋ does.
+    await page.getByTestId('board-cta').click();
+    await expect(page.locator('.modal')).toBeVisible();
+    await expect(page.getByTestId('task-title')).toBeVisible();
+  });
+
+  test('a mid-turn card shimmers; a blocked card breathes instead', async ({ page }) => {
+    await boot(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await page.getByTestId('view-board').click();
+
+    await page.evaluate(() => window.__mock.report('s1', 'running'));
+    await expect(page.getByTestId('task-k1')).toHaveClass(/astir/);
+
+    // Blocked outranks busy: the breath is the only motion at attention
+    // scale, so the shimmer yields the moment the card needs a human.
+    await page.evaluate(() => window.__mock.report('s1', 'waiting_permission'));
+    await expect(page.getByTestId('task-k1')).toHaveClass(/needs-you/);
+    await expect(page.getByTestId('task-k1')).not.toHaveClass(/astir/);
+  });
+
+  test('a merged card says so on its edge — the one ending that is a win', async ({ page }) => {
+    await boot(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await page.getByTestId('view-board').click();
+    await page.evaluate(async () => {
+      await (
+        window as unknown as {
+          __TAURI_INTERNALS__: { invoke: (c: string, a: unknown) => Promise<unknown> };
+        }
+      ).__TAURI_INTERNALS__.invoke('finish_attempt', { attemptId: 'k1-a1', outcome: 'merged' });
+    });
+    await expect(page.getByTestId('task-k1')).toHaveAttribute('data-outcome', 'merged');
   });
 });

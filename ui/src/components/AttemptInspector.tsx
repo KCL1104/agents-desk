@@ -3,6 +3,7 @@ import { api, type AttemptStat, type Checkpoint } from '../api';
 import type { Attempt, AttemptEvent, SessionMeta } from '../types';
 import { useT } from '../i18n';
 import { useArmed } from './armed';
+import { Icon } from './Icon';
 import { FriendlyError } from './FriendlyError';
 import { elapsed, STATUS_KEY } from '../sections';
 import { rollup } from '../timeline';
@@ -12,6 +13,7 @@ import {
   composeReview,
   followupSendable,
   parseDiff,
+  tint,
   type DiffLine,
   type ReviewComment,
 } from '../review';
@@ -298,7 +300,7 @@ export function AttemptInspector({
         </div>
         <span className="spacer" />
         <button className="icon" onClick={refresh} title={t('inspector.reload')} aria-label={t('inspector.reload')}>
-          ↻
+          <Icon name="reload" />
         </button>
         <button className="icon" onClick={onClose} title={t('common.close')} aria-label={t('inspector.closeView')}>
           ✕
@@ -324,7 +326,7 @@ export function AttemptInspector({
         )}
         {attempt.mode !== 'normal' && (
           <span className={`mode-badge ${attempt.mode}`}>
-            {attempt.mode === 'yolo' ? '⚡ ' : '✎ '}
+            <Icon name={attempt.mode === 'yolo' ? 'bolt' : 'pencil'} />{' '}
             {t(attempt.mode === 'yolo' ? 'mode.yolo' : 'mode.accept_edits')}
           </span>
         )}
@@ -356,7 +358,7 @@ export function AttemptInspector({
               title={t('inspector.runHint', { name })}
               onClick={() => onRunScript(name)}
             >
-              ▶ {name}
+              <Icon name="play" /> {name}
             </button>
           ))}
           {/* The manual snapshot — every agent's checkpoint, where Stop
@@ -379,7 +381,11 @@ export function AttemptInspector({
                 .finally(() => setCkptBusy(false));
             }}
           >
-            {ckptSay ?? `⚑ ${t('inspector.ckpt')}`}
+            {ckptSay ?? (
+              <>
+                <Icon name="flag" /> {t('inspector.ckpt')}
+              </>
+            )}
           </button>
         </div>
       )}
@@ -996,7 +1002,7 @@ function DiffPane({
             localStorage.setItem(WRAP_KEY, wrap ? '0' : '1');
           }}
         >
-          ⏎
+          <Icon name="wrap" />
         </button>
         {fetchedAt !== null && (
           <span className="diff-fetched">{t('inspector.readAt', { time: clock(fetchedAt) })}</span>
@@ -1084,7 +1090,21 @@ function DiffPane({
                   : undefined
               }
             >
-              {l.text}
+              {/* Texture, not a parser's claim: strings and comments only,
+                  tinted from whatever color the line already wears. The
+                  runs concatenate back to l.text exactly — excerpts and
+                  matching elsewhere compare against the raw line. */}
+              {l.kind === 'add' || l.kind === 'del' || l.kind === 'context'
+                ? tint(l.text).map((run, ri) =>
+                    run.cls === null ? (
+                      run.text
+                    ) : (
+                      <span key={ri} className={`tk-${run.cls}`}>
+                        {run.text}
+                      </span>
+                    ),
+                  )
+                : l.text}
               {'\n'}
             </span>
           ))}

@@ -26,7 +26,7 @@ async function boardWithAttempt(page: Page) {
   await expect(page.locator('.tab')).toHaveCount(1);
   await page.getByTestId('view-board').click();
 
-  await page.getByRole('button', { name: '新增卡片' }).click();
+  await page.getByRole('button', { name: '新增卡片', exact: true }).click();
   await page.getByTestId('task-title').fill('修好登入');
   await page.getByTestId('task-prompt').fill('把它修好');
   await page.getByTestId('task-repo').fill(REPO);
