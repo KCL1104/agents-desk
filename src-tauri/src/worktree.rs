@@ -488,6 +488,163 @@ impl Worktrees {
 
         Ok(stat)
     }
+
+    /* -------------------------- checkpoints -------------------------- */
+
+    /// The checkpoints an attempt has, oldest first. Read from the refs
+    /// themselves, so a restart forgets nothing and the numbering never
+    /// restarts into a collision.
+    pub fn checkpoints(&self, hr: &HostRef, git_cwd: &str, attempt_id: &str) -> Result<Vec<Checkpoint>> {
+        let raw = git(
+            hr,
+            git_cwd,
+            &[
+                "for-each-ref",
+                "--format=%(refname)\t%(objectname)\t%(creatordate:unix)",
+                &checkpoint_prefix(attempt_id),
+            ],
+        )?;
+        let mut out: Vec<Checkpoint> = Vec::new();
+        for line in raw.lines() {
+            let mut cols = line.split('\t');
+            let (Some(refname), Some(sha), Some(at)) = (cols.next(), cols.next(), cols.next())
+            else {
+                continue;
+            };
+            let Some(n) = refname.rsplit('/').next().and_then(|s| s.parse::<u64>().ok()) else {
+                continue;
+            };
+            out.push(Checkpoint {
+                n,
+                sha: sha.to_string(),
+                at: at.trim().parse().unwrap_or(0),
+            });
+        }
+        // for-each-ref sorts refnames lexically, where 10 comes before 2.
+        out.sort_by_key(|c| c.n);
+        Ok(out)
+    }
+
+    /// Snapshot the worktree — tracked and untracked alike — touching nothing
+    /// the agent sees. A temporary index (`GIT_INDEX_FILE`) takes the `add
+    /// -A`, `write-tree` turns it into a tree, `commit-tree` parents it on
+    /// the previous checkpoint (or the attempt's base), and a ref under
+    /// `refs/agentdesk/checkpoints/<attempt>/<n>` keeps it alive. Worktree,
+    /// index, branch, reflog: all exactly as the agent left them — the same
+    /// discipline that keeps `stat` away from `add -N`.
+    ///
+    /// The temp index persists beside the worktree's own git dir, so the
+    /// second snapshot onward pays a stat walk, not a re-hash of every file.
+    /// A turn that changed nothing produces no ref and returns `None`.
+    pub fn checkpoint(
+        &self,
+        hr: &HostRef,
+        worktree: &str,
+        attempt_id: &str,
+        base_sha: &str,
+    ) -> Result<Option<Checkpoint>> {
+        let gitdir = git(hr, worktree, &["rev-parse", "--absolute-git-dir"])?;
+        let index = format!("{}/agentdesk-checkpoint.index", gitdir.trim_end_matches('/'));
+        let snap_env = [("GIT_INDEX_FILE".to_string(), index)];
+        hr.run_ok_with_env("git", &["add", "-A"], Some(worktree), &snap_env)?;
+        let tree = hr.run_ok_with_env("git", &["write-tree"], Some(worktree), &snap_env)?;
+
+        let existing = self.checkpoints(hr, worktree, attempt_id)?;
+        let prev = existing.last();
+        let parent = prev.map(|c| c.sha.as_str()).unwrap_or(base_sha);
+        let prev_tree = git(hr, worktree, &["rev-parse", &format!("{parent}^{{tree}}")])?;
+        if tree == prev_tree {
+            return Ok(None);
+        }
+
+        let n = prev.map(|c| c.n + 1).unwrap_or(1);
+        // Its own identity, so a repo (or host) with no user.name configured
+        // can still snapshot — and no checkpoint ever wears the user's name.
+        let id_env = [
+            ("GIT_AUTHOR_NAME".to_string(), "AgentDesk".to_string()),
+            ("GIT_AUTHOR_EMAIL".to_string(), "checkpoint@agentdesk.local".to_string()),
+            ("GIT_COMMITTER_NAME".to_string(), "AgentDesk".to_string()),
+            ("GIT_COMMITTER_EMAIL".to_string(), "checkpoint@agentdesk.local".to_string()),
+        ];
+        let sha = hr.run_ok_with_env(
+            "git",
+            &["commit-tree", &tree, "-p", parent, "-m", &format!("agentdesk checkpoint {n}")],
+            Some(worktree),
+            &id_env,
+        )?;
+        git(
+            hr,
+            worktree,
+            &["update-ref", &format!("{}/{n}", checkpoint_prefix(attempt_id)), &sha],
+        )?;
+        let at = git(hr, worktree, &["show", "-s", "--format=%ct", &sha])?
+            .trim()
+            .parse()
+            .unwrap_or(0);
+        Ok(Some(Checkpoint { n, sha, at }))
+    }
+
+    /// Delete every checkpoint ref an attempt holds. Run at the attempt's
+    /// end: from then on the frozen diff is the one record, and the refs
+    /// would otherwise pin every snapshot's objects forever. `git_cwd` is
+    /// any directory of the repository — the refs live in the shared git
+    /// dir, so the main checkout works after the worktree is gone.
+    pub fn clear_checkpoints(&self, hr: &HostRef, git_cwd: &str, attempt_id: &str) -> Result<()> {
+        let raw = git(
+            hr,
+            git_cwd,
+            &["for-each-ref", "--format=%(refname)", &checkpoint_prefix(attempt_id)],
+        )?;
+        for r in raw.lines().map(str::trim).filter(|r| !r.is_empty()) {
+            git(hr, git_cwd, &["update-ref", "-d", r])?;
+        }
+        Ok(())
+    }
+
+    /// Drop checkpoint refs whose attempt is no longer open — the crash
+    /// leftovers. Run once per repository at startup; returns how many refs
+    /// went.
+    pub fn sweep_checkpoints(
+        &self,
+        hr: &HostRef,
+        repo: &str,
+        live_attempts: &std::collections::HashSet<String>,
+    ) -> Result<usize> {
+        let raw = git(
+            hr,
+            repo,
+            &["for-each-ref", "--format=%(refname)", "refs/agentdesk/checkpoints"],
+        )?;
+        let mut swept = 0;
+        for r in raw.lines().map(str::trim).filter(|r| !r.is_empty()) {
+            let attempt = r
+                .strip_prefix("refs/agentdesk/checkpoints/")
+                .and_then(|rest| rest.split('/').next());
+            if let Some(id) = attempt {
+                if !live_attempts.contains(id) {
+                    git(hr, repo, &["update-ref", "-d", r])?;
+                    swept += 1;
+                }
+            }
+        }
+        Ok(swept)
+    }
+}
+
+/// One numbered snapshot of an attempt's worktree, held by a private ref.
+#[derive(Debug, Clone, Serialize)]
+pub struct Checkpoint {
+    /// Ordinal within the attempt, starting at 1 — `base_sha` is the free
+    /// zeroth.
+    pub n: u64,
+    /// The snapshot commit. Diffable and restorable like any tree-ish.
+    pub sha: String,
+    /// Unix seconds, from the snapshot commit's own clock.
+    pub at: i64,
+}
+
+fn checkpoint_prefix(attempt_id: &str) -> String {
+    format!("refs/agentdesk/checkpoints/{attempt_id}")
 }
 
 /// Full refnames into offerable branch names: `refs/heads/x` and

@@ -54,6 +54,8 @@ export function EnvPanel({ boot, onClose }: { boot: BootStatus; onClose: () => v
 
         <Notifications />
 
+        <Checkpoints />
+
         <Profiles onDirty={setDirty} />
 
         {/* The doctor half: what the agents actually inherit. */}
@@ -165,6 +167,47 @@ function Notifications() {
           {tested ? t('notify.sent') : t('notify.test')}
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The one checkpoint setting: whether the end of a turn snapshots the
+ * worktree. Default on — the retreat that makes letting an agent run
+ * affordable — with the off switch here for repos where the walk costs.
+ */
+function Checkpoints() {
+  const { t } = useI18n();
+  const [on, setOn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void api
+      .checkpointsEnabled()
+      .then(setOn)
+      .catch(() => {
+        /* the panel's other sections still work; the row simply stays out */
+      });
+  }, []);
+
+  if (on === null) return null;
+
+  return (
+    <div data-testid="checkpoints">
+      <h3 className="modal-section">{t('env.checkpoints')}</h3>
+      <p className="muted small">{t('ckpt.hint')}</p>
+      <label className="notify-row">
+        <input
+          type="checkbox"
+          checked={on}
+          data-testid="ckpt-toggle"
+          onChange={() => {
+            const next = !on;
+            setOn(next);
+            void api.setCheckpointsEnabled(next).catch(() => setOn(on));
+          }}
+        />
+        {t('ckpt.onStop')}
+      </label>
     </div>
   );
 }

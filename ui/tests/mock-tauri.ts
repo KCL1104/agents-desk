@@ -102,6 +102,12 @@ declare global {
       profiles: Array<{ name: string; agent: string; args: string[] }>;
       /** Which notifications the desk raises, as the core defaults them. */
       notifyPrefs: { permission: boolean; input: boolean; done: boolean };
+      /** Whether the end of a turn snapshots the worktree — default on. */
+      checkpointsOn: boolean;
+      /** Each attempt's checkpoints, as the refs would hold them. */
+      checkpoints: Map<string, Array<{ n: number; sha: string; at: number }>>;
+      /** Makes the next manual checkpoint answer "nothing new". */
+      checkpointQuiet: boolean;
       maxConcurrent: number;
       /** How many attempts hold a terminal right now. */
       running(): number;
@@ -182,6 +188,9 @@ export function installMock(): void {
     queuedFollowups: new Map<string, string>(),
     profiles: [] as Array<{ name: string; agent: string; args: string[] }>,
     notifyPrefs: { permission: true, input: true, done: false },
+    checkpointsOn: true,
+    checkpoints: new Map<string, Array<{ n: number; sha: string; at: number }>>(),
+    checkpointQuiet: false,
     calls: [] as Array<{ cmd: string; args: unknown }>,
     listeners: new Map<string, number[]>(),
     cbSeq: 0,
@@ -752,6 +761,29 @@ export function installMock(): void {
     },
 
     test_notification: () => null,
+
+    checkpoints_enabled: () => mock.checkpointsOn,
+
+    set_checkpoints_enabled: (args) => {
+      mock.checkpointsOn = Boolean(args.on);
+      return null;
+    },
+
+    checkpoint_now: (args) => {
+      if (mock.checkpointQuiet) return null;
+      const id = String(args.attemptId);
+      const list = mock.checkpoints.get(id) ?? [];
+      const cp = {
+        n: (list[list.length - 1]?.n ?? 0) + 1,
+        sha: `cafe${list.length + 1}00`,
+        at: Math.floor(Date.now() / 1000),
+      };
+      list.push(cp);
+      mock.checkpoints.set(id, list);
+      return cp;
+    },
+
+    list_checkpoints: (args) => mock.checkpoints.get(String(args.attemptId)) ?? [],
 
     list_run_scripts: () => mock.runScripts,
 

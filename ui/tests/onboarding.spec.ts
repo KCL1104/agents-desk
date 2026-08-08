@@ -163,3 +163,18 @@ test.describe('notification preferences', () => {
     expect(fired).toBe(1);
   });
 });
+
+test.describe('checkpoints', () => {
+  test('the environment panel owns the switch, default on', async ({ page }) => {
+    await page.addInitScript(installMock);
+    await page.goto('/');
+    await page.getByRole('button', { name: '環境' }).click();
+
+    // On by default — the retreat is the point; opting out is the choice.
+    await expect(page.getByTestId('ckpt-toggle')).toBeChecked();
+
+    await page.getByTestId('ckpt-toggle').click();
+    const stored = await page.evaluate(() => window.__mock.checkpointsOn);
+    expect(stored).toBe(false);
+  });
+});

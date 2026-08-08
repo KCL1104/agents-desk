@@ -514,6 +514,45 @@ fn run_script(
         .map_err(|e| format!("{e:#}"))
 }
 
+/* -------------------------- checkpoints ---------------------------- */
+
+#[tauri::command]
+fn checkpoints_enabled(state: State<'_, AppState>) -> StdResult<bool, String> {
+    Ok(state.core()?.checkpoints_enabled())
+}
+
+#[tauri::command]
+fn set_checkpoints_enabled(state: State<'_, AppState>, on: bool) -> StdResult<(), String> {
+    state
+        .core()?
+        .set_checkpoints_enabled(on)
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// The manual snapshot button. `None` means the worktree matches the last
+/// checkpoint already — nothing new to keep.
+#[tauri::command]
+fn checkpoint_now(
+    state: State<'_, AppState>,
+    attempt_id: String,
+) -> StdResult<Option<crate::worktree::Checkpoint>, String> {
+    state
+        .core()?
+        .checkpoint_now(&attempt_id)
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn list_checkpoints(
+    state: State<'_, AppState>,
+    attempt_id: String,
+) -> StdResult<Vec<crate::worktree::Checkpoint>, String> {
+    state
+        .core()?
+        .list_checkpoints(&attempt_id)
+        .map_err(|e| format!("{e:#}"))
+}
+
 /* -------------------------- notifications -------------------------- */
 
 /// Which notifications the desk raises. Read by the environment panel.
@@ -649,6 +688,10 @@ fn main() {
             notify_prefs,
             set_notify_prefs,
             test_notification,
+            checkpoints_enabled,
+            set_checkpoints_enabled,
+            checkpoint_now,
+            list_checkpoints,
             cancel_queued,
             concurrency,
             set_concurrency,

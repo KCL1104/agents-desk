@@ -262,3 +262,25 @@ test.describe('the timeline rollup', () => {
     await expect(page.locator('.tl-row.tl-send .tl-tool')).toContainText('→ SendMessage');
   });
 });
+
+test.describe('manual checkpoint', () => {
+  test('the button snapshots and answers on itself', async ({ page }) => {
+    await boardWithAttempt(page);
+    await page.getByTestId('inspect-k1').click();
+    await expect(page.getByTestId('inspector')).toBeVisible();
+
+    await page.getByTestId('checkpoint-now').click();
+    // The answer wears the button, not a toast: "kept #1" is the whole story.
+    await expect(page.getByTestId('checkpoint-now')).toHaveText('已留存 #1 ✓');
+    const kept = await page.evaluate(() => window.__mock.checkpoints.get('k1-a1'));
+    expect(kept?.map((c) => c.n)).toEqual([1]);
+
+    // A quiet worktree keeps nothing and says so, instead of minting an
+    // identical snapshot to look busy.
+    await page.evaluate(() => {
+      window.__mock.checkpointQuiet = true;
+    });
+    await page.getByTestId('checkpoint-now').click();
+    await expect(page.getByTestId('checkpoint-now')).toHaveText('距上一個檢查點沒有變更');
+  });
+});

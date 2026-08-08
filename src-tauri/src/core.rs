@@ -405,6 +405,11 @@ impl Default for NotifyPrefs {
 
 const NOTIFY_PREFS_KEY: &str = "notify_prefs";
 
+/// Whether a Stop hook snapshots the worktree. Default on: the cost is a
+/// stat walk per turn, and the payoff is the retreat that makes letting an
+/// agent run affordable. The environment panel can turn it off.
+const CHECKPOINTS_KEY: &str = "checkpoints_on";
+
 struct Router {
     sink: Arc<dyn UiSink>,
     /// The same cell the core holds, so a notification never has to upgrade
@@ -583,10 +588,13 @@ impl HookHandler for Router {
         self.broadcast();
 
         // The queued follow-up's moment: a turn just ended, and whatever
-        // waited for it goes in as the next one.
+        // waited for it goes in as the next one. The same moment is the
+        // checkpoint's — the worktree is quiet, so a snapshot has no tear
+        // race — and the snapshot leaves the hook path immediately.
         if turn_done {
             if let Some(core) = self.core.get().and_then(|w| w.upgrade()) {
                 core.flush_followup(&session_id);
+                core.snapshot_after_turn(&session_id);
             }
         }
     }
@@ -680,6 +688,13 @@ pub struct Core {
     /// use and kept: a WSL distro's login environment costs a probe, and the
     /// answer does not change under a running app.
     hosts: Mutex<HashMap<Host, Arc<HostEnv>>>,
+    /// Whether the end of a turn snapshots the worktree (see
+    /// `CHECKPOINTS_KEY`).
+    checkpoints_on: Mutex<bool>,
+    /// Attempts with a snapshot in flight. Two Stops racing — or a manual
+    /// click during one — would compute the same ordinal and fight over the
+    /// temp index; the second caller finds the flag and leaves.
+    checkpointing: Mutex<std::collections::HashSet<String>>,
 }
 
 /// One execution environment, resolved: its login environment, its claude,
@@ -803,6 +818,15 @@ impl Core {
                 .unwrap_or_default(),
         ));
 
+        // Same malformed-row contract as the notify prefs; absent means the
+        // default, which is on.
+        let checkpoints_on = store
+            .setting(CHECKPOINTS_KEY)
+            .ok()
+            .flatten()
+            .map(|raw| raw != "0")
+            .unwrap_or(true);
+
         let claude_version = probe_claude_version(&env).await;
         if let Some((a, b, c)) = claude_version {
             eprintln!("[core] claude {a}.{b}.{c}");
@@ -834,6 +858,8 @@ impl Core {
             shells: Mutex::new(HashMap::new()),
             followups: Mutex::new(HashMap::new()),
             hosts: Mutex::new(HashMap::new()),
+            checkpoints_on: Mutex::new(checkpoints_on),
+            checkpointing: Mutex::new(std::collections::HashSet::new()),
         });
 
         // Status reporting is a nicety: if the listener cannot bind, sessions
@@ -853,6 +879,13 @@ impl Core {
         // Every terminal died with the last run, so anything that was waiting
         // for a slot has one now.
         core.drain_queue();
+
+        // Crash leftovers: checkpoint refs whose attempt is no longer open.
+        // Off the startup path — it is git work across every known repo.
+        {
+            let core = Arc::clone(&core);
+            std::thread::spawn(move || core.sweep_checkpoint_orphans());
+        }
         Ok(core)
     }
 
@@ -1605,6 +1638,15 @@ impl Core {
         if let (Some(task), Some((wt_loc, he))) = (task, situated) {
             let repo_loc = host::locate(&task.repo_path)?;
             let hr = he.hr(&self.env);
+            // The frozen diff is the record from here on; the snapshots go
+            // with the attempt. Best effort, and against the main checkout —
+            // the refs live in the shared git dir, not the worktree.
+            if let Err(e) = self
+                .worktrees
+                .clear_checkpoints(&hr, &repo_loc.path, &attempt.id)
+            {
+                eprintln!("[core] checkpoint refs for {} not cleared: {e:#}", attempt.id);
+            }
             // The archive script gets its chance while the directory still
             // exists — the place to stop containers or give back whatever
             // setup borrowed.
@@ -2669,6 +2711,135 @@ impl Core {
                 "force": true,
             }),
         );
+    }
+
+    /* ------------------------- checkpoints ------------------------- */
+
+    pub fn checkpoints_enabled(&self) -> bool {
+        *self.checkpoints_on.lock().unwrap()
+    }
+
+    pub fn set_checkpoints_enabled(&self, on: bool) -> Result<()> {
+        *self.checkpoints_on.lock().unwrap() = on;
+        self.store
+            .set_setting(CHECKPOINTS_KEY, if on { "1" } else { "0" })
+    }
+
+    /// An attempt's checkpoints, oldest first — read straight off the refs.
+    pub fn list_checkpoints(&self, attempt_id: &str) -> Result<Vec<crate::worktree::Checkpoint>> {
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        if attempt.outcome.is_some() {
+            // Finished: the refs are gone by design, the frozen diff remains.
+            return Ok(Vec::new());
+        }
+        let (loc, he) = self.located(&attempt.worktree_path)?;
+        self.worktrees
+            .checkpoints(&he.hr(&self.env), &loc.path, attempt_id)
+    }
+
+    /// The manual checkpoint — any agent, any moment a human chooses.
+    /// `None` means nothing changed since the last one (or one was already
+    /// in flight, which amounts to the same snapshot).
+    pub fn checkpoint_now(&self, attempt_id: &str) -> Result<Option<crate::worktree::Checkpoint>> {
+        self.snapshot_attempt(attempt_id)
+    }
+
+    /// The Stop-hook path: leave immediately, snapshot on a thread of its
+    /// own. `on_hook` is a path an agent is waiting on, and this is real
+    /// git work.
+    pub(crate) fn snapshot_after_turn(self: &Arc<Self>, session_id: &str) {
+        if !self.checkpoints_enabled() {
+            return;
+        }
+        let attempt_id = self
+            .sessions
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .and_then(|s| s.attempt_id.clone());
+        let Some(attempt_id) = attempt_id else { return };
+        let core = Arc::clone(self);
+        std::thread::spawn(move || match core.snapshot_attempt(&attempt_id) {
+            Ok(_) => {}
+            Err(e) => eprintln!("[core] checkpoint for {attempt_id} failed: {e:#}"),
+        });
+    }
+
+    fn snapshot_attempt(&self, attempt_id: &str) -> Result<Option<crate::worktree::Checkpoint>> {
+        {
+            let mut busy = self.checkpointing.lock().unwrap();
+            if !busy.insert(attempt_id.to_string()) {
+                return Ok(None);
+            }
+        }
+        let result = (|| {
+            let attempt = self
+                .store
+                .get_attempt(attempt_id)?
+                .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+            if attempt.outcome.is_some() {
+                return Ok(None);
+            }
+            let (loc, he) = self.located(&attempt.worktree_path)?;
+            let cp = self.worktrees.checkpoint(
+                &he.hr(&self.env),
+                &loc.path,
+                attempt_id,
+                &attempt.base_sha,
+            )?;
+            if let Some(cp) = &cp {
+                self.sink.emit(
+                    "checkpoints:changed",
+                    serde_json::json!({ "attemptId": attempt_id, "n": cp.n }),
+                );
+            }
+            Ok(cp)
+        })();
+        self.checkpointing.lock().unwrap().remove(attempt_id);
+        result
+    }
+
+    /// Startup sweep: checkpoint refs belong to open attempts; anything else
+    /// is a leftover from a run that ended without its cleanup. Local repos
+    /// only — reaching a WSL or SSH repo would cost a host probe at startup,
+    /// and their strays go when any of their attempts next closes.
+    fn sweep_checkpoint_orphans(&self) {
+        let live: std::collections::HashSet<String> = match self.store.open_attempts() {
+            Ok(list) => list.into_iter().map(|a| a.id).collect(),
+            Err(e) => {
+                eprintln!("[core] checkpoint sweep skipped: {e:#}");
+                return;
+            }
+        };
+        let repos: std::collections::HashSet<String> = match self.store.list_tasks() {
+            Ok(tasks) => tasks.into_iter().map(|t| t.repo_path).collect(),
+            Err(e) => {
+                eprintln!("[core] checkpoint sweep skipped: {e:#}");
+                return;
+            }
+        };
+        for repo in repos {
+            let Ok(loc) = host::locate(&repo) else { continue };
+            if loc.host != Host::Local {
+                continue;
+            }
+            let hr = HostRef {
+                host: &Host::Local,
+                local: &self.env,
+                env: &self.env,
+            };
+            if !hr.is_dir(&loc.path) {
+                continue;
+            }
+            match self.worktrees.sweep_checkpoints(&hr, &loc.path, &live) {
+                Ok(0) => {}
+                Ok(n) => eprintln!("[core] swept {n} orphan checkpoint refs in {repo}"),
+                Err(e) => eprintln!("[core] checkpoint sweep in {repo} failed: {e:#}"),
+            }
+        }
     }
 
     /* --------------------------- helpers --------------------------- */

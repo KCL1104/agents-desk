@@ -142,6 +142,16 @@ export function AttemptInspector({
   const [stat, setStat] = useState<AttemptStat | null>(null);
   const [picked, setPicked] = useState<Picked | null>(null);
   const [runScripts, setRunScripts] = useState<string[]>([]);
+  /** The manual checkpoint's answer, worn briefly by its own button —
+      "kept #3" or "nothing new" is the whole story, and a toast for it
+      would outlive the interest. */
+  const [ckptSay, setCkptSay] = useState<string | null>(null);
+  const [ckptBusy, setCkptBusy] = useState(false);
+  useEffect(() => {
+    if (ckptSay === null) return;
+    const timer = setTimeout(() => setCkptSay(null), 4000);
+    return () => clearTimeout(timer);
+  }, [ckptSay]);
 
   // The repo's run scripts, for the ▶ buttons. Read once per attempt: the
   // config is a file in the repository, and it does not move underneath an
@@ -312,6 +322,28 @@ export function AttemptInspector({
               ▶ {name}
             </button>
           ))}
+          {/* The manual snapshot — every agent's checkpoint, where Stop
+              only covers claude. The button answers on itself. */}
+          <button
+            className="chip mono"
+            data-testid="checkpoint-now"
+            title={t('inspector.ckptHint')}
+            disabled={ckptBusy}
+            onClick={() => {
+              setCkptBusy(true);
+              void api
+                .checkpointNow(attempt.id)
+                .then((cp) =>
+                  setCkptSay(
+                    cp ? t('inspector.ckptMade', { n: cp.n }) : t('inspector.ckptNone'),
+                  ),
+                )
+                .catch((e) => setCkptSay(String(e)))
+                .finally(() => setCkptBusy(false));
+            }}
+          >
+            {ckptSay ?? `⚑ ${t('inspector.ckpt')}`}
+          </button>
         </div>
       )}
 

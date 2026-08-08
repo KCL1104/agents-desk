@@ -354,6 +354,16 @@ export const en = {
   'notify.test': 'Send a test notification',
   'notify.sent': 'Sent ✓',
 
+  /* --------------------------- checkpoints ----------------------------- */
+  'env.checkpoints': 'Checkpoints',
+  'ckpt.hint':
+    'A snapshot of the worktree at the end of every turn — the retreat that makes letting an agent run affordable. Kept in private refs, deleted when the attempt ends; the agent’s own git state is never touched.',
+  'ckpt.onStop': 'Snapshot when a turn ends (Claude Code sessions)',
+  'inspector.ckpt': 'Checkpoint',
+  'inspector.ckptHint': 'Snapshot this worktree now — any agent, any moment',
+  'inspector.ckptMade': 'Kept #{n} ✓',
+  'inspector.ckptNone': 'Nothing new since the last one',
+
   /* ----------------------------- profiles ------------------------------ */
   'profile.namePlaceholder': 'opus, quiet claude, …',
   'profile.add': 'Add profile',
@@ -717,6 +727,16 @@ export const zhTW: Record<MessageKey, string> = {
   'notify.done': '完成一輪',
   'notify.test': '送一則測試通知',
   'notify.sent': '已送出 ✓',
+
+  /* --------------------------- checkpoints ----------------------------- */
+  'env.checkpoints': '檢查點',
+  'ckpt.hint':
+    '每輪結束時快照一次 worktree —— 有便宜的退路，才敢放手讓 agent 跑。存在私有 ref 裡，attempt 結束即刪；agent 自己的 git 狀態一概不碰。',
+  'ckpt.onStop': '回合結束時自動快照（Claude Code session）',
+  'inspector.ckpt': '檢查點',
+  'inspector.ckptHint': '現在就快照這個 worktree —— 任何 agent、任何時刻',
+  'inspector.ckptMade': '已留存 #{n} ✓',
+  'inspector.ckptNone': '距上一個檢查點沒有變更',
 
   /* ----------------------------- profiles ------------------------------ */
   'profile.namePlaceholder': 'opus、安靜的 claude、…',

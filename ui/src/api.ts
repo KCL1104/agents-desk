@@ -37,6 +37,17 @@ export interface AttemptStat {
   dirty: boolean;
 }
 
+/** One numbered snapshot of an attempt's worktree. Mirrors worktree.rs
+    Checkpoint. */
+export interface Checkpoint {
+  /** Ordinal within the attempt, starting at 1 — base_sha is the free
+      zeroth. */
+  n: number;
+  sha: string;
+  /** Unix seconds. */
+  at: number;
+}
+
 /** What opening an attempt produced. Mirrors core.rs OpenedAttempt. */
 export interface OpenedAttempt {
   attempt_id: string;
@@ -129,6 +140,15 @@ export const api = {
 
   /** The repository's branches, recency first, for the base picker. */
   listBranches: (repoPath: string) => invoke<string[]>('list_branches', { repoPath }),
+
+  /** Whether the end of a turn snapshots the worktree. */
+  checkpointsEnabled: () => invoke<boolean>('checkpoints_enabled'),
+  setCheckpointsEnabled: (on: boolean) => invoke<void>('set_checkpoints_enabled', { on }),
+  /** The manual snapshot. Null when nothing changed since the last one. */
+  checkpointNow: (attemptId: string) =>
+    invoke<Checkpoint | null>('checkpoint_now', { attemptId }),
+  listCheckpoints: (attemptId: string) =>
+    invoke<Checkpoint[]>('list_checkpoints', { attemptId }),
 
   /** Which notifications the desk raises, chosen in the environment panel. */
   notifyPrefs: () => invoke<NotifyPrefs>('notify_prefs'),

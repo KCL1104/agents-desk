@@ -327,3 +327,132 @@ fn a_base_branch_that_does_not_exist_is_refused_up_front() {
     // And nothing was created on the way to finding out.
     assert!(!Path::new(&f.trees.local_root()).exists());
 }
+
+/* --------------------------- checkpoints ---------------------------- */
+
+/// The philosophy acceptance from the decision document: a checkpoint
+/// produces a ref, and the agent's own `git status` — worktree, index,
+/// branch — reads exactly the same before and after.
+#[test]
+fn a_checkpoint_leaves_a_ref_and_the_agents_git_status_untouched() {
+    let env = env();
+    let f = Fixture::new("ckpt-status");
+    let a = f
+        .trees
+        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
+        .unwrap();
+
+    // The agent's typical mess: a tracked edit, a new file, a staged file.
+    std::fs::write(Path::new(&a.path).join("app.txt"), "edited\n").unwrap();
+    std::fs::write(Path::new(&a.path).join("fresh.txt"), "new\n").unwrap();
+    std::fs::write(Path::new(&a.path).join("staged.txt"), "staged\n").unwrap();
+    git(Path::new(&a.path), &["add", "staged.txt"]);
+
+    let before = git(Path::new(&a.path), &["status", "--porcelain=v2", "--branch"]);
+    let cp = f
+        .trees
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .unwrap()
+        .expect("real changes must produce a checkpoint");
+    let after = git(Path::new(&a.path), &["status", "--porcelain=v2", "--branch"]);
+
+    assert_eq!(before, after, "the snapshot moved the agent's git state");
+    assert_eq!(cp.n, 1);
+
+    // The snapshot holds everything, untracked and staged alike.
+    let held = git(f.repo.as_path(), &["ls-tree", "-r", "--name-only", &cp.sha]);
+    for name in ["app.txt", "fresh.txt", "staged.txt"] {
+        assert!(held.lines().any(|l| l == name), "{name} missing from the snapshot");
+    }
+    let refs = git(f.repo.as_path(), &["for-each-ref", "refs/agentdesk/checkpoints"]);
+    assert!(refs.contains("refs/agentdesk/checkpoints/attempt-1/1"));
+}
+
+/// A quiet turn adds nothing: same tree, no new ref — and the numbering
+/// continues where it left off when something does change.
+#[test]
+fn an_unchanged_worktree_produces_no_new_checkpoint() {
+    let env = env();
+    let f = Fixture::new("ckpt-quiet");
+    let a = f
+        .trees
+        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
+        .unwrap();
+
+    // Nothing has changed since base: even the first ask is a no-op.
+    assert!(f
+        .trees
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .unwrap()
+        .is_none());
+
+    std::fs::write(Path::new(&a.path).join("app.txt"), "round one\n").unwrap();
+    let one = f
+        .trees
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .unwrap()
+        .unwrap();
+    assert_eq!(one.n, 1);
+    assert!(f
+        .trees
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .unwrap()
+        .is_none());
+
+    std::fs::write(Path::new(&a.path).join("app.txt"), "round two\n").unwrap();
+    let two = f
+        .trees
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .unwrap()
+        .unwrap();
+    assert_eq!(two.n, 2, "numbering must continue, not restart");
+
+    let list = f.trees.checkpoints(&hr(&env), &a.path, "attempt-1").unwrap();
+    assert_eq!(list.iter().map(|c| c.n).collect::<Vec<_>>(), vec![1, 2]);
+    // Each snapshot parents on the one before, so "what did this turn do"
+    // is one diff away.
+    let parent = git(f.repo.as_path(), &["rev-parse", &format!("{}^", two.sha)]);
+    assert_eq!(parent, one.sha);
+}
+
+/// The end of an attempt takes its refs with it; the sweep catches what a
+/// crash left behind — and only that.
+#[test]
+fn refs_are_cleared_at_the_end_and_orphans_are_swept() {
+    let env = env();
+    let f = Fixture::new("ckpt-clear");
+    let a = f
+        .trees
+        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
+        .unwrap();
+
+    std::fs::write(Path::new(&a.path).join("app.txt"), "live\n").unwrap();
+    f.trees
+        .checkpoint(&hr(&env), &a.path, "attempt-live", &a.base_sha)
+        .unwrap()
+        .unwrap();
+    std::fs::write(Path::new(&a.path).join("app.txt"), "dead\n").unwrap();
+    f.trees
+        .checkpoint(&hr(&env), &a.path, "attempt-dead", &a.base_sha)
+        .unwrap()
+        .unwrap();
+
+    // The finished attempt's refs go, from the main checkout — the worktree
+    // may already be gone by then.
+    f.trees
+        .clear_checkpoints(&hr(&env), &f.repo_s(), "attempt-dead")
+        .unwrap();
+    let refs = git(f.repo.as_path(), &["for-each-ref", "refs/agentdesk/checkpoints"]);
+    assert!(!refs.contains("attempt-dead"));
+    assert!(refs.contains("attempt-live"));
+
+    // The sweep with only `attempt-live` open leaves it alone and reports
+    // nothing to do; with nothing open it takes the leftovers.
+    let live: std::collections::HashSet<String> =
+        std::iter::once("attempt-live".to_string()).collect();
+    assert_eq!(f.trees.sweep_checkpoints(&hr(&env), &f.repo_s(), &live).unwrap(), 0);
+    let none: std::collections::HashSet<String> = Default::default();
+    assert_eq!(f.trees.sweep_checkpoints(&hr(&env), &f.repo_s(), &none).unwrap(), 1);
+    let refs = git(f.repo.as_path(), &["for-each-ref", "refs/agentdesk/checkpoints"]);
+    assert_eq!(refs.trim(), "");
+}
