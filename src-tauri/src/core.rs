@@ -223,6 +223,45 @@ pub struct Launcher {
     pub profile: bool,
 }
 
+/// The Claude Code release that added `--name` and cross-session messaging.
+///
+/// Handing `--name` to an older CLI stops it from starting at all, so the
+/// installed version is measured once per launch of the app and the flag is
+/// only used where it is known to be understood.
+const NAMED_SESSIONS_SINCE: (u64, u64, u64) = (2, 1, 224);
+
+/// Ask the installed `claude` its version, bounded.
+///
+/// Best effort by design: a CLI that cannot answer in five seconds, or is not
+/// installed at all, reads as "version unknown" — and unknown means every
+/// version-gated flag stays off, the direction that never breaks a session.
+async fn probe_claude_version(env: &ShellEnv) -> Option<(u64, u64, u64)> {
+    let exe = env.which("claude")?;
+    let mut cmd = tokio::process::Command::new(exe);
+    cmd.arg("--version")
+        .envs(&env.vars)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    let out = tokio::time::timeout(std::time::Duration::from_secs(5), cmd.output())
+        .await
+        .ok()?
+        .ok()?;
+    parse_claude_version(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// `2.1.226 (Claude Code)` → `(2, 1, 226)`. Measured against the real CLI's
+/// output; anything that does not lead with three dot-separated numbers is
+/// "unknown", never a guess.
+fn parse_claude_version(s: &str) -> Option<(u64, u64, u64)> {
+    let first = s.split_whitespace().next()?;
+    let mut nums = first.split('.').map(|p| p.parse::<u64>());
+    match (nums.next(), nums.next(), nums.next()) {
+        (Some(Ok(a)), Some(Ok(b)), Some(Ok(c))) => Some((a, b, c)),
+        _ => None,
+    }
+}
+
 /// A setup script waiting to wrap a launch. See `Core::launch`.
 struct SetupWrap {
     script: String,
@@ -538,6 +577,9 @@ pub struct Core {
     hooks: OnceLock<HookServer>,
     data_dir: std::path::PathBuf,
     worktrees: Worktrees,
+    /// The installed Claude Code's version, measured once at startup.
+    /// `None` means unknown, and unknown keeps every version-gated flag off.
+    claude_version: Option<(u64, u64, u64)>,
 }
 
 impl Core {
@@ -621,6 +663,11 @@ impl Core {
 
         let locale = Arc::new(crate::i18n::LocaleCell::default());
 
+        let claude_version = probe_claude_version(&env).await;
+        if let Some((a, b, c)) = claude_version {
+            eprintln!("[core] claude {a}.{b}.{c}");
+        }
+
         let router = Arc::new(Router {
             sink: Arc::clone(&sink),
             locale: Arc::clone(&locale),
@@ -641,6 +688,7 @@ impl Core {
             hooks: OnceLock::new(),
             data_dir: data_dir.clone(),
             worktrees: Worktrees::new(worktree_root),
+            claude_version,
         });
 
         // Status reporting is a nicety: if the listener cannot bind, sessions
@@ -1803,6 +1851,20 @@ impl Core {
             server.plugin_dir.to_string_lossy().to_string()
         });
 
+        // Cross-session messaging addresses a session by name, and left to
+        // itself the CLI derives one from the worktree's directory — a slug
+        // with a counter. AgentDesk knows the card, so a claude session is
+        // named what its own list calls it: 「修好登入 #1」, reachable by the
+        // name a person would actually say. Version-gated, because an older
+        // claude refuses to start on a flag it does not know.
+        let mut opts = opts;
+        if agent == "claude" && self.claude_version >= Some(NAMED_SESSIONS_SINCE) {
+            if let Some(title) = self.sessions.lock().unwrap().get(id).map(|s| s.title.clone()) {
+                opts.push("--name".to_string());
+                opts.push(title);
+            }
+        }
+
         let args = build_args(agent, opts, plugin_dir.as_deref(), positional);
 
         let (program, args) = match setup {
@@ -2024,6 +2086,17 @@ impl Core {
         self.hooks.get().map(|h| h.url())
     }
 
+    /// The installed Claude Code's version, as measured at startup.
+    pub fn claude_version(&self) -> Option<String> {
+        self.claude_version.map(|(a, b, c)| format!("{a}.{b}.{c}"))
+    }
+
+    /// Whether the installed claude supports session names and, with them,
+    /// cross-session messaging between this desk's sessions.
+    pub fn named_sessions(&self) -> bool {
+        self.claude_version >= Some(NAMED_SESSIONS_SINCE)
+    }
+
     /* --------------------------- helpers --------------------------- */
 
     fn persist(&self, meta: &SessionMeta) {
@@ -2153,6 +2226,23 @@ mod tests {
     fn another_agent_is_not_handed_claude_codes_flags() {
         let args = build_args("codex", vec!["--model".into(), "o3".into()], Some("/p"), None);
         assert_eq!(args, vec!["--model", "o3"]);
+    }
+
+    /// The gate that keeps `--name` off an older CLI: unknown or old reads
+    /// as "do not", because the flag stops that claude from starting at all.
+    #[test]
+    fn the_name_flag_is_gated_on_a_measured_version() {
+        assert_eq!(parse_claude_version("2.1.226 (Claude Code)"), Some((2, 1, 226)));
+        assert_eq!(parse_claude_version("10.0.0"), Some((10, 0, 0)));
+        assert_eq!(parse_claude_version(""), None);
+        assert_eq!(parse_claude_version("claude: command not found"), None);
+        assert_eq!(parse_claude_version("2.1"), None);
+
+        let since = Some(NAMED_SESSIONS_SINCE);
+        assert!(Some((2, 1, 224)) >= since);
+        assert!(Some((2, 2, 0)) >= since);
+        assert!(Some((2, 1, 223)) < since, "one release short must stay off");
+        assert!(None::<(u64, u64, u64)> < since, "unknown must stay off");
     }
 
     #[test]

@@ -296,6 +296,8 @@ export function installMock(): void {
       envVarCount: 42,
       path: '/usr/local/bin:/usr/bin:/bin',
       claude: '/usr/local/bin/claude',
+      claudeVersion: '2.1.226',
+      messaging: true,
       db: '/tmp/agentdesk.db',
       hookUrl: 'http://127.0.0.1:1/h/tok',
     }),

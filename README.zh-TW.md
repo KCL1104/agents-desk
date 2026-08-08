@@ -57,6 +57,17 @@ App 提供的是終端機分頁給不了的：多 session 管理、跨重啟的�
   啟動對話框都會列在原生 agent 旁邊，參數排在命令列最前面。記錄與 resume
   用的都是底下真正的 CLI，所以 prompt 遞送、狀態 hooks、權限模式全部照實際
   跑的東西判斷。排隊中的卡片帶的是設定檔的**名字**，輪到它時才解析
+- **跨 session 互傳訊息，用卡片名字**（M9）：Claude Code v2.1.224+ 讓同一台
+  機器上的 session 可以互傳訊息（`ListAgents` / `SendMessage`），而 AgentDesk
+  的每個 session 都是真的 `claude`，所以卡片之間本來就通。桌面補上的是
+  「名字」：CLI 自己會用 worktree 目錄名幫 session 取名 —— 一串 slug 加編號
+  —— AgentDesk 改用 `--name` 把 session 命名成它自己的標題，於是一張卡的
+  agent 可以用「修好登入 #1」這種人會說出口的名字去找另一張卡的 agent。
+  送出的訊息會以 `SendMessage → 給誰: 說什麼` 落在卡片的活動時間軸上。
+  啟動時探測一次 `claude --version` 做版本閘門，因為舊版 CLI 遇到不認識的
+  flag 會直接拒絕啟動；環境面板會顯示這功能可不可用。另外注意 CLI 自己的
+  收訊規則：yolo（跳過權限）session 傳給一般 session 的訊息，會在接收端的
+  終端機裡等你核准 —— 那是 Claude Code 自己的安全模型在正常運作
 - **中英雙語**：跟隨系統語言，也可以在環境面板手動切換。系統原生通知會跟著一起換
 
 尚未做：系統匣。

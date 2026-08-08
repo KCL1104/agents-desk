@@ -139,6 +139,11 @@ export interface BootStatus {
   envVarCount?: number;
   path?: string | null;
   claude?: string | null;
+  /** The installed Claude Code's version, measured at startup. */
+  claudeVersion?: string | null;
+  /** Whether this desk's claude sessions can name themselves and, with
+      that, message each other across cards. */
+  messaging?: boolean;
   db?: string;
   hookUrl?: string | null;
 }

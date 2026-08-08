@@ -248,6 +248,21 @@ fn activity_from_payload(v: &serde_json::Value) -> Option<Activity> {
             .map(|s| s.chars().take(160).collect())
     };
 
+    // A message to another session names two things a human would ask for —
+    // whom, and what — where everything below is a single argument.
+    if tool == "SendMessage" {
+        let to = pick("to").unwrap_or_default();
+        let what = pick("summary")
+            .or_else(|| pick("message"))
+            .unwrap_or_default();
+        let detail: String = if to.is_empty() {
+            what
+        } else {
+            format!("→ {to}: {what}").chars().take(160).collect()
+        };
+        return Some(Activity { tool, detail });
+    }
+
     // The argument a human would name the action by, per tool.
     let detail = pick("command")
         .or_else(|| pick("file_path"))
@@ -445,6 +460,30 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(grep.detail, "TODO");
+    }
+
+    /// A cross-session message is the one tool call whose interesting
+    /// argument is two arguments: whom, and what. The timeline showing
+    /// 「→ 修好登入 #1: schema 改了」 is how coordination between cards
+    /// stays legible without opening either terminal.
+    #[test]
+    fn a_message_to_another_session_names_the_receiver_and_the_gist() {
+        let a = activity_from_payload(&json!({
+            "tool_name": "SendMessage",
+            "tool_input": { "to": "修好登入 #1", "message": "schema 改了，tenant_id 上了 main",
+                            "summary": "schema 改了" }
+        }))
+        .unwrap();
+        assert_eq!(a.tool, "SendMessage");
+        assert_eq!(a.detail, "→ 修好登入 #1: schema 改了");
+
+        // Without a summary the message itself is the gist.
+        let b = activity_from_payload(&json!({
+            "tool_name": "SendMessage",
+            "tool_input": { "to": "payments", "message": "migration finished" }
+        }))
+        .unwrap();
+        assert_eq!(b.detail, "→ payments: migration finished");
     }
 
     #[test]

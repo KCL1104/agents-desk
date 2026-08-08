@@ -74,6 +74,20 @@ terminal's** (see below).
   resumed is the CLI underneath, so prompt delivery, status hooks and
   permission modes all behave by what actually ran. A queued card carries
   the profile's *name* and resolves it when its slot frees
+- **Cross-session messaging, by card name** (M9): Claude Code v2.1.224+ lets
+  your sessions message each other on one machine (`ListAgents` /
+  `SendMessage`), and every AgentDesk session is a real `claude`, so this
+  works between cards out of the box. What the desk adds is the name: left
+  alone the CLI names a session after its worktree directory — a slug with a
+  counter — so AgentDesk passes `--name` with the session's own title, and
+  one card's agent messages another's as 「修好登入 #1」, the name a person
+  would actually say. Sent messages land on the card's Activity timeline as
+  `SendMessage → who: what`. Version-gated by probing `claude --version`
+  once at startup, because an older CLI refuses to start on an unknown flag;
+  the environment panel shows whether messaging is available. Note Claude
+  Code's own inbound rules: messages from a yolo (bypass-permissions)
+  session to a normal one are held for your approval in the receiving
+  terminal — that is the CLI's safety model working as designed
 - **English and 繁體中文**, following your system language and switchable from
   the environment panel. Native notifications follow the same setting
 

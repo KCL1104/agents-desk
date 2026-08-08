@@ -80,13 +80,32 @@ struct Harness {
 /// first launch's record intact beside the second's. The stdin capture is
 /// named `stdin.<session>.<pid>` so `launches` never mistakes it for a launch
 /// record.
+///
+/// `--version` answers immediately, the way the real CLI does, because the
+/// core probes it once at startup — a stub that hung there would slow every
+/// test's boot by the probe's timeout.
 const STUB: &str = r#"#!/bin/bash
+if [ "$1" = "--version" ]; then echo "2.1.226 (Claude Code)"; exit 0; fi
+printf '%s\0' "$PWD" "$@" > "$AGENTDESK_STUB_LOG/${AGENTDESK_SESSION_ID:-unknown}.$$"
+exec cat > "$AGENTDESK_STUB_LOG/stdin.${AGENTDESK_SESSION_ID:-unknown}.$$"
+"#;
+
+/// A stand-in for a Claude Code release from before session names existed.
+/// What matters is what it is NOT handed: `--name` would stop it starting.
+const OLD_STUB: &str = r#"#!/bin/bash
+if [ "$1" = "--version" ]; then echo "2.0.14 (Claude Code)"; exit 0; fi
 printf '%s\0' "$PWD" "$@" > "$AGENTDESK_STUB_LOG/${AGENTDESK_SESSION_ID:-unknown}.$$"
 exec cat > "$AGENTDESK_STUB_LOG/stdin.${AGENTDESK_SESSION_ID:-unknown}.$$"
 "#;
 
 impl Harness {
     fn new(name: &str) -> Self {
+        Self::with_claude_stub(name, STUB)
+    }
+
+    /// The same harness with a different `claude` on the PATH — how the
+    /// version gate is exercised against a CLI from another era.
+    fn with_claude_stub(name: &str, claude_stub: &str) -> Self {
         let root = std::env::temp_dir().join(format!("agentdesk-att-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
 
@@ -105,9 +124,9 @@ impl Harness {
         let logs = root.join("logs");
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::create_dir_all(&logs).unwrap();
-        for agent in ["claude", "codex"] {
+        for (agent, stub) in [("claude", claude_stub), ("codex", STUB)] {
             let p = bin.join(agent);
-            std::fs::write(&p, STUB).unwrap();
+            std::fs::write(&p, stub).unwrap();
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -871,6 +890,58 @@ fn an_empty_followup_is_not_sent() {
     let a = h.start(&task, "claude");
 
     assert!(h.core.send_followup(&a.session_id, "  \n").is_err());
+}
+
+/* ----------------------- cross-session messaging ----------------------- */
+
+/// Claude Code's cross-session messaging addresses a session by name, and
+/// left to itself the CLI derives one from the directory — a worktree slug
+/// with a counter. AgentDesk knows the card, so the session answers to what
+/// the board calls it, and one card's agent can message another's by the
+/// title a person would actually say.
+#[test]
+fn a_claude_session_is_named_after_its_card_for_messaging() {
+    let h = Harness::new("msgname");
+    let _guard = h.rt.enter();
+    let task = h.card("修好登入", "make it work");
+
+    let a = h.start(&task, "claude");
+    let args = h.args_of(&a.session_id);
+    let named = args
+        .windows(2)
+        .any(|w| w[0] == "--name" && w[1] == "修好登入 #1");
+    assert!(named, "the session did not get its card's name: {args:?}");
+    assert_eq!(args.last(), Some(&a.prompt), "the prompt must stay last");
+
+    // An ad-hoc session answers to its directory's name, same as its title.
+    let id = h
+        .core
+        .new_session(h.repo.to_string_lossy().into(), "claude".into(), vec![], 100, 30)
+        .unwrap();
+    let args = h.args_of(&id);
+    assert!(
+        args.windows(2).any(|w| w[0] == "--name" && w[1] == "repo"),
+        "{args:?}"
+    );
+}
+
+/// The gate that keeps this safe: a claude from before session names existed
+/// is never handed `--name` — the flag would stop it starting at all.
+#[test]
+fn an_older_claude_is_not_handed_the_name_flag() {
+    let h = Harness::with_claude_stub("msgold", OLD_STUB);
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+
+    let a = h.start(&task, "claude");
+    let args = h.args_of(&a.session_id);
+    assert!(
+        !args.iter().any(|x| x == "--name"),
+        "an unmeasured flag was handed to an older CLI: {args:?}"
+    );
+    // Everything else about the session is untouched by the gate.
+    assert_eq!(args.last(), Some(&a.prompt));
+    assert!(args.iter().any(|x| x == "--plugin-dir"));
 }
 
 /* ------------------------------ profiles ------------------------------- */

@@ -81,6 +81,10 @@ fn boot_status(state: State<'_, AppState>) -> serde_json::Value {
             "envVarCount": c.env.vars.len(),
             "path": c.env.path(),
             "claude": c.env.which("claude").map(|p| p.to_string_lossy().to_string()),
+            "claudeVersion": c.claude_version(),
+            // Whether this desk's claude sessions can name themselves and,
+            // with that, message each other across cards.
+            "messaging": c.named_sessions(),
             "db": store::default_path().to_string_lossy(),
             "hookUrl": c.hook_url(),
         }),

@@ -44,6 +44,17 @@ export function EnvPanel({ boot, onClose }: { boot: BootStatus; onClose: () => v
         />
         <Stat label={t('env.varCount')} value={String(boot.envVarCount ?? 0)} />
         <Stat label={t('env.claude')} value={boot.claude ?? t('env.claudeMissing')} />
+        {/* Whether cards' agents can message each other. The feature is the
+            CLI's own; what this desk adds is naming each session after its
+            card so the messages have somewhere sayable to go. */}
+        <Stat
+          label={t('env.messaging')}
+          value={
+            boot.messaging
+              ? `✓ · claude ${boot.claudeVersion ?? ''}`.trim()
+              : t('env.messagingOff', { version: boot.claudeVersion ?? '—' })
+          }
+        />
         <Stat label={t('env.db')} value={boot.db ?? '—'} />
 
         {!boot.envResolved && <p className="muted small">{t('env.degraded')}</p>}
