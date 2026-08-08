@@ -1150,6 +1150,7 @@ export default function App() {
         {inspected && (
           <AttemptInspector
             attempt={inspected}
+            session={sessions.find((s) => s.id === inspected.session_id) ?? null}
             baseBranch={
               tasks.find((t) => t.id === inspected.task_id)?.base_branch ?? 'base'
             }

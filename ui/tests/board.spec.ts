@@ -383,3 +383,44 @@ test.describe('attempt footprint on the card', () => {
     await expect(page.getByTestId('inspector-behind')).toHaveText('↓2');
   });
 });
+
+/**
+ * The base branch, offered instead of guessed: the repository's own
+ * branches, most recently committed first, under the field as you type.
+ */
+test.describe('the base branch picker', () => {
+  test('the repository corrects a default it does not have', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => {
+      window.__mock.repos['/Users/test/legacy-repo'] = ['develop', 'feature/x'];
+    });
+    await page.getByRole('button', { name: '新增卡片' }).click();
+    await page.getByTestId('task-repo').fill('/Users/test/legacy-repo');
+
+    // The suggestions arrive in recency order, and the untouched 'main'
+    // guess becomes the branch the repo actually leads with.
+    await expect(page.locator('#branch-options option')).toHaveCount(2);
+    await expect(page.getByTestId('task-branch')).toHaveValue('develop');
+  });
+
+  test('a typed base is never overwritten', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => {
+      window.__mock.repos['/Users/test/legacy-repo'] = ['develop'];
+    });
+    await page.getByRole('button', { name: '新增卡片' }).click();
+    await page.getByTestId('task-branch').fill('release');
+    await page.getByTestId('task-repo').fill('/Users/test/legacy-repo');
+
+    await expect(page.locator('#branch-options option')).toHaveCount(1);
+    await expect(page.getByTestId('task-branch')).toHaveValue('release');
+  });
+
+  test('a path that is not a repository suggests nothing', async ({ page }) => {
+    await boot(page);
+    await page.getByRole('button', { name: '新增卡片' }).click();
+    await page.getByTestId('task-repo').fill('/nowhere/at/all');
+    await page.getByTestId('task-title').fill('等一下');
+    await expect(page.locator('#branch-options option')).toHaveCount(0);
+  });
+});

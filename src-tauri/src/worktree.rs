@@ -401,6 +401,25 @@ impl Worktrees {
         Ok(out)
     }
 
+    /// The repository's branches, most recently committed first — the
+    /// order a person thinks in ("the one I touched yesterday").
+    /// Remote-tracking branches count too, stripped of their remote and
+    /// deduped, so a base that only exists as `origin/x` is still offered.
+    pub fn branches(&self, hr: &HostRef, repo: &str) -> Result<Vec<String>> {
+        let out = git(
+            hr,
+            repo,
+            &[
+                "for-each-ref",
+                "--sort=-committerdate",
+                "--format=%(refname)",
+                "refs/heads",
+                "refs/remotes",
+            ],
+        )?;
+        Ok(parse_branches(&out))
+    }
+
     /// The attempt's footprint at a glance, cheap enough for every card on
     /// the board to ask on a timer: `--numstat` counts rather than the
     /// rendered diff, plus where the branch stands against its base.
@@ -471,6 +490,36 @@ impl Worktrees {
     }
 }
 
+/// Full refnames into offerable branch names: `refs/heads/x` and
+/// `refs/remotes/<remote>/x` both become `x`, first (most recent) sighting
+/// wins, remote HEAD pointers are noise and dropped. Full refnames rather
+/// than shorthand, because a local `feature/x` and a remote `origin/x` are
+/// indistinguishable once shortened. Capped: past fifty a picker is a
+/// search box, and typing already filters.
+fn parse_branches(raw: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in raw.lines() {
+        let name = if let Some(rest) = line.trim().strip_prefix("refs/heads/") {
+            rest
+        } else if let Some(rest) = line.trim().strip_prefix("refs/remotes/") {
+            match rest.split_once('/') {
+                Some((_, branch)) => branch,
+                None => continue,
+            }
+        } else {
+            continue;
+        };
+        if name.is_empty() || name == "HEAD" || out.iter().any(|b| b == name) {
+            continue;
+        }
+        out.push(name.to_string());
+        if out.len() >= 50 {
+            break;
+        }
+    }
+    out
+}
+
 /// What `stat` measures. Serialized as-is to the UI.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct DiffStat {
@@ -506,6 +555,30 @@ impl DiffStat {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /* -------------------------- branches ---------------------------- */
+
+    #[test]
+    fn refnames_become_offerable_branches_in_order() {
+        let raw = "refs/heads/fix-login\nrefs/remotes/origin/main\nrefs/heads/feature/x\nrefs/remotes/origin/HEAD\nrefs/remotes/origin/fix-login\nrefs/remotes/upstream/main\n";
+        assert_eq!(
+            parse_branches(raw),
+            vec!["fix-login", "main", "feature/x"]
+        );
+    }
+
+    /// A local `feature/x` must survive shortening — the reason the parse
+    /// works on full refnames rather than `refname:short`.
+    #[test]
+    fn a_local_branch_with_a_slash_is_not_mistaken_for_a_remote() {
+        assert_eq!(parse_branches("refs/heads/feature/login\n"), vec!["feature/login"]);
+    }
+
+    #[test]
+    fn the_list_is_capped_at_fifty() {
+        let raw: String = (0..80).map(|i| format!("refs/heads/b{i}\n")).collect();
+        assert_eq!(parse_branches(&raw).len(), 50);
+    }
 
     /* -------------------------- diffstat ---------------------------- */
 

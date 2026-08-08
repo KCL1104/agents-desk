@@ -113,6 +113,9 @@ pub struct SessionMeta {
     /// The attempt this session is running, or `None` for an ad-hoc session
     /// that lives outside the board.
     pub attempt_id: Option<String>,
+    /// A message is queued to go in when this turn ends. Transient, like
+    /// the PTY it waits on — never stored, false on every restore.
+    pub has_followup: bool,
 }
 
 impl SessionMeta {
@@ -145,6 +148,7 @@ impl SessionMeta {
             activity_since: 0,
             completed: s.completed,
             attempt_id: s.attempt_id,
+            has_followup: false,
         }
     }
 }
@@ -481,7 +485,7 @@ impl HookHandler for Router {
         let at = now_ms();
         let mut timeline: Vec<PendingEvent> = Vec::new();
 
-        let notify = {
+        let (notify, turn_done) = {
             let mut sessions = self.sessions.lock().unwrap();
             let Some(s) = sessions.get_mut(&session_id) else {
                 // A hook from a session we do not track: a stale terminal from
@@ -548,7 +552,7 @@ impl HookHandler for Router {
             } else {
                 false
             };
-            fire.then(|| (s.title.clone(), s.cwd.clone()))
+            (fire.then(|| (s.title.clone(), s.cwd.clone())), turn_done)
         };
 
         for e in timeline {
@@ -577,6 +581,14 @@ impl HookHandler for Router {
         }
 
         self.broadcast();
+
+        // The queued follow-up's moment: a turn just ended, and whatever
+        // waited for it goes in as the next one.
+        if turn_done {
+            if let Some(core) = self.core.get().and_then(|w| w.upgrade()) {
+                core.flush_followup(&session_id);
+            }
+        }
     }
 }
 
@@ -658,6 +670,12 @@ pub struct Core {
     /// button is idempotent and the shells never pile up. In-memory only:
     /// a shell does not outlive the app any more than the PTYs do.
     shells: Mutex<HashMap<String, String>>,
+    /// One message per session, held for the end of its turn. Typing into
+    /// a running claude steers the turn in flight; this is the other thing
+    /// a person means — "when you are done, then this". Latest wins, and
+    /// like the shells it is transient: the turn it waits on cannot
+    /// outlive the app either.
+    followups: Mutex<HashMap<String, String>>,
     /// Everything known about each execution environment, resolved on first
     /// use and kept: a WSL distro's login environment costs a probe, and the
     /// answer does not change under a running app.
@@ -814,6 +832,7 @@ impl Core {
             claude_version,
             notify_prefs,
             shells: Mutex::new(HashMap::new()),
+            followups: Mutex::new(HashMap::new()),
             hosts: Mutex::new(HashMap::new()),
         });
 
@@ -1356,6 +1375,7 @@ impl Core {
             activity_since: 0,
             completed: false,
             attempt_id: Some(attempt_id.clone()),
+            has_followup: false,
         };
 
         // Visible before it can speak. The PTY reports its exit against the
@@ -1496,6 +1516,7 @@ impl Core {
             activity_since: 0,
             completed: false,
             attempt_id: Some(attempt_id.to_string()),
+            has_followup: false,
         };
         // On the record before it can exit — see `finish_opening`.
         self.sessions
@@ -1771,6 +1792,7 @@ impl Core {
             // Ad-hoc: no lifecycle, no slot. The attempt link would also put
             // it on the card, and the card is about the agent.
             attempt_id: None,
+            has_followup: false,
         };
 
         let script_env = [
@@ -1883,6 +1905,7 @@ impl Core {
             // Ad-hoc, like the ▶ scripts: no lifecycle, no slot — the card
             // is about the agent, and this terminal is about you.
             attempt_id: None,
+            has_followup: false,
         };
 
         // The same variable the scripts see, because the same need exists:
@@ -2090,6 +2113,71 @@ impl Core {
         Ok(())
     }
 
+    /// The repository's branches, recency first, for the base picker.
+    pub fn list_branches(&self, repo_path: &str) -> Result<Vec<String>> {
+        let (loc, he) = self.located(repo_path)?;
+        self.worktrees.branches(&he.hr(&self.env), &loc.path)
+    }
+
+    /// Hold a message for the end of this turn.
+    ///
+    /// The same gates as sending now — a live terminal, measured input
+    /// conventions — checked at queue time, because a refusal the moment
+    /// you press the button beats one after the turn you waited out.
+    pub fn queue_followup(&self, session_id: &str, text: &str) -> Result<()> {
+        if text.trim().is_empty() {
+            return Err(anyhow!("nothing to queue"));
+        }
+        {
+            let sessions = self.sessions.lock().unwrap();
+            let s = sessions
+                .get(session_id)
+                .ok_or_else(|| anyhow!("no such session: {session_id}"))?;
+            if !s.live {
+                return Err(anyhow!("no terminal for session {session_id}"));
+            }
+            if prompt::delivery_for(&s.agent) != Delivery::Positional {
+                return Err(anyhow!(
+                    "`{}`'s input conventions have not been measured; copy the text in instead",
+                    s.agent
+                ));
+            }
+        }
+        self.followups
+            .lock()
+            .unwrap()
+            .insert(session_id.to_string(), text.to_string());
+        self.set_followup_flag(session_id, true);
+        Ok(())
+    }
+
+    pub fn cancel_followup(&self, session_id: &str) {
+        self.followups.lock().unwrap().remove(session_id);
+        self.set_followup_flag(session_id, false);
+    }
+
+    /// The Stop hook's half: the turn just ended, so what waited for it
+    /// goes in as the next one — through the same paste a live follow-up
+    /// uses, recorded on the timeline the same way.
+    pub(crate) fn flush_followup(&self, session_id: &str) {
+        let Some(text) = self.followups.lock().unwrap().remove(session_id) else {
+            return;
+        };
+        if let Err(e) = self.send_followup(session_id, &text) {
+            // The session died between queue and Stop. The message is
+            // dropped rather than retried into a terminal that is gone.
+            eprintln!("[core] queued follow-up for {session_id} failed: {e:#}");
+        }
+        self.set_followup_flag(session_id, false);
+    }
+
+    fn set_followup_flag(&self, session_id: &str, value: bool) {
+        if let Some(s) = self.sessions.lock().unwrap().get_mut(session_id) {
+            s.has_followup = value;
+        }
+        self.broadcast();
+    }
+
     /// Push the branch and open a pull request.
     ///
     /// The attempt is deliberately *not* closed out: the worktree stays until
@@ -2178,6 +2266,7 @@ impl Core {
             activity_since: 0,
             completed: false,
             attempt_id: None,
+            has_followup: false,
         };
 
         // On the record before it can exit — see `finish_opening`.

@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
+import { api } from '../api';
 import { useT } from '../i18n';
 import { Modal } from './Modal';
 import { FriendlyError } from './FriendlyError';
@@ -43,7 +44,51 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
    *  WSL or SSH host — and a button still live during it makes two cards
    *  from one double-click. Same discipline as the Finish footer. */
   const [busy, setBusy] = useState(false);
+  /** The typed repository's branches, most recently committed first. */
+  const [branches, setBranches] = useState<string[]>([]);
+  /** Whether the person has touched the base field. A default is a guess;
+   *  it may be corrected by what the repository actually has — but never
+   *  over something someone typed. */
+  const branchEdited = useRef(false);
   const list = recents();
+
+  // Ask the repository itself, once the path stops moving. The cleanup is
+  // the staleness guard: a fetch for a path no longer in the field can
+  // neither land in the list nor rewrite the base.
+  useEffect(() => {
+    const path = repo.trim();
+    if (path === '') {
+      setBranches([]);
+      return;
+    }
+    let live = true;
+    const timer = setTimeout(() => {
+      void api
+        .listBranches(path)
+        .then((found) => {
+          if (!live) return;
+          setBranches(found);
+          if (found.length > 0) {
+            setBranch((cur) =>
+              branchEdited.current || found.includes(cur)
+                ? cur
+                : found.includes('main')
+                  ? 'main'
+                  : found[0],
+            );
+          }
+        })
+        .catch(() => {
+          // Not a repository (yet) — half-typed paths land here on every
+          // keystroke, and the create step still checks for real.
+          if (live) setBranches([]);
+        });
+    }, 300);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [repo]);
 
   const pick = async () => {
     const picked = await open({ directory: true, multiple: false });
@@ -120,9 +165,21 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
           className="mono"
           value={branch}
           data-testid="task-branch"
-          onChange={(e) => setBranch(e.target.value)}
+          // The datalist is the picker: the browser filters as you type,
+          // recency order preserved, and a branch not in the list is still
+          // typeable — the create step checks it for real.
+          list="branch-options"
+          onChange={(e) => {
+            branchEdited.current = true;
+            setBranch(e.target.value);
+          }}
           onKeyDown={submitOnEnter}
         />
+        <datalist id="branch-options">
+          {branches.map((b) => (
+            <option key={b} value={b} />
+          ))}
+        </datalist>
         <p className="muted small">{t('newTask.baseHint')}</p>
 
         {error && <FriendlyError text={error} testid="task-error" />}

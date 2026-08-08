@@ -414,6 +414,33 @@ fn send_followup(state: State<'_, AppState>, id: String, text: String) -> StdRes
         .map_err(|e| format!("{e:#}"))
 }
 
+/// Hold a message for the end of this turn — sent when Stop lands.
+#[tauri::command]
+fn queue_followup(state: State<'_, AppState>, id: String, text: String) -> StdResult<(), String> {
+    state
+        .core()?
+        .queue_followup(&id, &text)
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn cancel_followup(state: State<'_, AppState>, id: String) -> StdResult<(), String> {
+    state.core()?.cancel_followup(&id);
+    Ok(())
+}
+
+/// The repository's branches, recency first, for the base picker.
+#[tauri::command]
+fn list_branches(
+    state: State<'_, AppState>,
+    repo_path: String,
+) -> StdResult<Vec<String>, String> {
+    state
+        .core()?
+        .list_branches(&repo_path)
+        .map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 fn attempt_diff(state: State<'_, AppState>, attempt_id: String) -> StdResult<String, String> {
     state
@@ -610,6 +637,9 @@ fn main() {
             attempt_stats,
             attempt_events,
             send_followup,
+            queue_followup,
+            cancel_followup,
+            list_branches,
             list_run_scripts,
             run_script,
             open_shell,

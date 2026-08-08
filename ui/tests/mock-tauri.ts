@@ -22,6 +22,7 @@ export interface MockSession {
   activity_since: number;
   completed: boolean;
   attempt_id: string | null;
+  has_followup?: boolean;
 }
 
 export interface MockAttempt {
@@ -95,6 +96,8 @@ declare global {
       runScripts: string[];
       /** Each attempt's worktree shell, while one is live — the core's cache. */
       shells: Map<string, string>;
+      /** One message per session, held for the end of its turn. */
+      queuedFollowups: Map<string, string>;
       /** Named launch profiles, as the settings table holds them. */
       profiles: Array<{ name: string; agent: string; args: string[] }>;
       /** Which notifications the desk raises, as the core defaults them. */
@@ -176,6 +179,7 @@ export function installMock(): void {
     dirtyWorktrees: new Set<string>(),
     runScripts: [] as string[],
     shells: new Map<string, string>(),
+    queuedFollowups: new Map<string, string>(),
     profiles: [] as Array<{ name: string; agent: string; args: string[] }>,
     notifyPrefs: { permission: true, input: true, done: false },
     calls: [] as Array<{ cmd: string; args: unknown }>,
@@ -243,6 +247,16 @@ export function installMock(): void {
       if (activity) {
         s.activity = activity;
         s.activity_since = Date.now();
+      }
+      // The Stop hook's half: the turn ended, so what waited for it goes
+      // in as the next one — recorded like any follow-up.
+      if (status === 'idle') {
+        const queued = mock.queuedFollowups.get(id);
+        if (queued !== undefined) {
+          mock.queuedFollowups.delete(id);
+          s.has_followup = false;
+          if (s.attempt_id) mock.record(s.attempt_id, 'prompt', null, queued);
+        }
       }
       mock.emit('sessions:changed', mock.sorted());
     },
@@ -757,6 +771,33 @@ export function installMock(): void {
       mock.snapshots.set(s.id, { data: '', seq: 0 });
       mock.pushSessions();
       return s.id;
+    },
+
+    queue_followup: (args) => {
+      const s = mock.sessions.find((x) => x.id === args.id);
+      if (!s) throw new Error(`no such session: ${String(args.id)}`);
+      if (!s.live) throw new Error(`no terminal for session ${s.id}`);
+      if (s.agent !== 'claude') {
+        throw new Error(`\`${s.agent}\`'s input conventions have not been measured`);
+      }
+      mock.queuedFollowups.set(s.id, String(args.text));
+      s.has_followup = true;
+      mock.pushSessions();
+      return null;
+    },
+
+    cancel_followup: (args) => {
+      const s = mock.sessions.find((x) => x.id === args.id);
+      mock.queuedFollowups.delete(String(args.id));
+      if (s) s.has_followup = false;
+      mock.pushSessions();
+      return null;
+    },
+
+    list_branches: (args) => {
+      const branches = mock.repos[String(args.repoPath)];
+      if (!branches) throw new Error(`${String(args.repoPath)} is not a git repository`);
+      return branches;
     },
 
     open_shell: (args) => {

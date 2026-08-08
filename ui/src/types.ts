@@ -110,6 +110,9 @@ export interface SessionMeta {
   /** The attempt this session runs, or `null` for an ad-hoc session that
       lives outside the board. */
   attempt_id: string | null;
+  /** A message is queued to go in when this turn ends. Transient — never
+      stored, absent from restores. */
+  has_followup?: boolean;
 }
 
 /** Which notifications the desk raises. Mirrors core.rs NotifyPrefs —

@@ -121,6 +121,14 @@ export const api = {
       message. Only for CLIs whose input conventions are measured. */
   sendFollowup: (id: string, text: string) =>
     invoke<void>('send_followup', { id, text }),
+  /** Hold a message for the end of this turn — sent when Stop lands.
+      One slot per session; queueing again replaces it. */
+  queueFollowup: (id: string, text: string) =>
+    invoke<void>('queue_followup', { id, text }),
+  cancelFollowup: (id: string) => invoke<void>('cancel_followup', { id }),
+
+  /** The repository's branches, recency first, for the base picker. */
+  listBranches: (repoPath: string) => invoke<string[]>('list_branches', { repoPath }),
 
   /** Which notifications the desk raises, chosen in the environment panel. */
   notifyPrefs: () => invoke<NotifyPrefs>('notify_prefs'),

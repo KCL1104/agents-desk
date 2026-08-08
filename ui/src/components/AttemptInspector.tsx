@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type AttemptStat } from '../api';
-import type { Attempt, AttemptEvent } from '../types';
+import type { Attempt, AttemptEvent, SessionMeta } from '../types';
 import { useT } from '../i18n';
 import { useArmed } from './armed';
 import { FriendlyError } from './FriendlyError';
-import { STATUS_KEY } from '../sections';
+import { elapsed, STATUS_KEY } from '../sections';
+import { rollup } from '../timeline';
 import {
   autoCollapse,
   commentable,
@@ -18,6 +19,9 @@ import { nextAction, NEXT_KEY, type NextAction } from '../next';
 
 interface Props {
   attempt: Attempt;
+  /** The attempt's live session, if any — for what only a session knows:
+      whether the agent is mid-turn, and whether a message is queued. */
+  session: SessionMeta | null;
   /** Named so the merge button can say where the work is going. */
   baseBranch: string;
   /** The feedback batch in progress, held by the App keyed per attempt.
@@ -79,6 +83,7 @@ function storedWidth(): number {
 
 export function AttemptInspector({
   attempt,
+  session,
   baseBranch,
   comments,
   onComments,
@@ -310,6 +315,26 @@ export function AttemptInspector({
         </div>
       )}
 
+      {/* A message is holding for the end of this turn. Visible where it
+          was queued, with the one act that still applies: changing your
+          mind before Stop spends it. */}
+      {session?.has_followup && (
+        <p className="queued-banner" data-testid="queued-followup">
+          <span>{t('inspector.queued')}</span>
+          <button
+            className="chip"
+            data-testid="cancel-followup"
+            onClick={() =>
+              void api.cancelFollowup(session.id).catch(() => {
+                /* the next broadcast says what actually stuck */
+              })
+            }
+          >
+            {t('inspector.cancelQueued')}
+          </button>
+        </p>
+      )}
+
       {error && (
         <p className="dialog-error" role="alert" data-testid="inspector-error">
           {error}
@@ -335,6 +360,7 @@ export function AttemptInspector({
       {pane === 'diff' && (picked !== null || comments.length > 0) && (
         <Review
           attempt={attempt}
+          session={session}
           picked={picked}
           comments={comments}
           onPick={setPicked}
@@ -370,6 +396,7 @@ export function AttemptInspector({
  */
 function Review({
   attempt,
+  session,
   picked,
   comments,
   onPick,
@@ -378,6 +405,7 @@ function Review({
   onProblem,
 }: {
   attempt: Attempt;
+  session: SessionMeta | null;
   picked: Picked | null;
   comments: ReviewComment[];
   onPick: (p: Picked | null) => void;
@@ -395,6 +423,11 @@ function Review({
     attempt.session_id !== null &&
     followupSendable(attempt.agent);
 
+  /** Mid-turn, the batch queues instead of steering: sent now it would
+   *  land inside the turn under review; held for Stop it arrives as the
+   *  next one, about a diff that has stopped moving. */
+  const midTurn = session?.status === 'running';
+
   const add = () => {
     if (!picked || note.trim() === '') return;
     onChange([...comments, { ...picked, note: note.trim() }]);
@@ -406,12 +439,16 @@ function Review({
     if (!attempt.session_id) return;
     setBusy(true);
     onProblem(null);
-    void api
-      .sendFollowup(attempt.session_id, composeReview(comments, t))
+    const text = composeReview(comments, t);
+    const deliver = midTurn
+      ? api.queueFollowup(attempt.session_id, text)
+      : api.sendFollowup(attempt.session_id, text);
+    void deliver
       .then(() => {
         onChange([]);
         onPick(null);
-        // The timeline now carries what was just asked.
+        // The timeline now carries what was just asked — or, queued, the
+        // banner above says what is waiting to be.
         onSent();
       })
       .catch((e) => onProblem(String(e)))
@@ -498,7 +535,7 @@ function Review({
                 data-testid="review-send"
                 onClick={send}
               >
-                {t('review.send', { count: comments.length })}
+                {t(midTurn ? 'review.queue' : 'review.send', { count: comments.length })}
               </button>
             ) : (
               <button data-testid="review-copy" onClick={copy}>
@@ -950,6 +987,7 @@ function classOf(l: DiffLine): string {
 
 function Timeline({ events, error }: { events: AttemptEvent[]; error: string | null }) {
   const t = useT();
+  const rows = useMemo(() => rollup(events), [events]);
   // A failed read is not an empty history. "No activity yet" over a dead
   // fetch would clear an agent that was never audited.
   if (error !== null && events.length === 0) {
@@ -968,20 +1006,43 @@ function Timeline({ events, error }: { events: AttemptEvent[]; error: string | n
   }
   return (
     <ol className="timeline" data-testid="timeline">
-      {events.map((e) => (
-        <li key={e.id} className={`tl-row tl-${e.kind}`} data-kind={e.kind}>
+      {rows.map((e, i) => (
+        <li
+          key={`${e.at}-${i}`}
+          className={`tl-row tl-${e.kind}${e.tool === 'SendMessage' ? ' tl-send' : ''}`}
+          data-kind={e.kind}
+        >
           <span className="tl-time mono small muted">{clock(e.at)}</span>
           {e.kind === 'tool' ? (
             <>
-              <span className="tl-tool mono">{e.tool}</span>
-              {/* One truncated line in the list; the full command a hover away. */}
-              <span className="tl-detail mono small muted" title={e.detail ?? undefined}>
+              <span className="tl-tool mono">
+                {/* A cross-session message is an act between cards, not a
+                    tool grinding — it wears the arrow the README writes. */}
+                {e.tool === 'SendMessage' && <span aria-hidden="true">→ </span>}
+                {e.tool}
+                {/* A run of the same tool is one act, not N lines between
+                    the reader and the next real event. Every detail rides
+                    the tooltip; the row shows the latest. */}
+                {e.count > 1 && <span className="tl-count">×{e.count}</span>}
+              </span>
+              <span
+                className="tl-detail mono small muted"
+                title={e.details.length > 1 ? e.details.join('\n') : (e.detail ?? undefined)}
+              >
                 {e.detail}
               </span>
             </>
           ) : e.kind === 'status' ? (
             <span className="tl-status">
               {STATUS_KEY[e.detail as never] ? t(STATUS_KEY[e.detail as never]) : e.detail}
+              {/* What the wait cost — the number the record alone cannot
+                  show, measured to whatever happened next. */}
+              {e.heldMs !== null && e.heldMs >= 1000 && (
+                <span className="tl-held muted">
+                  {' '}
+                  {t('timeline.waited', { for: elapsed(e.at, e.at + e.heldMs) })}
+                </span>
+              )}
             </span>
           ) : (
             <span className="tl-prompt">{e.detail}</span>

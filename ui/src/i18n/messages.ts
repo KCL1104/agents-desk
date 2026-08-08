@@ -305,6 +305,9 @@ export const en = {
   'inspector.shell': 'shell',
   'inspector.shellHint':
     'A shell of your own in this attempt’s worktree — run the tests, git log, anything, without typing into the agent’s terminal',
+  'inspector.queued': 'A message is holding for the end of this turn',
+  'inspector.cancelQueued': 'Cancel it',
+  'timeline.waited': '· held {for}',
 
   /* ----------------------------- review ------------------------------- */
   'review.hint': 'Click to attach feedback to this line',
@@ -312,6 +315,7 @@ export const en = {
   'review.add': 'Add feedback',
   'review.remove': 'Remove this feedback',
   'review.send': 'Send {count} back to the agent',
+  'review.queue': 'Send {count} when this turn ends',
   'review.copy': 'Copy feedback',
   'review.header': '[AgentDesk review] Feedback on the current diff:',
   'review.footer': 'Please address each point above, then commit on this branch.',
@@ -660,6 +664,9 @@ export const zhTW: Record<MessageKey, string> = {
   'inspector.shell': 'shell',
   'inspector.shellHint':
     '在這個 attempt 的 worktree 開一個你自己的 shell —— 跑測試、git log 都行，不用打進 agent 的終端機',
+  'inspector.queued': '有一則訊息排在這輪結束後',
+  'inspector.cancelQueued': '取消',
+  'timeline.waited': '· 等了 {for}',
 
   /* ----------------------------- review ------------------------------- */
   'review.hint': '點一下，對這行附上意見',
@@ -667,6 +674,7 @@ export const zhTW: Record<MessageKey, string> = {
   'review.add': '加入意見',
   'review.remove': '移除這則意見',
   'review.send': '把 {count} 則意見送回給 agent',
+  'review.queue': '這輪結束後送出 {count} 則',
   'review.copy': '複製意見',
   'review.header': '[AgentDesk 檢視回饋] 以下是對目前 diff 的意見：',
   'review.footer': '請逐點修改，改完後 commit 在這個分支上。',

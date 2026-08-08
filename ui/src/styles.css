@@ -1022,6 +1022,23 @@ textarea { resize: vertical; }
 }
 .pr-url .chip { flex: none; cursor: pointer; }
 
+/* A message holding for the end of the turn — accent, not warn: it is a
+   plan in motion, not a problem. */
+.queued-banner {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0; font-size: 12px; padding: 6px 11px;
+  color: var(--accent);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-2));
+}
+.queued-banner .chip { flex: none; cursor: pointer; margin-left: auto; }
+
+/* A run of the same tool, and what a wait cost. */
+.tl-count { color: var(--fg-dim); font-weight: 400; margin-left: 4px; font-size: 11px; }
+.tl-held { font-size: 11px; }
+/* A message between cards is an act, not a grind — it takes the accent. */
+.tl-row.tl-send .tl-tool { color: var(--accent); }
+
 /* The merge path's own checks, run before the click: what would refuse,
    what would risk, or that the way is clear. */
 .next-banner {

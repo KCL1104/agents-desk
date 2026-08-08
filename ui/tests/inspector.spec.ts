@@ -221,3 +221,44 @@ test.describe('attempt inspector', () => {
     await expect(page.getByTestId('toggle-inspector')).toHaveCount(0);
   });
 });
+
+/**
+ * The timeline, prepared for reading: the SQLite record keeps every call;
+ * the display rolls a grind of the same tool into one act.
+ */
+test.describe('the timeline rollup', () => {
+  test('a run of Reads is one row wearing its count', async ({ page }) => {
+    await boardWithAttempt(page);
+    await page.evaluate(() => {
+      window.__mock.record('k1-a1', 'tool', 'Read', 'a.ts');
+      window.__mock.record('k1-a1', 'tool', 'Read', 'b.ts');
+      window.__mock.record('k1-a1', 'tool', 'Read', 'c.ts');
+      window.__mock.record('k1-a1', 'tool', 'Edit', 'a.ts');
+    });
+    await page.getByTestId('inspect-k1').click();
+    await page.getByTestId('inspector-timeline-tab').click();
+
+    // Prompt, Read ×3, Edit — not six lines.
+    await expect(page.locator('.tl-row')).toHaveCount(3);
+    const read = page.locator('.tl-row', { hasText: 'Read' });
+    await expect(read.locator('.tl-count')).toHaveText('×3');
+    // The row shows the latest; the whole run rides the tooltip.
+    await expect(read.locator('.tl-detail')).toHaveText('c.ts');
+    await expect(read.locator('.tl-detail')).toHaveAttribute('title', 'a.ts\nb.ts\nc.ts');
+  });
+
+  test('a message between cards wears the arrow, and a wait wears its cost', async ({ page }) => {
+    await boardWithAttempt(page);
+    await page.evaluate(() => {
+      window.__mock.events.set('k1-a1', [
+        { id: 1, attempt_id: 'k1-a1', at: 10_000, kind: 'status', tool: null, detail: 'waiting_permission' },
+        { id: 2, attempt_id: 'k1-a1', at: 75_000, kind: 'tool', tool: 'SendMessage', detail: '修好登入 #1: schema 改了' },
+      ]);
+    });
+    await page.getByTestId('inspect-k1').click();
+    await page.getByTestId('inspector-timeline-tab').click();
+
+    await expect(page.locator('.tl-row').first()).toContainText('等了 1m05s');
+    await expect(page.locator('.tl-row.tl-send .tl-tool')).toContainText('→ SendMessage');
+  });
+});
