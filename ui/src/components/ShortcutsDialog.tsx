@@ -1,23 +1,24 @@
 import { useT } from '../i18n';
+import { ACTIONS, GESTURES, KEY_DOCS } from '../actions';
 import { Modal } from './Modal';
 
 /**
- * The keyboard, written down. ⌘/Ctrl+/ opens it — the one shortcut worth
- * memorising is the one that lists the rest. Gestures that live only in
- * tooltips are gestures most people never find.
+ * The keyboard, written down — and the pointer beside it. ⌘/Ctrl+/ opens
+ * it: the one shortcut worth memorising is the one that lists the rest.
+ *
+ * Rendered from the action registry, not hand-copied out of it, so a
+ * chord can never say one thing here and do another in the palette. The
+ * gesture table exists for the same reason in reverse: gestures that live
+ * only in tooltips are gestures most people never find.
  */
 export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   const t = useT();
-  const rows: [string, string][] = [
-    ['⌘/Ctrl + E', t('keys.jump')],
-    ['⌘/Ctrl + 1 · 2 · 3', t('keys.views')],
-    ['⌘/Ctrl + ⌥/Alt + ← · →', t('keys.cyclePanes')],
-    ['⌘/Ctrl + ← · →', t('keys.moveCard')],
-    ['Ctrl + PgDn · PgUp', t('keys.cycleTabs')],
-    ['⌘/Ctrl + I', t('keys.inspector')],
-    ['J · K', t('keys.diff')],
-    ['Esc', t('keys.escape')],
-    ['⌘/Ctrl + /', t('keys.sheet')],
+  const chords = [
+    ...ACTIONS.filter((a) => a.keys !== null).map((a) => ({
+      combo: a.keys as string,
+      what: t(a.title),
+    })),
+    ...KEY_DOCS.map((d) => ({ combo: d.combo, what: t(d.what) })),
   ];
 
   return (
@@ -25,8 +26,8 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
       <h2>{t('keys.title')}</h2>
       <table className="keys" data-testid="shortcuts">
         <tbody>
-          {rows.map(([combo, what]) => (
-            <tr key={combo}>
+          {chords.map(({ combo, what }) => (
+            <tr key={combo + what}>
               <td>
                 <kbd>{combo}</kbd>
               </td>
@@ -36,6 +37,19 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
         </tbody>
       </table>
       <p className="muted small">{t('keys.shellNote')}</p>
+
+      <h3 className="modal-section">{t('keys.gestures')}</h3>
+      <table className="keys" data-testid="gestures">
+        <tbody>
+          {GESTURES.map(({ where, what }) => (
+            <tr key={where}>
+              <td>{t(where)}</td>
+              <td>{t(what)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
       <div className="modal-actions">
         <button className="primary" onClick={onClose}>
           {t('common.close')}

@@ -884,6 +884,40 @@ textarea { resize: vertical; }
 .mode-badge.yolo { color: var(--warn); }
 .mode-badge.accept_edits { color: var(--accent); }
 
+/* ---------- command palette ---------- */
+
+/* Near the top, not centred: the eye starts there, and the list growing
+   and shrinking under the query must not bounce the input around. */
+.palette-backdrop { align-items: flex-start; padding-top: 12vh; }
+.palette {
+  width: 560px; max-width: 92vw; max-height: 64vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+}
+.palette input {
+  border: none; border-bottom: 1px solid var(--line); border-radius: 0;
+  background: var(--bg-2); padding: 11px 14px; font-size: 13px;
+}
+.palette-list { overflow-y: auto; padding: 4px 0 6px; }
+.palette-group-head {
+  padding: 7px 14px 2px; font-size: 11px;
+  letter-spacing: 0.05em; color: var(--fg-dim);
+}
+.palette-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 14px; cursor: pointer; font-size: 13px;
+}
+.palette-item.selected { background: var(--bg-3); }
+.palette-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-sub { color: var(--fg-dim); font-size: 11px; flex: none; }
+.palette kbd {
+  font-family: var(--mono); font-size: 11px; color: var(--fg-dim);
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 5px;
+  padding: 1px 6px; white-space: nowrap;
+}
+.palette-empty { margin: 0; padding: 14px; color: var(--fg-faint); font-size: 12px; }
+
 /* ---------- coaching ---------- */
 
 /* One-shot coaching, at the moment a concept first bites. Non-modal and

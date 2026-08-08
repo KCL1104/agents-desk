@@ -98,7 +98,7 @@ export const en = {
   /* --------------------------- shortcuts ------------------------------ */
   'keys.title': 'Keyboard shortcuts',
   'keys.jump': 'Jump to the session waiting on you',
-  'keys.views': 'Terminal wall · board · overview',
+  'keys.palette': 'Command palette — sessions, cards, actions',
   'keys.cyclePanes': 'Focus the next / previous pane',
   'keys.moveCard': 'Move the focused board card one column',
   'keys.cycleTabs': 'Next / previous tab',
@@ -112,6 +112,22 @@ export const en = {
   'attempt.acceptHint':
     'File edits are accepted without asking; every other action still checks with you. Only this attempt’s own worktree is touched.',
   'splitter.hint': 'Drag to resize; double-click to reset to equal',
+  'keys.gestures': 'Mouse and gestures',
+  'gesture.pane': 'Pane header',
+  'gesture.tab': 'Workspace tab',
+  'gesture.tabWhat': 'Enter, F2 or a double-click renames it',
+  'gesture.splitter': 'Splitter',
+  'gesture.row': 'Sidebar row',
+  'gesture.rowWhat': 'Drag it into the grid to place its terminal',
+
+  /* ----------------------------- palette ------------------------------ */
+  'palette.placeholder': 'Search sessions, cards, actions…',
+  'palette.waiting': 'Waiting on you',
+  'palette.unseen': 'Finished, unseen',
+  'palette.sessions': 'Sessions',
+  'palette.cards': 'Cards',
+  'palette.actions': 'Actions',
+  'palette.empty': 'Nothing matches',
 
   /* ------------------------------ tabs -------------------------------- */
   'tabs.rename': '{name} — double-click to rename',
@@ -427,7 +443,7 @@ export const zhTW: Record<MessageKey, string> = {
   /* --------------------------- shortcuts ------------------------------ */
   'keys.title': '鍵盤快捷鍵',
   'keys.jump': '跳到正在等你的 session',
-  'keys.views': '終端機牆 · 看板 · 總覽',
+  'keys.palette': '命令面板 —— session、卡片、動作',
   'keys.cyclePanes': '聚焦下一個 / 上一個 pane',
   'keys.moveCard': '把聚焦的看板卡片搬一欄',
   'keys.cycleTabs': '下一個 / 上一個分頁',
@@ -440,6 +456,22 @@ export const zhTW: Record<MessageKey, string> = {
   'attempt.modeLabel': '權限模式',
   'attempt.acceptHint': '檔案編輯不再逐次詢問；其他動作照樣先問你。只會動到這個 attempt 自己的 worktree。',
   'splitter.hint': '拖曳調整比例；雙擊還原等分',
+  'keys.gestures': '滑鼠與手勢',
+  'gesture.pane': 'Pane 標頭',
+  'gesture.tab': '工作區分頁',
+  'gesture.tabWhat': 'Enter、F2 或雙擊都可改名',
+  'gesture.splitter': '分隔線',
+  'gesture.row': '側欄列',
+  'gesture.rowWhat': '拖進網格，把它的終端機放上畫面',
+
+  /* ----------------------------- palette ------------------------------ */
+  'palette.placeholder': '搜尋 session、卡片、動作…',
+  'palette.waiting': '等你',
+  'palette.unseen': '完成未看',
+  'palette.sessions': 'Sessions',
+  'palette.cards': '卡片',
+  'palette.actions': '動作',
+  'palette.empty': '沒有符合的',
 
   /* ------------------------------ tabs -------------------------------- */
   'tabs.rename': '{name} — 雙擊改名',

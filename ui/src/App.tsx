@@ -50,7 +50,9 @@ import { EnvPanel } from './components/EnvPanel';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { WelcomeDialog } from './components/WelcomeDialog';
 import { CoachMark } from './components/CoachMark';
+import { CommandPalette } from './components/CommandPalette';
 import { coachSeen, markCoachSeen, type CoachId } from './coach';
+import type { ActionCtx, ActionId } from './actions';
 import { useSize } from './useSize';
 
 /** Terminals start at a sane size; the pane refits within a frame of mounting. */
@@ -119,6 +121,13 @@ export default function App() {
   const [inspectId, setInspectId] = useState<string | null>(null);
   /** The shortcuts cheat sheet (⌘/Ctrl+/). */
   const [showKeys, setShowKeys] = useState(false);
+  /** The command palette (⌘/Ctrl+K): the attention inbox, then everything
+   *  by name. */
+  const [showPalette, setShowPalette] = useState(false);
+  /** Where focus was when the palette opened. Restored on cancel only —
+   *  a palette action that lands in a terminal has already decided where
+   *  focus belongs, and putting it back would undo the very jump. */
+  const paletteReturn = useRef<HTMLElement | null>(null);
   /** The first-run panel: what the environment probe found, and the mental
    *  model in three sentences. Shown once, never to a desk already in use. */
   const [showWelcome, setShowWelcome] = useState(false);
@@ -608,6 +617,10 @@ export default function App() {
           const i = waiting.findIndex((s) => s.id === focusedId);
           void onOpen(waiting[(i + 1) % waiting.length].id);
         }
+      } else if ((e.key === 'k' || e.key === 'K') && !shellsOwn) {
+        e.preventDefault();
+        paletteReturn.current = document.activeElement as HTMLElement | null;
+        setShowPalette(true);
       } else if ((e.key === 'i' || e.key === 'I') && !shellsOwn) {
         if (view === 'terminal' && (inspectId || activeAttemptId)) {
           e.preventDefault();
@@ -732,6 +745,79 @@ export default function App() {
 
   const onDeleteTask = useCallback((id: string) => {
     void api.deleteTask(id).catch((e) => setError(t('error.deleteCard', { err: String(e) })));
+  }, []);
+
+  /* ----------------------------- palette ---------------------------- */
+
+  const paletteCtx: ActionCtx = useMemo(
+    () => ({
+      hasWaiting: sessions.some((s) => needsYou(s.status)),
+      canInspect: Boolean(inspectId || activeAttemptId),
+    }),
+    [sessions, inspectId, activeAttemptId],
+  );
+
+  /** Closed without restoring focus: the jump decides where focus goes. */
+  const paletteOpenSession = useCallback(
+    (id: string) => {
+      setShowPalette(false);
+      void onOpen(id);
+    },
+    [onOpen],
+  );
+
+  /** What each registry id actually does — the App's half of the table. */
+  const paletteRun = useCallback(
+    (id: ActionId) => {
+      setShowPalette(false);
+      switch (id) {
+        case 'jump-waiting': {
+          // The same cycle ⌘E drives, so the palette row and the chord it
+          // advertises can never disagree.
+          const waiting = sessions.filter((s) => needsYou(s.status));
+          if (waiting.length > 0) {
+            const i = waiting.findIndex((s) => s.id === focusedId);
+            void onOpen(waiting[(i + 1) % waiting.length].id);
+          }
+          break;
+        }
+        case 'new-card':
+          setDialogError(null);
+          setView('board');
+          setShowNewTask(true);
+          break;
+        case 'new-session':
+          setShowNew(true);
+          break;
+        case 'toggle-inspector':
+          // The drawer lives beside the terminals; opening it from another
+          // view brings the terminals with it.
+          setView('terminal');
+          setInspectId(inspectId ? null : activeAttemptId);
+          break;
+        case 'view-terminal':
+          setView('terminal');
+          break;
+        case 'view-board':
+          setView('board');
+          break;
+        case 'view-overview':
+          setView('overview');
+          break;
+        case 'open-env':
+          setShowEnv(true);
+          break;
+        case 'open-keys':
+          setShowKeys(true);
+          break;
+      }
+    },
+    [sessions, focusedId, onOpen, inspectId, activeAttemptId],
+  );
+
+  const paletteCancel = useCallback(() => {
+    setShowPalette(false);
+    paletteReturn.current?.focus?.();
   }, []);
 
   if (!boot?.ready) {
@@ -1079,6 +1165,21 @@ export default function App() {
       )}
       {showEnv && <EnvPanel boot={boot} onClose={() => setShowEnv(false)} />}
       {showKeys && <ShortcutsDialog onClose={() => setShowKeys(false)} />}
+      {showPalette && (
+        <CommandPalette
+          sessions={sessions}
+          tasks={tasks}
+          unseen={unseen}
+          ctx={paletteCtx}
+          onOpenSession={paletteOpenSession}
+          onOpenBoard={() => {
+            setShowPalette(false);
+            setView('board');
+          }}
+          onRun={paletteRun}
+          onCancel={paletteCancel}
+        />
+      )}
       {showWelcome && (
         <WelcomeDialog
           boot={boot}

@@ -104,8 +104,10 @@ test.describe('language', () => {
       'env.claude',
       'env.sourceLogin',
       // "session" is the product's deliberate loanword in both languages;
-      // the sidebar header is that word, keyed so a future locale can differ.
+      // the sidebar header and the palette's group of the same rows are
+      // that word, keyed so a future locale can differ.
       'sidebar.title',
+      'palette.sessions',
     ]);
     const untranslated = (Object.keys(en) as Array<keyof typeof en>).filter(
       (k) => zhTW[k] === en[k] && !SHARED.has(k),
