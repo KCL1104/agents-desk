@@ -553,6 +553,20 @@ fn list_checkpoints(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// Put the worktree back to checkpoint `n` (`0` = the attempt's base).
+/// Code only; refused while a turn is in flight.
+#[tauri::command]
+fn restore_checkpoint(
+    state: State<'_, AppState>,
+    attempt_id: String,
+    n: u64,
+) -> StdResult<core::Restored, String> {
+    state
+        .core()?
+        .restore_checkpoint(&attempt_id, n)
+        .map_err(|e| format!("{e:#}"))
+}
+
 /* -------------------------- notifications -------------------------- */
 
 /// Which notifications the desk raises. Read by the environment panel.
@@ -692,6 +706,7 @@ fn main() {
             set_checkpoints_enabled,
             checkpoint_now,
             list_checkpoints,
+            restore_checkpoint,
             cancel_queued,
             concurrency,
             set_concurrency,

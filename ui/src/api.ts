@@ -48,6 +48,16 @@ export interface Checkpoint {
   at: number;
 }
 
+/** What a restore did. Mirrors core.rs Restored. */
+export interface Restored {
+  /** The checkpoint the worktree now matches — 0 is the attempt's base. */
+  to_n: number;
+  to_sha: string;
+  /** The automatic "now" checkpoint kept first; null when nothing had
+      changed since the last one. */
+  saved: Checkpoint | null;
+}
+
 /** What opening an attempt produced. Mirrors core.rs OpenedAttempt. */
 export interface OpenedAttempt {
   attempt_id: string;
@@ -149,6 +159,10 @@ export const api = {
     invoke<Checkpoint | null>('checkpoint_now', { attemptId }),
   listCheckpoints: (attemptId: string) =>
     invoke<Checkpoint[]>('list_checkpoints', { attemptId }),
+  /** Put the worktree back to checkpoint n (0 = the attempt's base). Code
+      only; refused while a turn is in flight. */
+  restoreCheckpoint: (attemptId: string, n: number) =>
+    invoke<Restored>('restore_checkpoint', { attemptId, n }),
 
   /** Which notifications the desk raises, chosen in the environment panel. */
   notifyPrefs: () => invoke<NotifyPrefs>('notify_prefs'),

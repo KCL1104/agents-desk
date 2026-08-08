@@ -284,3 +284,72 @@ test.describe('manual checkpoint', () => {
     await expect(page.getByTestId('checkpoint-now')).toHaveText('距上一個檢查點沒有變更');
   });
 });
+
+test.describe('restore from the timeline', () => {
+  test('mid-turn the button refuses with its reason; idle it restores, and the restore is kept', async ({
+    page,
+  }) => {
+    await boardWithAttempt(page);
+    await page.getByTestId('inspect-k1').click();
+    await page.getByTestId('inspector-timeline-tab').click();
+
+    // The prompt row wears the ↩ — disabled while the turn is in flight,
+    // with the reason a hover away instead of the button being a mystery.
+    const restore = page.getByTestId('restore-0');
+    await page.evaluate(() => window.__mock.report('s1', 'running'));
+    await expect(restore).toBeDisabled();
+    await expect(restore).toHaveAttribute('title', /回合進行中/);
+
+    // The turn ends; the retreat opens. Two clicks — the second names it.
+    await page.evaluate(() => window.__mock.report('s1', 'idle'));
+    await expect(restore).toBeEnabled();
+    await restore.click();
+    await expect(restore).toHaveText('確定還原到此輪之前？');
+    await restore.click();
+
+    // No checkpoints yet, so "before this turn" is the attempt's base.
+    await expect(page.getByTestId('restore-say')).toContainText('已還原到 attempt 起點');
+    const call = await page.evaluate(
+      () => window.__mock.calls.filter((c) => c.cmd === 'restore_checkpoint').at(-1)?.args,
+    );
+    expect(call).toMatchObject({ attemptId: 'k1-a1', n: 0 });
+    // And the pre-restore state was snapshotted first.
+    const kept = await page.evaluate(() => window.__mock.checkpoints.get('k1-a1'));
+    expect(kept?.length).toBe(1);
+
+    // The worktree moved under a live claude's feet: the banner offers the
+    // pre-composed note, and sending is a human act, not an automatic one.
+    await page.getByTestId('restore-tell').click();
+    const note = await page.evaluate(
+      () => window.__mock.calls.filter((c) => c.cmd === 'send_followup').at(-1)?.args,
+    );
+    expect(note).toMatchObject({ id: 's1' });
+  });
+
+  test('a turn with a checkpoint before it restores to that checkpoint, not base', async ({
+    page,
+  }) => {
+    await boardWithAttempt(page);
+    // A snapshot exists from an earlier turn, then a second prompt begins.
+    await page.evaluate(() => {
+      window.__mock.checkpoints.set('k1-a1', [
+        { n: 1, sha: 'cafe100', at: Math.floor(Date.now() / 1000) - 60 },
+      ]);
+      window.__mock.record('k1-a1', 'prompt', null, '再修一下');
+      window.__mock.report('s1', 'idle');
+    });
+    await page.getByTestId('inspect-k1').click();
+    await page.getByTestId('inspector-timeline-tab').click();
+
+    // Row 1 is the later prompt; the last snapshot taken before it is
+    // checkpoint #1, so that — not base — is its "before this turn".
+    const restore = page.getByTestId('restore-1');
+    await restore.click();
+    await restore.click();
+    await expect(page.getByTestId('restore-say')).toContainText('已還原到檢查點 #1');
+    const call = await page.evaluate(
+      () => window.__mock.calls.filter((c) => c.cmd === 'restore_checkpoint').at(-1)?.args,
+    );
+    expect(call).toMatchObject({ attemptId: 'k1-a1', n: 1 });
+  });
+});

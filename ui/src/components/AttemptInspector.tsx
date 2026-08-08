@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, type AttemptStat } from '../api';
+import { api, type AttemptStat, type Checkpoint } from '../api';
 import type { Attempt, AttemptEvent, SessionMeta } from '../types';
 import { useT } from '../i18n';
 import { useArmed } from './armed';
@@ -152,6 +152,11 @@ export function AttemptInspector({
     const timer = setTimeout(() => setCkptSay(null), 4000);
     return () => clearTimeout(timer);
   }, [ckptSay]);
+  /** The attempt's checkpoints, for the timeline's ↩ anchors. */
+  const [cps, setCps] = useState<Checkpoint[]>([]);
+  /** What the last restore did (or refused), shown over the timeline until
+      dismissed — it names the retreat that was kept, which outlives 4s. */
+  const [restored, setRestored] = useState<string | null>(null);
 
   // The repo's run scripts, for the ▶ buttons. Read once per attempt: the
   // config is a file in the repository, and it does not move underneath an
@@ -193,8 +198,15 @@ export function AttemptInspector({
         .attemptStats(attempt.id)
         .then(setStat)
         .catch(() => setStat(null));
+      // The refs behind the timeline's ↩ anchors. A finished attempt has
+      // none by design — the frozen diff is its record.
+      void api
+        .listCheckpoints(attempt.id)
+        .then(setCps)
+        .catch(() => setCps([]));
     } else {
       setStat(null);
+      setCps([]);
     }
   }, [attempt.id, attempt.outcome]);
 
@@ -208,7 +220,28 @@ export function AttemptInspector({
   // one its own batch rather than wiping anything.
   useEffect(() => {
     setPicked(null);
+    setRestored(null);
   }, [attempt.id]);
+
+  /** A turn in flight blocks restoring: the agent would keep believing in
+      work that is no longer there. The buttons stay, disabled, wearing the
+      reason — the merge-refusal pattern, ahead of the click. */
+  const restoreBlocked =
+    session !== null &&
+    session.live &&
+    session.status !== 'idle' &&
+    session.status !== 'saved' &&
+    session.status !== 'exited';
+
+  const doRestore = (n: number) => {
+    void api
+      .restoreCheckpoint(attempt.id, n)
+      .then(() => {
+        setRestored(n === 0 ? t('ckpt.restoredBase') : t('ckpt.restored', { n }));
+        refresh();
+      })
+      .catch((e) => setRestored(String(e)));
+  };
 
   return (
     <aside className="inspector" style={{ width }} data-testid="inspector">
@@ -386,7 +419,44 @@ export function AttemptInspector({
           onPick={setPicked}
         />
       ) : (
-        <Timeline events={events} error={eventsError} />
+        <>
+          {restored !== null && (
+            <p className="restore-banner small" data-testid="restore-say" aria-live="polite">
+              <span>{restored}</span>
+              {/* The pre-composed note, sent only by a human hand: the
+                  worktree moved under the agent's feet, and claude can be
+                  told through the same paste a follow-up rides. */}
+              {session?.live === true && session.agent === 'claude' && (
+                <button
+                  className="chip"
+                  data-testid="restore-tell"
+                  onClick={() => {
+                    void api.sendFollowup(session.id, t('ckpt.note')).catch(() => {
+                      /* the terminal shows what actually arrived */
+                    });
+                    setRestored(null);
+                  }}
+                >
+                  {t('ckpt.tell')}
+                </button>
+              )}
+              <button
+                className="chip"
+                aria-label={t('common.close')}
+                onClick={() => setRestored(null)}
+              >
+                ✕
+              </button>
+            </p>
+          )}
+          <Timeline
+            events={events}
+            error={eventsError}
+            checkpoints={cps}
+            onRestore={attempt.outcome === null ? doRestore : null}
+            blocked={restoreBlocked}
+          />
+        </>
       )}
 
       {pane === 'diff' && (picked !== null || comments.length > 0) && (
@@ -1017,9 +1087,40 @@ function classOf(l: DiffLine): string {
   }
 }
 
-function Timeline({ events, error }: { events: AttemptEvent[]; error: string | null }) {
+function Timeline({
+  events,
+  error,
+  checkpoints,
+  onRestore,
+  blocked,
+}: {
+  events: AttemptEvent[];
+  error: string | null;
+  /** The attempt's snapshots, oldest first, for the ↩ anchors. */
+  checkpoints: Checkpoint[];
+  /** Null when the attempt is finished — nothing left to restore into. */
+  onRestore: ((n: number) => void) | null;
+  /** A turn is in flight: the buttons stay, disabled, wearing the reason. */
+  blocked: boolean;
+}) {
   const t = useT();
   const rows = useMemo(() => rollup(events), [events]);
+  /** Which row's ↩ is armed — the two-click contract, one row at a time. */
+  const [armed, setArmed] = useState<number | null>(null);
+  useEffect(() => {
+    if (armed === null) return;
+    const timer = setTimeout(() => setArmed(null), 4000);
+    return () => clearTimeout(timer);
+  }, [armed]);
+  /** "Before this turn" = the last snapshot taken before its prompt — or
+      the attempt's base, the free zeroth checkpoint. */
+  const targetOf = (promptAt: number): number => {
+    let n = 0;
+    for (const c of checkpoints) {
+      if (c.at * 1000 <= promptAt) n = c.n;
+    }
+    return n;
+  };
   // A failed read is not an empty history. "No activity yet" over a dead
   // fetch would clear an agent that was never audited.
   if (error !== null && events.length === 0) {
@@ -1077,7 +1178,30 @@ function Timeline({ events, error }: { events: AttemptEvent[]; error: string | n
               )}
             </span>
           ) : (
-            <span className="tl-prompt">{e.detail}</span>
+            <>
+              <span className="tl-prompt">{e.detail}</span>
+              {/* The retreat, anchored where the turn began. Disabled — not
+                  hidden — while the agent is mid-turn, so the reason is a
+                  hover away instead of the button being a mystery. */}
+              {onRestore !== null && (
+                <button
+                  className={`tl-restore${armed === i ? ' armed' : ''}`}
+                  data-testid={`restore-${i}`}
+                  disabled={blocked}
+                  title={blocked ? t('ckpt.blocked') : t('ckpt.restoreHint')}
+                  onClick={() => {
+                    if (armed === i) {
+                      setArmed(null);
+                      onRestore(targetOf(e.at));
+                    } else {
+                      setArmed(i);
+                    }
+                  }}
+                >
+                  {armed === i ? t('ckpt.restoreArm') : '↩'}
+                </button>
+              )}
+            </>
           )}
         </li>
       ))}

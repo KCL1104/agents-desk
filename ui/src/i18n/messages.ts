@@ -363,6 +363,14 @@ export const en = {
   'inspector.ckptHint': 'Snapshot this worktree now — any agent, any moment',
   'inspector.ckptMade': 'Kept #{n} ✓',
   'inspector.ckptNone': 'Nothing new since the last one',
+  'ckpt.restoreHint': 'Restore the worktree to before this turn — code only, the conversation stays',
+  'ckpt.restoreArm': 'Restore to before this turn?',
+  'ckpt.blocked': 'The agent is mid-turn; wait for it to end — or close the session — to restore',
+  'ckpt.restored': 'Restored to checkpoint #{n}. The pre-restore state was snapshotted first.',
+  'ckpt.restoredBase': 'Restored to the attempt’s base. The pre-restore state was snapshotted first.',
+  'ckpt.tell': 'Tell the agent',
+  'ckpt.note':
+    'Note: this worktree was restored to an earlier checkpoint. Files may not match what you last wrote — re-read anything before editing it.',
 
   /* ----------------------------- profiles ------------------------------ */
   'profile.namePlaceholder': 'opus, quiet claude, …',
@@ -737,6 +745,14 @@ export const zhTW: Record<MessageKey, string> = {
   'inspector.ckptHint': '現在就快照這個 worktree —— 任何 agent、任何時刻',
   'inspector.ckptMade': '已留存 #{n} ✓',
   'inspector.ckptNone': '距上一個檢查點沒有變更',
+  'ckpt.restoreHint': '把 worktree 還原到此輪之前 —— 只還程式碼，對話不動',
+  'ckpt.restoreArm': '確定還原到此輪之前？',
+  'ckpt.blocked': 'agent 回合進行中；等回合結束（或關閉 session）才能還原',
+  'ckpt.restored': '已還原到檢查點 #{n}。還原前的狀態已先快照。',
+  'ckpt.restoredBase': '已還原到 attempt 起點（base）。還原前的狀態已先快照。',
+  'ckpt.tell': '告訴 agent',
+  'ckpt.note':
+    '提醒：這個 worktree 已被還原到較早的檢查點。檔案內容可能與你上次寫入的不同 —— 編輯前請先重新讀取。',
 
   /* ----------------------------- profiles ------------------------------ */
   'profile.namePlaceholder': 'opus、安靜的 claude、…',

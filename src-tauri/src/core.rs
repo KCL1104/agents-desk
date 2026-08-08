@@ -697,6 +697,17 @@ pub struct Core {
     checkpointing: Mutex<std::collections::HashSet<String>>,
 }
 
+/// What a restore did: where the worktree now stands, and the automatic
+/// "now" checkpoint kept first so the restore itself can be reverted.
+#[derive(Debug, Clone, Serialize)]
+pub struct Restored {
+    /// The checkpoint the worktree now matches — `0` is the attempt's base.
+    pub to_n: u64,
+    pub to_sha: String,
+    /// `None` when nothing had changed since the last checkpoint.
+    pub saved: Option<crate::worktree::Checkpoint>,
+}
+
 /// One execution environment, resolved: its login environment, its claude,
 /// and where its worktrees live. The local one mirrors the core's own fields;
 /// a WSL distro's is probed through `wsl.exe` on first contact.
@@ -2769,34 +2780,110 @@ impl Core {
     }
 
     fn snapshot_attempt(&self, attempt_id: &str) -> Result<Option<crate::worktree::Checkpoint>> {
-        {
-            let mut busy = self.checkpointing.lock().unwrap();
-            if !busy.insert(attempt_id.to_string()) {
-                return Ok(None);
-            }
+        if !self.claim_checkpointing(attempt_id) {
+            return Ok(None);
+        }
+        let result = self.snapshot_attempt_inner(attempt_id);
+        self.checkpointing.lock().unwrap().remove(attempt_id);
+        result
+    }
+
+    fn claim_checkpointing(&self, attempt_id: &str) -> bool {
+        self.checkpointing
+            .lock()
+            .unwrap()
+            .insert(attempt_id.to_string())
+    }
+
+    /// The snapshot itself — call only while holding the attempt's
+    /// `checkpointing` claim.
+    fn snapshot_attempt_inner(
+        &self,
+        attempt_id: &str,
+    ) -> Result<Option<crate::worktree::Checkpoint>> {
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        if attempt.outcome.is_some() {
+            return Ok(None);
+        }
+        let (loc, he) = self.located(&attempt.worktree_path)?;
+        let cp = self.worktrees.checkpoint(
+            &he.hr(&self.env),
+            &loc.path,
+            attempt_id,
+            &attempt.base_sha,
+        )?;
+        if let Some(cp) = &cp {
+            self.sink.emit(
+                "checkpoints:changed",
+                serde_json::json!({ "attemptId": attempt_id, "n": cp.n }),
+            );
+        }
+        Ok(cp)
+    }
+
+    /// Restore an attempt's worktree to checkpoint `n` — `0` is the
+    /// attempt's base. Code only, the conversation is never touched, and the
+    /// restore is itself restorable: a "now" snapshot is taken first.
+    ///
+    /// Refused while a turn is in flight. Restoring under a running agent
+    /// would pull files out from under its edits, and it would go on
+    /// believing in work that is no longer there — the decoupling the
+    /// decision document rules out. Stopped, idle and exited sessions are
+    /// the moments a person can honestly rewind.
+    pub fn restore_checkpoint(&self, attempt_id: &str, n: u64) -> Result<Restored> {
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        if attempt.outcome.is_some() {
+            return Err(anyhow!(
+                "this attempt is finished — its worktree is gone and the frozen diff is the record"
+            ));
+        }
+        let busy = self.sessions.lock().unwrap().values().any(|s| {
+            s.attempt_id.as_deref() == Some(attempt_id)
+                && s.live
+                && !matches!(s.status, Status::Idle | Status::Saved | Status::Exited)
+        });
+        if busy {
+            return Err(anyhow!(
+                "the agent is mid-turn in this worktree. Restoring now would pull files out from \
+                 under its edits, and it would keep believing in work that is no longer there. \
+                 Wait for the turn to end — or close the session — and restore then"
+            ));
+        }
+        // One claim covers the pre-save and the restore: a Stop-triggered
+        // snapshot arriving mid-restore must not capture a half-restored
+        // tree as a checkpoint.
+        if !self.claim_checkpointing(attempt_id) {
+            return Err(anyhow!(
+                "a checkpoint is being taken right now; try again in a moment"
+            ));
         }
         let result = (|| {
-            let attempt = self
-                .store
-                .get_attempt(attempt_id)?
-                .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
-            if attempt.outcome.is_some() {
-                return Ok(None);
-            }
+            // The retreat from the retreat, kept before anything moves.
+            let saved = self.snapshot_attempt_inner(attempt_id)?;
             let (loc, he) = self.located(&attempt.worktree_path)?;
-            let cp = self.worktrees.checkpoint(
-                &he.hr(&self.env),
-                &loc.path,
-                attempt_id,
-                &attempt.base_sha,
-            )?;
-            if let Some(cp) = &cp {
-                self.sink.emit(
-                    "checkpoints:changed",
-                    serde_json::json!({ "attemptId": attempt_id, "n": cp.n }),
-                );
-            }
-            Ok(cp)
+            let hr = he.hr(&self.env);
+            let to_sha = if n == 0 {
+                attempt.base_sha.clone()
+            } else {
+                self.worktrees
+                    .checkpoints(&hr, &loc.path, attempt_id)?
+                    .into_iter()
+                    .find(|c| c.n == n)
+                    .map(|c| c.sha)
+                    .ok_or_else(|| anyhow!("this attempt has no checkpoint #{n}"))?
+            };
+            self.worktrees.restore_checkpoint(&hr, &loc.path, &to_sha)?;
+            self.sink.emit(
+                "checkpoints:changed",
+                serde_json::json!({ "attemptId": attempt_id }),
+            );
+            Ok(Restored { to_n: n, to_sha, saved })
         })();
         self.checkpointing.lock().unwrap().remove(attempt_id);
         result

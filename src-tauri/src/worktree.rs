@@ -584,6 +584,35 @@ impl Worktrees {
         Ok(Some(Checkpoint { n, sha, at }))
     }
 
+    /// Put the worktree's files back to a snapshot — code only. Content is
+    /// restored from the snapshot's tree, and files that exist now but not
+    /// in it are deleted. The index, the branch, the reflog and the agent's
+    /// conversation are never touched: a restore changes exactly what a
+    /// person editing files by hand could change, nothing else.
+    pub fn restore_checkpoint(&self, hr: &HostRef, worktree: &str, sha: &str) -> Result<()> {
+        // What the snapshot holds, against what the worktree holds now —
+        // tracked or untracked. Ignored files are neither snapshotted nor
+        // deleted: they were never part of the work. NUL separators, so a
+        // hostile filename cannot split into two.
+        let held = git(hr, worktree, &["ls-tree", "-r", "--name-only", "-z", sha])?;
+        let now = git(
+            hr,
+            worktree,
+            &["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        )?;
+        let held_set: std::collections::HashSet<&str> =
+            held.split('\0').filter(|s| !s.is_empty()).collect();
+        for file in now.split('\0').filter(|s| !s.is_empty()) {
+            if !held_set.contains(file) {
+                hr.remove_file(&hr.join(worktree, file))?;
+            }
+        }
+        // Everything the snapshot does hold comes back as it was. Worktree
+        // only — `--staged` is exactly the flag this must never grow.
+        git(hr, worktree, &["restore", "--source", sha, "--worktree", "--", ":/"])?;
+        Ok(())
+    }
+
     /// Delete every checkpoint ref an attempt holds. Run at the attempt's
     /// end: from then on the frozen diff is the one record, and the refs
     /// would otherwise pin every snapshot's objects forever. `git_cwd` is

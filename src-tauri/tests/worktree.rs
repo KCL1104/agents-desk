@@ -456,3 +456,58 @@ fn refs_are_cleared_at_the_end_and_orphans_are_swept() {
     let refs = git(f.repo.as_path(), &["for-each-ref", "refs/agentdesk/checkpoints"]);
     assert_eq!(refs.trim(), "");
 }
+
+/// Restore is code only: the worktree comes back to the snapshot exactly —
+/// contents, resurrected deletions, extra files gone — while the index keeps
+/// whatever the agent had staged, because the conversation-side state is
+/// never ours to touch.
+#[test]
+fn restore_returns_the_worktree_to_the_snapshot_and_only_the_worktree() {
+    let env = env();
+    let f = Fixture::new("ckpt-restore");
+    let a = f
+        .trees
+        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
+        .unwrap();
+    let wt = Path::new(&a.path);
+
+    // Turn one, snapshotted.
+    std::fs::write(wt.join("app.txt"), "good state\n").unwrap();
+    std::fs::write(wt.join("keeper.txt"), "worth keeping\n").unwrap();
+    let cp = f
+        .trees
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .unwrap()
+        .unwrap();
+
+    // Turn two ruins it: edits, a deletion, a new file — and one staged
+    // entry, standing in for index state that must survive.
+    std::fs::write(wt.join("app.txt"), "ruined\n").unwrap();
+    std::fs::remove_file(wt.join("keeper.txt")).unwrap();
+    std::fs::write(wt.join("stray.txt"), "should vanish\n").unwrap();
+    std::fs::write(wt.join("staged.txt"), "staged\n").unwrap();
+    git(wt, &["add", "staged.txt"]);
+
+    f.trees.restore_checkpoint(&hr(&env), &a.path, &cp.sha).unwrap();
+
+    assert_eq!(std::fs::read_to_string(wt.join("app.txt")).unwrap(), "good state\n");
+    assert_eq!(
+        std::fs::read_to_string(wt.join("keeper.txt")).unwrap(),
+        "worth keeping\n",
+        "a deleted file must come back"
+    );
+    assert!(!wt.join("stray.txt").exists(), "a post-snapshot file must go");
+    // staged.txt was not in the snapshot, so its worktree copy goes — but
+    // the index still holds it: restore never reaches into the index.
+    assert!(!wt.join("staged.txt").exists());
+    let index = git(wt, &["ls-files", "--cached"]);
+    assert!(
+        index.lines().any(|l| l == "staged.txt"),
+        "restore touched the index"
+    );
+
+    // Restoring to base is the same act with the free zeroth checkpoint.
+    f.trees.restore_checkpoint(&hr(&env), &a.path, &a.base_sha).unwrap();
+    assert_eq!(std::fs::read_to_string(wt.join("app.txt")).unwrap(), "one\n");
+    assert!(!wt.join("keeper.txt").exists());
+}

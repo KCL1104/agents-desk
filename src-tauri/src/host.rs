@@ -556,6 +556,22 @@ impl HostRef<'_> {
         }
     }
 
+    /// Delete one file inside the host. A file already gone is not an
+    /// error — the point is the absence, not the act.
+    pub fn remove_file(&self, path: &str) -> Result<()> {
+        match self.host {
+            Host::Local => match std::fs::remove_file(path) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(e.into()),
+            },
+            _ => {
+                self.run_ok("rm", &["-f", "--", path], None)?;
+                Ok(())
+            }
+        }
+    }
+
     /// Write a file inside the host, creating its directory. The content
     /// travels as an *argument*, not stdin — one path through every doorway,
     /// and the quoting layer already knows how to armour it.

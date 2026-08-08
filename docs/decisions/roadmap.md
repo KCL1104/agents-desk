@@ -6,7 +6,7 @@
 ## 現況
 
 - main = 研究報告 + 六批實作 + checkpoints 決策文件(至 `5b6d3ad`),工作分支 `claude/research-popular-tool-frontend-fax4cb` 與 main 同步。
-- 驗證基線:Playwright 251 passed(沙箱跑法:`npx playwright test --config playwright.local.config.ts`,指向預裝 Chromium)、cargo 全綠(容器已裝 GTK/WebKit dev 套件)、`npm run build` 乾淨。
+- 驗證基線:Playwright 253 passed(沙箱跑法:`npx playwright test --config playwright.local.config.ts`,指向預裝 Chromium)、cargo 全綠(容器已裝 GTK/WebKit dev 套件)、`npm run build` 乾淨。
 - 慣例備忘:i18n 是雙語 typed catalog,兩語相同的字串要進 `i18n.spec.ts` 的 SHARED 豁免;每個新 Tauri 指令都要在 `tests/mock-tauri.ts` 補 handler;凡動 agent 看得到的 git 狀態(index、worktree、分支)一律禁止。
 
 ## 第八批:收尾(狀態:**完成**)
@@ -22,13 +22,13 @@
 
 ## Tier 3(依序執行)
 
-### 1. Checkpoints v1(狀態:**切片 1–2 完成**,決策文件已定案於 `checkpoints.md`)
+### 1. Checkpoints v1(狀態:**切片 1–3 完成**,決策文件已定案於 `checkpoints.md`)
 
 四個未決採用文件內建議:Stop 快照**預設開**(環境面板可關)、**全留終局清**、手動檢查點**不具名**、大 repo/WSL 成本在第一片完成後量測一次再繼續。切片:
 
 1. ✅ `HostRef::run_with_env`(extra 疊在 carried 之後,同鍵後者勝;本地雙次 envs,WSL/SSH 走 `env K=V` 前綴)
 2. ✅ Stop 觸發快照 + 手動按鈕:臨時 index(`GIT_INDEX_FILE=<worktree gitdir>/agentdesk-checkpoint.index`,續用可吃 stat cache)`add -A` + `write-tree` + `commit-tree`(parent = 前一檢查點或 base_sha,identity 固定 AgentDesk)→ `refs/agentdesk/checkpoints/<attempt>/<n>`;掛在 Router `turn_done`,worker 執行緒離開 hook 路徑,`checkpointing` set 防併發;同 tree 不產 ref;終局 `clear_checkpoints`(對主 checkout 跑)+ 啟動孤兒清掃(僅本地 repo,遠端等下次終局);`checkpoints:changed` 事件已發;env 面板開關(`checkpoints_on`,預設開)+ 抽屜 ⚑ 手動 chip(所有 agent)
-3. 時間軸還原 UI:prompt 列旁「還原到此輪之前」;還原前自動快照現在;僅 stopped/idle/exited 可還原,執行中拒絕附全文理由;只還原程式碼永不碰對話(機制:`git restore --source=<sha> --worktree -- :/` + 刪快照中不存在的檔案)
+3. ✅ 時間軸還原 UI:prompt 列 ↩(兩擊確認,執行中 disabled 附理由 title,對應檢查點 = prompt 前最後一個快照、否則 base n=0);`restore_checkpoint(attempt, n)` 先自動快照再 `git restore --source --worktree -- :/` + 刪快照外檔案(index 永不碰,`remove_file` host helper);還原與快照共用 `checkpointing` claim 防夾到半還原樹;banner 供 claude「告訴 agent」預組訊息走 sendFollowup,送不送由人
 4. 「與檢查點比較」diff 檢視(現有渲染換 base sha)
 
 尚欠的量測(開工前承諾):大 repo + WSL 的單次快照成本,做完切片 3 前量一次。

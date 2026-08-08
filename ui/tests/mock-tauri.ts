@@ -785,6 +785,28 @@ export function installMock(): void {
 
     list_checkpoints: (args) => mock.checkpoints.get(String(args.attemptId)) ?? [],
 
+    restore_checkpoint: (args) => {
+      const id = String(args.attemptId);
+      const n = Number(args.n);
+      // The core's refusal, mirrored: a turn in flight blocks the restore.
+      const session = mock.sessions.find((s) => s.attempt_id === id);
+      if (session && session.live && !['idle', 'saved', 'exited'].includes(session.status)) {
+        throw new Error('the agent is mid-turn in this worktree');
+      }
+      const list = mock.checkpoints.get(id) ?? [];
+      const target = n === 0 ? { sha: 'abcd1234deadbeef' } : list.find((c) => c.n === n);
+      if (!target) throw new Error(`this attempt has no checkpoint #${n}`);
+      // The automatic pre-restore snapshot the core always keeps first.
+      const saved = {
+        n: (list[list.length - 1]?.n ?? 0) + 1,
+        sha: `feed${list.length + 1}00`,
+        at: Math.floor(Date.now() / 1000),
+      };
+      list.push(saved);
+      mock.checkpoints.set(id, list);
+      return { to_n: n, to_sha: target.sha, saved };
+    },
+
     list_run_scripts: () => mock.runScripts,
 
     run_script: (args) => {
