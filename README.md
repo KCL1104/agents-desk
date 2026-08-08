@@ -199,6 +199,16 @@ app's language), and the dock/taskbar icon wears the waiting count on macOS
 and Linux. With the window focused the in-app banner already says it, so the
 OS stays quiet.
 
+### Themes
+
+Five presets — Ink (the default), Paper (light), Pine, Wisteria, Sunset —
+plus a custom mode, in the environment panel. A custom theme asks for the
+six colors that carry meaning (background, text, accent, ok/warn/err) and
+derives the in-between tiers; the editor shows the WCAG contrast of every
+text tier against the surface it actually sits on, live, with 4.5:1 as the
+floor the app keeps for itself. Terminals change clothes with the theme,
+including a light ANSI ramp on light themes. The choice persists locally.
+
 ## Testing
 
 ```bash
