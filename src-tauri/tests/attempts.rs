@@ -17,6 +17,8 @@ use std::time::{Duration, Instant};
 mod config;
 #[path = "../src/core.rs"]
 mod core;
+#[path = "../src/host.rs"]
+mod host;
 #[path = "../src/hooks.rs"]
 mod hooks;
 #[path = "../src/i18n.rs"]
@@ -132,6 +134,39 @@ impl Harness {
                 use std::os::unix::fs::PermissionsExt;
                 std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
             }
+        }
+
+        // A stand-in for wsl.exe: the "distro" shares this machine's
+        // filesystem, and its login environment is pinned to the harness's
+        // own — stubs first on PATH, HOME at the harness root — so the whole
+        // WSL route (probe, git, spawn, env crossing) runs for real against
+        // local processes. What it cannot vouch for is the real wsl.exe's
+        // quirks; that is what a Windows machine validates.
+        let fake_wsl = format!(
+            r#"#!/bin/bash
+export PATH="{bin}:/usr/bin:/bin"
+export HOME="{home}"
+export AGENTDESK_STUB_LOG="{logs}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -d|--shell-type) shift 2 ;;
+    --cd) cd "$2" || exit 1; shift 2 ;;
+    -e|--) shift; break ;;
+    *) shift ;;
+  esac
+done
+exec "$@"
+"#,
+            bin = bin.display(),
+            home = root.display(),
+            logs = logs.display(),
+        );
+        let p = bin.join("wsl.exe");
+        std::fs::write(&p, fake_wsl).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
 
         let mut vars: HashMap<String, String> = HashMap::new();
@@ -890,6 +925,91 @@ fn an_empty_followup_is_not_sent() {
     let a = h.start(&task, "claude");
 
     assert!(h.core.send_followup(&a.session_id, "  \n").is_err());
+}
+
+/* ------------------------------ WSL bridge ----------------------------- */
+
+/// M10a end to end, through a stand-in wsl.exe: a `wsl://` card's worktree is
+/// created inside the distro under the distro's own home, the agent launches
+/// there with its argv intact and its session identity carried across the
+/// boundary, the diff reads back through the host, and closing returns the
+/// tree. Everything the app does with WSL, minus the real wsl.exe's quirks.
+#[test]
+fn a_wsl_repository_runs_its_whole_attempt_inside_the_distro() {
+    let h = Harness::new("wsl");
+    let _guard = h.rt.enter();
+
+    let repo_url = format!("wsl://TestOS{}", h.repo.display());
+    let task = h
+        .core
+        .create_task("修好登入".into(), "make it work".into(), repo_url, "main".into())
+        .expect("a wsl:// repository must be checkable through the doorway");
+
+    let a = h.start(&task, "claude");
+
+    // Stored in the app's path space, so every later reader knows the host…
+    assert!(
+        a.worktree_path.starts_with("wsl://TestOS/"),
+        "{}",
+        a.worktree_path
+    );
+    let inner = a.worktree_path.strip_prefix("wsl://TestOS").unwrap();
+    // …and living under the distro's own home, never the app machine's root.
+    assert!(
+        inner.starts_with(&format!("{}/.agentdesk/worktrees", h.root.display())),
+        "the worktree left the distro: {inner}"
+    );
+    assert!(Path::new(inner).is_dir(), "the worktree was never created");
+
+    // The agent is running inside: right directory, prompt still the last
+    // argv entry — and the launch record existing at all proves
+    // AGENTDESK_SESSION_ID crossed the boundary, because the stub names its
+    // log file after it.
+    let launch = h.launches(&a.session_id, 1).pop().unwrap();
+    assert_eq!(
+        std::fs::canonicalize(&launch.cwd).unwrap(),
+        std::fs::canonicalize(inner).unwrap()
+    );
+    assert_eq!(launch.args.last(), Some(&a.prompt));
+    // The distro's claude answered the version probe, so the session still
+    // gets its card's name for cross-session messaging.
+    assert!(
+        launch
+            .args
+            .windows(2)
+            .any(|w| w[0] == "--name" && w[1] == "修好登入 #1"),
+        "{:?}",
+        launch.args
+    );
+
+    // The diff reads through the host, freezes on close, and the tree goes
+    // back to the distro.
+    std::fs::write(Path::new(inner).join("app.txt"), "fixed\n").unwrap();
+    assert!(h.core.attempt_diff(&a.attempt_id).unwrap().contains("fixed"));
+    h.core.finish_attempt(&a.attempt_id, Outcome::Discarded).unwrap();
+    assert!(!Path::new(inner).exists(), "the worktree outlived its attempt");
+    assert!(
+        h.core.attempt_diff(&a.attempt_id).unwrap().contains("fixed"),
+        "the frozen diff was lost with the worktree"
+    );
+}
+
+/// The other host scheme is spoken for but not spoken: a person typing it
+/// learns the truth instead of chasing a phantom "no such directory".
+#[test]
+fn an_ssh_repository_is_refused_with_not_yet() {
+    let h = Harness::new("sshrefuse");
+    let _guard = h.rt.enter();
+    let err = h
+        .core
+        .create_task(
+            "x".into(),
+            "y".into(),
+            "ssh://devbox/home/me/app".into(),
+            "main".into(),
+        )
+        .expect_err("ssh:// must be refused, not misread");
+    assert!(err.to_string().contains("not supported yet"), "{err}");
 }
 
 /* ----------------------- cross-session messaging ----------------------- */

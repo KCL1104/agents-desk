@@ -14,6 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config;
 use crate::hooks::{self, Activity, HookHandler, HookReport, HookServer, HookState};
+use crate::host::{self, Host, HostRef};
 use crate::prompt::{self, Delivery};
 use crate::pty::{PtyRegistry, PtySink};
 use crate::shell_env::{self, ShellEnv};
@@ -286,19 +287,44 @@ fn free_port() -> Result<u16> {
 /// script that hangs must not hold the attempt open forever — thirty seconds
 /// is long enough to stop a container and short enough to still feel like
 /// "closing", and what happened is logged rather than swallowed.
-#[cfg(unix)]
-fn run_archive(env: &ShellEnv, script: &str, worktree: &std::path::Path, root: &str) {
+fn run_archive(hr: &HostRef, script: &str, worktree: &str, root: &str) {
     use std::process::{Command, Stdio};
-    let sh = env
-        .which("sh")
-        .unwrap_or_else(|| std::path::PathBuf::from("/bin/sh"));
-    let child = Command::new(sh)
-        .args(["-c", script])
-        .current_dir(worktree)
-        .envs(&env.vars)
-        .env("AGENTDESK_ROOT_PATH", root)
-        .stdin(Stdio::null())
-        .spawn();
+    let mut cmd = match hr.host {
+        Host::Local => {
+            if !cfg!(unix) {
+                eprintln!("[core] archive scripts need a POSIX shell; skipped on this platform");
+                return;
+            }
+            let sh = hr
+                .env
+                .which("sh")
+                .unwrap_or_else(|| std::path::PathBuf::from("/bin/sh"));
+            let mut c = Command::new(sh);
+            c.args(["-c", script])
+                .current_dir(worktree)
+                .envs(&hr.env.vars)
+                .env("AGENTDESK_ROOT_PATH", root);
+            c
+        }
+        // Inside a host the script's environment rides the argv, the same
+        // way a launch's does.
+        Host::Wsl { .. } => {
+            let envs = host::pty_env(
+                hr.env,
+                &[("AGENTDESK_ROOT_PATH".to_string(), root.to_string())],
+            );
+            let (outer, args, _) = hr.host.wrap(
+                "sh",
+                &["-c".to_string(), script.to_string()],
+                Some(worktree),
+                &envs,
+            );
+            let mut c = Command::new(hr.local.which("wsl.exe").unwrap_or_else(|| outer.into()));
+            c.args(args);
+            c
+        }
+    };
+    let child = cmd.stdin(Stdio::null()).spawn();
     let mut child = match child {
         Ok(c) => c,
         Err(e) => {
@@ -332,10 +358,6 @@ fn run_archive(env: &ShellEnv, script: &str, worktree: &std::path::Path, root: &
     }
 }
 
-#[cfg(not(unix))]
-fn run_archive(_env: &ShellEnv, _script: &str, _worktree: &std::path::Path, _root: &str) {
-    eprintln!("[core] archive scripts need a POSIX shell; skipped on this platform");
-}
 
 /// One row on its way to an attempt's timeline.
 #[derive(Debug)]
@@ -580,6 +602,33 @@ pub struct Core {
     /// The installed Claude Code's version, measured once at startup.
     /// `None` means unknown, and unknown keeps every version-gated flag off.
     claude_version: Option<(u64, u64, u64)>,
+    /// Everything known about each execution environment, resolved on first
+    /// use and kept: a WSL distro's login environment costs a probe, and the
+    /// answer does not change under a running app.
+    hosts: Mutex<HashMap<Host, Arc<HostEnv>>>,
+}
+
+/// One execution environment, resolved: its login environment, its claude,
+/// and where its worktrees live. The local one mirrors the core's own fields;
+/// a WSL distro's is probed through `wsl.exe` on first contact.
+pub struct HostEnv {
+    pub host: Host,
+    pub env: ShellEnv,
+    pub claude_version: Option<(u64, u64, u64)>,
+    /// `~/.agentdesk/worktrees` *inside the host* — a worktree lives in the
+    /// same filesystem as its repository, never across a boundary.
+    pub worktree_root: String,
+}
+
+impl HostEnv {
+    /// The pair of environments everything that executes needs.
+    fn hr<'a>(&'a self, local: &'a ShellEnv) -> HostRef<'a> {
+        HostRef {
+            host: &self.host,
+            local,
+            env: &self.env,
+        }
+    }
 }
 
 impl Core {
@@ -689,6 +738,7 @@ impl Core {
             data_dir: data_dir.clone(),
             worktrees: Worktrees::new(worktree_root),
             claude_version,
+            hosts: Mutex::new(HashMap::new()),
         });
 
         // Status reporting is a nicety: if the listener cannot bind, sessions
@@ -711,6 +761,62 @@ impl Core {
         Ok(core)
     }
 
+    /* ---------------------------- hosts ---------------------------- */
+
+    /// The resolved environment for one host, probed on first contact.
+    ///
+    /// Resolution happens outside the map lock: a WSL probe takes a moment,
+    /// and nothing else should queue behind it. Two first contacts racing
+    /// probe twice and the second insert wins — wasteful once, wrong never.
+    fn host_env(&self, h: &Host) -> Result<Arc<HostEnv>> {
+        if let Some(he) = self.hosts.lock().unwrap().get(h) {
+            return Ok(Arc::clone(he));
+        }
+        let he = Arc::new(match h {
+            Host::Local => HostEnv {
+                host: Host::Local,
+                env: self.env.clone(),
+                claude_version: self.claude_version,
+                worktree_root: self.worktrees.local_root(),
+            },
+            Host::Wsl { .. } => {
+                let env = h.probe_env(&self.env)?;
+                let home = env.vars.get("HOME").cloned().ok_or_else(|| {
+                    anyhow!("the distro's environment came back without a HOME")
+                })?;
+                // The distro's claude, not ours — its version gates its flags.
+                let hr = HostRef {
+                    host: h,
+                    local: &self.env,
+                    env: &env,
+                };
+                let claude_version = hr
+                    .run_ok("claude", &["--version"], None)
+                    .ok()
+                    .and_then(|s| parse_claude_version(&s));
+                HostEnv {
+                    host: h.clone(),
+                    env,
+                    claude_version,
+                    worktree_root: format!("{home}/.agentdesk/worktrees"),
+                }
+            }
+        });
+        self.hosts
+            .lock()
+            .unwrap()
+            .insert(h.clone(), Arc::clone(&he));
+        Ok(he)
+    }
+
+    /// Split a stored path and resolve its host in one motion — the shape
+    /// nearly every caller wants.
+    fn located(&self, raw: &str) -> Result<(host::Located, Arc<HostEnv>)> {
+        let loc = host::locate(raw)?;
+        let he = self.host_env(&loc.host)?;
+        Ok((loc, he))
+    }
+
     /* ---------------------------- tasks ---------------------------- */
 
     /// Make a card.
@@ -726,8 +832,9 @@ impl Core {
         repo_path: String,
         base_branch: String,
     ) -> Result<String> {
+        let (loc, he) = self.located(&repo_path)?;
         self.worktrees
-            .check_repo(&self.env, std::path::Path::new(&repo_path), &base_branch)?;
+            .check_repo(&he.hr(&self.env), &loc.path, &base_branch)?;
 
         let id = uuid::Uuid::new_v4().to_string();
         let position = self
@@ -1029,18 +1136,25 @@ impl Core {
         rows: u16,
     ) -> Result<OpenedAttempt> {
         let task = self.task(task_id)?;
-        let repo = std::path::PathBuf::from(&task.repo_path);
+        let (loc, he) = self.located(&task.repo_path)?;
         let seq = self.store.next_attempt_seq(task_id)?;
         let slug = worktree::slug(&task.title, &task.id);
 
-        let wt = self
-            .worktrees
-            .create(&self.env, &repo, &task.base_branch, &slug, seq)?;
+        let wt = self.worktrees.create(
+            &he.hr(&self.env),
+            &he.worktree_root,
+            &loc.path,
+            &task.base_branch,
+            &slug,
+            seq,
+        )?;
 
         // From here on a failure has a worktree to give back.
-        let opened = self.finish_opening(&task, agent, first_prompt, mode, &wt, cols, rows);
+        let opened = self.finish_opening(&task, agent, first_prompt, mode, &loc, &he, &wt, cols, rows);
         if opened.is_err() {
-            let _ = self.worktrees.remove(&self.env, &repo, &wt.path);
+            let _ = self
+                .worktrees
+                .remove(&he.hr(&self.env), &loc.path, &wt.path);
         }
         let opened = opened?;
 
@@ -1057,6 +1171,8 @@ impl Core {
         agent: String,
         first_prompt: Option<String>,
         mode: PermissionMode,
+        loc: &host::Located,
+        he: &HostEnv,
         wt: &worktree::OpenedWorktree,
         cols: u16,
         rows: u16,
@@ -1066,7 +1182,9 @@ impl Core {
         // whatever the profile says at the moment it actually starts.
         let (agent, profile_args) = self.resolve_launcher(&agent);
         let attempt_id = uuid::Uuid::new_v4().to_string();
-        let cwd = wt.path.to_string_lossy().to_string();
+        // Stored in the app's path space, so every later reader knows which
+        // host to ask; inside the host it is `wt.path` plain.
+        let cwd = host::stored(&he.host, &wt.path);
 
         let text = match first_prompt {
             Some(edited) => edited,
@@ -1076,12 +1194,19 @@ impl Core {
         // The repository's own word on how a worktree becomes runnable. A
         // malformed file fails the start here, in the dialog, rather than
         // producing a worktree that is mysteriously not set up.
-        let setup = config::load(std::path::Path::new(&task.repo_path))?
+        let config_path = he.host.join(&loc.path, config::FILE);
+        let setup = he
+            .hr(&self.env)
+            .read_to_string(&config_path)?
+            .map(|text| config::parse(&text, &config_path))
+            .transpose()?
             .unwrap_or_default()
             .setup
             .map(|script| SetupWrap {
                 script,
-                root_path: task.repo_path.clone(),
+                // The path scripts see is the host's own: `$AGENTDESK_ROOT_PATH`
+                // is for `cp`, and `cp` runs inside.
+                root_path: loc.path.clone(),
             });
 
         let delivery = prompt::delivery_for(&agent);
@@ -1209,7 +1334,8 @@ impl Core {
                 "attempt {attempt_id} is finished; its worktree has been removed"
             ));
         }
-        if !std::path::Path::new(&attempt.worktree_path).is_dir() {
+        let (wt_loc, he) = self.located(&attempt.worktree_path)?;
+        if !he.hr(&self.env).is_dir(&wt_loc.path) {
             return Err(anyhow!(
                 "the worktree at {} is gone",
                 attempt.worktree_path
@@ -1304,14 +1430,16 @@ impl Core {
 
     fn close_attempt(&self, attempt: &StoredAttempt, outcome: Outcome) -> Result<()> {
         let task = self.task(&attempt.task_id).ok();
-        let worktree = std::path::PathBuf::from(&attempt.worktree_path);
+        let worktree = attempt.worktree_path.clone();
+        let situated = self.located(&worktree).ok();
 
         // Best effort: a worktree that has already been deleted by hand must
         // not stop the attempt from being closed out.
-        let diff = self
-            .worktrees
-            .diff(&self.env, &worktree, &attempt.base_sha)
-            .ok();
+        let diff = situated.as_ref().and_then(|(loc, he)| {
+            self.worktrees
+                .diff(&he.hr(&self.env), &loc.path, &attempt.base_sha)
+                .ok()
+        });
 
         self.store
             .finish_attempt(&attempt.id, outcome, diff.as_deref())?;
@@ -1327,8 +1455,13 @@ impl Core {
             .unwrap()
             .values()
             .filter(|s| {
+                // Compared in the stored path space, where both sides carry
+                // their host prefix — a WSL dev server matches its WSL
+                // worktree and nothing else's.
                 s.attempt_id.as_deref() == Some(&attempt.id)
-                    || std::path::Path::new(&s.cwd).starts_with(&worktree)
+                    || s.cwd == worktree
+                    || s.cwd
+                        .starts_with(&format!("{}/", worktree.trim_end_matches('/')))
             })
             .map(|s| s.id.clone())
             .collect();
@@ -1338,15 +1471,21 @@ impl Core {
             self.sessions.lock().unwrap().remove(&id);
         }
 
-        if let Some(task) = task {
+        if let (Some(task), Some((wt_loc, he))) = (task, situated) {
+            let repo_loc = host::locate(&task.repo_path)?;
+            let hr = he.hr(&self.env);
             // The archive script gets its chance while the directory still
             // exists — the place to stop containers or give back whatever
             // setup borrowed.
-            if worktree.is_dir() {
-                match config::load(std::path::Path::new(&task.repo_path)) {
+            if hr.is_dir(&wt_loc.path) {
+                let config_path = he.host.join(&repo_loc.path, config::FILE);
+                match hr
+                    .read_to_string(&config_path)
+                    .and_then(|t| t.map(|t| config::parse(&t, &config_path)).transpose())
+                {
                     Ok(Some(cfg)) => {
                         if let Some(script) = cfg.archive {
-                            run_archive(&self.env, &script, &worktree, &task.repo_path);
+                            run_archive(&hr, &script, &wt_loc.path, &repo_loc.path);
                         }
                     }
                     Ok(None) => {}
@@ -1355,11 +1494,7 @@ impl Core {
                     Err(e) => eprintln!("[core] archive script skipped: {e:#}"),
                 }
             }
-            self.worktrees.remove(
-                &self.env,
-                std::path::Path::new(&task.repo_path),
-                &worktree,
-            )?;
+            self.worktrees.remove(&hr, &repo_loc.path, &wt_loc.path)?;
         }
         Ok(())
     }
@@ -1444,7 +1579,13 @@ impl Core {
             .get_attempt(attempt_id)?
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         let task = self.task(&attempt.task_id)?;
-        Ok(config::load(std::path::Path::new(&task.repo_path))?
+        let (loc, he) = self.located(&task.repo_path)?;
+        let config_path = he.host.join(&loc.path, config::FILE);
+        Ok(he
+            .hr(&self.env)
+            .read_to_string(&config_path)?
+            .map(|t| config::parse(&t, &config_path))
+            .transpose()?
             .unwrap_or_default()
             .run
             .into_iter()
@@ -1467,9 +1608,6 @@ impl Core {
         cols: u16,
         rows: u16,
     ) -> Result<String> {
-        if !cfg!(unix) {
-            return Err(anyhow!("run scripts need a POSIX shell"));
-        }
         let attempt = self
             .store
             .get_attempt(attempt_id)?
@@ -1478,7 +1616,18 @@ impl Core {
             return Err(anyhow!("attempt {attempt_id} is finished; its worktree has been removed"));
         }
         let task = self.task(&attempt.task_id)?;
-        let config = config::load(std::path::Path::new(&task.repo_path))?
+        let (repo_loc, he) = self.located(&task.repo_path)?;
+        let wt_loc = host::locate(&attempt.worktree_path)?;
+        // A local host needs a local POSIX shell; a WSL host brings its own.
+        if matches!(he.host, Host::Local) && !cfg!(unix) {
+            return Err(anyhow!("run scripts need a POSIX shell"));
+        }
+        let config_path = he.host.join(&repo_loc.path, config::FILE);
+        let config = he
+            .hr(&self.env)
+            .read_to_string(&config_path)?
+            .map(|t| config::parse(&t, &config_path))
+            .transpose()?
             .ok_or_else(|| anyhow!("{} has no {}", task.repo_path, config::FILE))?;
         let script = config
             .run
@@ -1486,7 +1635,14 @@ impl Core {
             .find(|r| r.name == name)
             .ok_or_else(|| anyhow!("no run script named `{name}` in {}", config::FILE))?;
 
-        let port = free_port()?;
+        let port = match &he.host {
+            Host::Local => free_port()?,
+            // The kernel that owns the port is the distro's; asked from here
+            // the answer would describe the wrong machine. A high port drawn
+            // from randomness collides rarely, and a colliding dev server
+            // fails loudly in its own terminal.
+            Host::Wsl { .. } => 20000 + (uuid::Uuid::new_v4().as_u128() % 40000) as u16,
+        };
         let id = uuid::Uuid::new_v4().to_string();
         let at = now_ms();
         let meta = SessionMeta {
@@ -1507,19 +1663,40 @@ impl Core {
             attempt_id: None,
         };
 
+        let script_env = [
+            ("AGENTDESK_PORT".to_string(), port.to_string()),
+            ("AGENTDESK_ROOT_PATH".to_string(), repo_loc.path.clone()),
+        ];
+        let (program, args, outer_cwd, outer_env): (String, Vec<String>, Option<String>, Vec<(String, String)>) =
+            match &he.host {
+                Host::Local => (
+                    "sh".to_string(),
+                    vec!["-c".to_string(), script.command],
+                    Some(wt_loc.path.clone()),
+                    script_env.to_vec(),
+                ),
+                Host::Wsl { .. } => {
+                    let envs = host::pty_env(&he.env, &script_env);
+                    let (p, a, _) = he.host.wrap(
+                        "sh",
+                        &["-c".to_string(), script.command],
+                        Some(&wt_loc.path),
+                        &envs,
+                    );
+                    (p, a, None, Vec::new())
+                }
+            };
+
         // On the record before it can exit — see `finish_opening`. A script
         // that dies at once (`command not found`) must die visibly.
         self.sessions.lock().unwrap().insert(id.clone(), meta.clone());
         if let Err(e) = self.ptys.spawn(
             &id,
-            "sh",
-            &["-c".to_string(), script.command],
-            &attempt.worktree_path,
+            &program,
+            &args,
+            outer_cwd.as_deref(),
             &self.env,
-            &[
-                ("AGENTDESK_PORT".to_string(), port.to_string()),
-                ("AGENTDESK_ROOT_PATH".to_string(), task.repo_path.clone()),
-            ],
+            &outer_env,
             cols.max(20),
             rows.max(5),
             Arc::clone(&self.router) as Arc<dyn PtySink>,
@@ -1543,11 +1720,9 @@ impl Core {
         if let Some(frozen) = attempt.frozen_diff {
             return Ok(frozen);
         }
-        self.worktrees.diff(
-            &self.env,
-            std::path::Path::new(&attempt.worktree_path),
-            &attempt.base_sha,
-        )
+        let (wt_loc, he) = self.located(&attempt.worktree_path)?;
+        self.worktrees
+            .diff(&he.hr(&self.env), &wt_loc.path, &attempt.base_sha)
     }
 
     /// The first message for this card.
@@ -1568,12 +1743,11 @@ impl Core {
                 let seq = self.store.next_attempt_seq(&task.id)?;
                 let slug = worktree::slug(&task.title, &task.id);
                 let sha = self
-                    .worktrees
-                    .head_of(
-                        &self.env,
-                        std::path::Path::new(&task.repo_path),
-                        &task.base_branch,
-                    )
+                    .located(&task.repo_path)
+                    .and_then(|(loc, he)| {
+                        self.worktrees
+                            .head_of(&he.hr(&self.env), &loc.path, &task.base_branch)
+                    })
                     .unwrap_or_default();
                 (format!("agentdesk/{slug}-{seq}"), sha)
             }
@@ -1601,10 +1775,12 @@ impl Core {
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         let task = self.task(&attempt.task_id)?;
 
+        let (repo_loc, he) = self.located(&task.repo_path)?;
+        let wt_loc = host::locate(&attempt.worktree_path)?;
         let sha = self.worktrees.merge_to_base(
-            &self.env,
-            std::path::Path::new(&task.repo_path),
-            std::path::Path::new(&attempt.worktree_path),
+            &he.hr(&self.env),
+            &repo_loc.path,
+            &wt_loc.path,
             &attempt.branch,
             &task.base_branch,
         )?;
@@ -1687,9 +1863,10 @@ impl Core {
             &attempt.base_sha[..attempt.base_sha.len().min(8)],
             task.prompt
         );
+        let (wt_loc, he) = self.located(&attempt.worktree_path)?;
         self.worktrees.push_and_open_pr(
-            &self.env,
-            std::path::Path::new(&attempt.worktree_path),
+            &he.hr(&self.env),
+            &wt_loc.path,
             &attempt.branch,
             &task.base_branch,
             &task.title,
@@ -1843,22 +2020,38 @@ impl Core {
         rows: u16,
         setup: Option<&SetupWrap>,
     ) -> Result<()> {
-        let mut extra_env = Vec::new();
+        // Which world this session's directory lives in decides everything
+        // below: whose claude, whose PATH, and whether the whole command
+        // line gets wrapped through the doorway.
+        let loc = host::locate(cwd)?;
+        let he = self.host_env(&loc.host)?;
+
+        let mut session_env = Vec::new();
         let plugin_dir = self.hooks.get().map(|server| {
             // Identity only: the listener URL is baked into the plugin at
             // startup, because the port changes every run.
-            extra_env.push(("AGENTDESK_SESSION_ID".to_string(), id.to_string()));
-            server.plugin_dir.to_string_lossy().to_string()
+            session_env.push(("AGENTDESK_SESSION_ID".to_string(), id.to_string()));
+            let dir = server.plugin_dir.to_string_lossy().to_string();
+            // The plugin sits on the app's disk; a claude inside WSL reads
+            // it through the drive mounts. (Its hook URL points at localhost,
+            // which reaches the app under mirrored networking; under NAT the
+            // reports fail soft and the session runs without status — the
+            // README says which switch buys them back.)
+            match &he.host {
+                Host::Local => dir,
+                Host::Wsl { .. } => host::win_path_for_wsl(&dir),
+            }
         });
 
         // Cross-session messaging addresses a session by name, and left to
         // itself the CLI derives one from the worktree's directory — a slug
         // with a counter. AgentDesk knows the card, so a claude session is
         // named what its own list calls it: 「修好登入 #1」, reachable by the
-        // name a person would actually say. Version-gated, because an older
-        // claude refuses to start on a flag it does not know.
+        // name a person would actually say. Version-gated on the claude that
+        // will actually run — the host's — because an older CLI refuses to
+        // start on a flag it does not know.
         let mut opts = opts;
-        if agent == "claude" && self.claude_version >= Some(NAMED_SESSIONS_SINCE) {
+        if agent == "claude" && he.claude_version >= Some(NAMED_SESSIONS_SINCE) {
             if let Some(title) = self.sessions.lock().unwrap().get(id).map(|s| s.title.clone()) {
                 opts.push("--name".to_string());
                 opts.push(title);
@@ -1867,9 +2060,12 @@ impl Core {
 
         let args = build_args(agent, opts, plugin_dir.as_deref(), positional);
 
+        // A local host needs a local POSIX shell for the setup wrap; a WSL
+        // host brings its own.
+        let posix = cfg!(unix) || !matches!(he.host, Host::Local);
         let (program, args) = match setup {
-            Some(wrap) if cfg!(unix) => {
-                extra_env.push(("AGENTDESK_ROOT_PATH".to_string(), wrap.root_path.clone()));
+            Some(wrap) if posix => {
+                session_env.push(("AGENTDESK_ROOT_PATH".to_string(), wrap.root_path.clone()));
                 // `set -e` so a failed setup stops in front of the person,
                 // in the terminal, instead of starting an agent in a
                 // half-made workspace.
@@ -1887,13 +2083,25 @@ impl Core {
             None => (agent.to_string(), args),
         };
 
+        // Locally the PTY applies cwd and env natively; inside a host both
+        // ride the wrapped argv, and the outer process is the doorway.
+        let (program, args, outer_cwd, outer_env): (String, Vec<String>, Option<String>, Vec<(String, String)>) =
+            match &he.host {
+                Host::Local => (program, args, Some(loc.path.clone()), session_env),
+                Host::Wsl { .. } => {
+                    let envs = host::pty_env(&he.env, &session_env);
+                    let (p, a, _) = he.host.wrap(&program, &args, Some(&loc.path), &envs);
+                    (p, a, None, Vec::new())
+                }
+            };
+
         self.ptys.spawn(
             id,
             &program,
             &args,
-            cwd,
+            outer_cwd.as_deref(),
             &self.env,
-            &extra_env,
+            &outer_env,
             cols.max(20),
             rows.max(5),
             Arc::clone(&self.router) as Arc<dyn PtySink>,

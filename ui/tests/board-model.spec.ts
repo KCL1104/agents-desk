@@ -214,3 +214,13 @@ test('a card names its repository by basename', () => {
   expect(repoName('/Users/me/code/agents-desk/')).toBe('agents-desk');
   expect(repoName('weird')).toBe('weird');
 });
+
+/** A repo in another world wears its host ahead of its name; a local one
+    wears nothing. Mirrors host.rs. */
+test('a wsl repository is labelled with its distro', async () => {
+  const { hostLabel, repoName } = await import('../src/board');
+  expect(hostLabel('wsl://Ubuntu/home/me/code/app')).toBe('wsl:Ubuntu');
+  expect(hostLabel('/Users/me/code/app')).toBeNull();
+  // The name still reads from the path's last segment, URL or not.
+  expect(repoName('wsl://Ubuntu/home/me/code/app')).toBe('app');
+});

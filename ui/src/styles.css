@@ -623,6 +623,8 @@ textarea { resize: vertical; }
   margin-top: 2px;
 }
 .board-card-branch { color: var(--fg-dim); }
+/* A repo living in another world says so, ahead of its name. */
+.host-badge { color: var(--accent); }
 
 /* The profile editor: one row per profile, the whole list saved at once. */
 .profiles { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }

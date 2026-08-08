@@ -45,6 +45,8 @@ export const en = {
   'newTask.promptHint':
     'No need to mention CLAUDE.md, skills or MCP — the worktree loads them natively. Starting an attempt appends the branch and base, and you can edit it before it is sent.',
   'newTask.repo': 'Repo',
+  'newTask.repoHint':
+    'A local path — or wsl://<distro>/<path> for a repository inside WSL, where the agent, git and worktrees all run in the distro.',
   'newTask.base': 'Base branch',
   'newTask.baseHint':
     'Every attempt opens a worktree and a branch from here, and diffs against it.',
@@ -267,6 +269,8 @@ export const zhTW: Record<MessageKey, string> = {
   'newTask.promptHint':
     '不用寫 CLAUDE.md、skills 或 MCP 的事 —— worktree 裡會原生載入。開 attempt 時會補上分支與 base 的說明，而且送出前可以改。',
   'newTask.repo': 'Repo',
+  'newTask.repoHint':
+    '本機路徑，或 wsl://<distro>/<路徑> 指向 WSL 裡的 repo —— agent、git、worktree 全部在 distro 裡執行。',
   'newTask.base': 'Base 分支',
   'newTask.baseHint': '每個 attempt 從這裡開一個 worktree 與分支，diff 也以這裡為基準。',
 

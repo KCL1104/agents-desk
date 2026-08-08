@@ -142,6 +142,16 @@ export function repoName(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? path;
 }
 
+/**
+ * The badge a card wears when its repository lives in another world:
+ * `wsl://Ubuntu/home/me/app` → `wsl:Ubuntu`. Local paths wear none.
+ * Mirrors host.rs `label`.
+ */
+export function hostLabel(path: string): string | null {
+  const m = /^wsl:\/\/([^/]+)\//.exec(path);
+  return m ? `wsl:${m[1]}` : null;
+}
+
 /** Cards of one column, in their stored order. */
 export function columnOf(tasks: readonly Task[], lifecycle: Lifecycle): Task[] {
   return tasks

@@ -80,6 +80,7 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
           />
           <button onClick={pick}>{t('common.choose')}</button>
         </div>
+        <p className="muted small">{t('newTask.repoHint')}</p>
 
         {list.length > 0 && (
           <div className="recents">

@@ -6,24 +6,29 @@
 //! the worktree opens, because that — not `main` as it stands later — is what
 //! the attempt's diff is against.
 //!
-//! Every git invocation goes through the login-shell environment for the same
-//! reason sessions do: the user's git, the user's git config, and later the
-//! credentials and SSH agent that `git push` and `gh` need. A GUI process's
-//! own environment has none of that.
+//! Every git invocation goes through the repository's host and its login
+//! environment, for the same reason sessions do: the user's git, the user's
+//! git config, and later the credentials and SSH agent that `git push` and
+//! `gh` need. A GUI process's own environment has none of that — and for a
+//! repository inside WSL, the git that owns it is the distro's, not ours.
+//!
+//! Paths in here are strings in the host's own spelling, never `PathBuf`:
+//! on Windows a `PathBuf` joins with backslashes, which would quietly corrupt
+//! a POSIX path inside a distro.
 
 use anyhow::{anyhow, Context, Result};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use crate::shell_env::ShellEnv;
+use crate::host::{Host, HostRef};
 
 /// Longest slug taken from a title. Long enough to recognise the card in
 /// `git branch`, short enough that the worktree path stays readable.
 const MAX_SLUG: usize = 32;
 
-/// Where a newly opened attempt lives.
+/// Where a newly opened attempt lives, in host-side paths.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OpenedWorktree {
-    pub path: PathBuf,
+    pub path: String,
     pub branch: String,
     pub base_sha: String,
     /// Which attempt number this turned out to be. May be higher than asked
@@ -73,30 +78,23 @@ pub fn slug(title: &str, task_id: &str) -> String {
 /// FNV-1a. Two checkouts of different repositories often share a folder name
 /// (`api`, `web`), so the directory that holds a repository's worktrees is
 /// keyed by its full path, not just its last component.
-fn path_hash(p: &Path) -> String {
+fn path_hash(p: &str) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in p.to_string_lossy().as_bytes() {
+    for b in p.as_bytes() {
         hash ^= *b as u64;
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
     format!("{hash:08x}")[..8].to_string()
 }
 
-fn git(env: &ShellEnv, repo: &Path, args: &[&str]) -> Result<String> {
-    let exe = env
-        .which("git")
-        .ok_or_else(|| anyhow!("`git` not found on the login-shell PATH"))?;
-    let out = std::process::Command::new(&exe)
-        .args(args)
-        .current_dir(repo)
-        .envs(&env.vars)
-        .output()
+fn git(hr: &HostRef, cwd: &str, args: &[&str]) -> Result<String> {
+    let out = hr
+        .run("git", args, Some(cwd))
         .with_context(|| format!("running git {}", args.join(" ")))?;
     if !out.status.success() {
         return Err(anyhow!(
-            "git {} failed in {}: {}",
+            "git {} failed in {cwd}: {}",
             args.join(" "),
-            repo.display(),
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
@@ -107,18 +105,20 @@ fn git(env: &ShellEnv, repo: &Path, args: &[&str]) -> Result<String> {
 /// because a branch outlives both the worktree that made it and the row that
 /// recorded it: delete a card, make another with the same title, and the
 /// numbering starts over onto branches that are still there.
-fn branch_exists(env: &ShellEnv, repo: &Path, branch: &str) -> bool {
-    let exe = match env.which("git") {
-        Some(e) => e,
-        None => return false,
-    };
-    std::process::Command::new(exe)
-        .args(["show-ref", "--verify", "--quiet", &format!("refs/heads/{branch}")])
-        .current_dir(repo)
-        .envs(&env.vars)
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+fn branch_exists(hr: &HostRef, repo: &str, branch: &str) -> bool {
+    hr.run(
+        "git",
+        &["show-ref", "--verify", "--quiet", &format!("refs/heads/{branch}")],
+        Some(repo),
+    )
+    .map(|o| o.status.success())
+    .unwrap_or(false)
+}
+
+/// The directory holding one repository's worktrees, under `root`.
+fn dir_for(host: &Host, root: &str, repo: &str) -> String {
+    let name = repo.rsplit(['/', '\\']).find(|s| !s.is_empty()).unwrap_or("repo");
+    host.join(root, &format!("{name}-{}", path_hash(repo)))
 }
 
 impl Worktrees {
@@ -144,65 +144,62 @@ impl Worktrees {
             .join("worktrees")
     }
 
-    /// The directory holding one repository's worktrees.
-    pub fn dir_for(&self, repo: &Path) -> PathBuf {
-        let name = repo
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| "repo".to_string());
-        self.root.join(format!("{name}-{}", path_hash(repo)))
+    /// This app machine's own worktree root. A non-local host keeps its
+    /// worktrees in its own filesystem — see `Core::host_env`.
+    pub fn local_root(&self) -> String {
+        self.root.to_string_lossy().to_string()
     }
 
     /// Where a branch points right now.
-    pub fn head_of(&self, env: &ShellEnv, repo: &Path, branch: &str) -> Result<String> {
-        git(env, repo, &["rev-parse", branch])
+    pub fn head_of(&self, hr: &HostRef, repo: &str, branch: &str) -> Result<String> {
+        git(hr, repo, &["rev-parse", branch])
     }
 
     /// Refuse a card that cannot produce a working attempt, at the moment it
     /// is created rather than when someone first tries to run it. Ad-hoc
     /// sessions are not subject to any of this — they are just a directory.
-    pub fn check_repo(&self, env: &ShellEnv, repo: &Path, base_branch: &str) -> Result<()> {
-        if !repo.is_dir() {
-            return Err(anyhow!("{} is not a directory", repo.display()));
+    pub fn check_repo(&self, hr: &HostRef, repo: &str, base_branch: &str) -> Result<()> {
+        if !hr.is_dir(repo) {
+            return Err(anyhow!("{repo} is not a directory"));
         }
-        let inside = git(env, repo, &["rev-parse", "--is-inside-work-tree"])
-            .map_err(|_| anyhow!("{} is not a git repository", repo.display()))?;
+        let inside = git(hr, repo, &["rev-parse", "--is-inside-work-tree"])
+            .map_err(|_| anyhow!("{repo} is not a git repository"))?;
         if inside.trim() != "true" {
-            return Err(anyhow!("{} is not a git repository", repo.display()));
+            return Err(anyhow!("{repo} is not a git repository"));
         }
-        if !branch_exists(env, repo, base_branch) {
-            return Err(anyhow!(
-                "{} has no branch `{base_branch}`",
-                repo.display()
-            ));
+        if !branch_exists(hr, repo, base_branch) {
+            return Err(anyhow!("{repo} has no branch `{base_branch}`"));
         }
         Ok(())
     }
 
     /// Open a worktree for an attempt: a fresh branch off `base_branch`, in a
-    /// directory of its own.
+    /// directory of its own under `root` — which lives in the same host as
+    /// the repository, never on the app's side of a boundary.
     ///
     /// `start_seq` is where numbering begins; if git already has that branch
     /// or the directory is occupied, this walks forward and reports which
     /// number it actually took.
+    #[allow(clippy::too_many_arguments)]
     pub fn create(
         &self,
-        env: &ShellEnv,
-        repo: &Path,
+        hr: &HostRef,
+        root: &str,
+        repo: &str,
         base_branch: &str,
         slug: &str,
         start_seq: i64,
     ) -> Result<OpenedWorktree> {
-        self.check_repo(env, repo, base_branch)?;
+        self.check_repo(hr, repo, base_branch)?;
 
         // The base as it stands right now. Recorded rather than re-resolved
         // later, because `main` keeps moving and the attempt's diff has to
         // stay against what it actually started from.
-        let base_sha = git(env, repo, &["rev-parse", base_branch])?;
+        let base_sha = git(hr, repo, &["rev-parse", base_branch])?;
 
-        let dir = self.dir_for(repo);
-        std::fs::create_dir_all(&dir)
-            .with_context(|| format!("creating {}", dir.display()))?;
+        let dir = dir_for(hr.host, root, repo);
+        hr.mkdir_p(&dir)
+            .with_context(|| format!("creating {dir}"))?;
 
         let mut seq = start_seq.max(1);
         let (path, branch) = loop {
@@ -210,24 +207,17 @@ impl Worktrees {
                 return Err(anyhow!("no free attempt number for `{slug}` after 1000 tries"));
             }
             let branch = format!("agentdesk/{slug}-{seq}");
-            let path = dir.join(format!("{slug}-{seq}"));
-            if !branch_exists(env, repo, &branch) && !path.exists() {
+            let path = hr.join(&dir, &format!("{slug}-{seq}"));
+            if !branch_exists(hr, repo, &branch) && !hr.exists(&path) {
                 break (path, branch);
             }
             seq += 1;
         };
 
         git(
-            env,
+            hr,
             repo,
-            &[
-                "worktree",
-                "add",
-                "-b",
-                &branch,
-                &path.to_string_lossy(),
-                base_branch,
-            ],
+            &["worktree", "add", "-b", &branch, &path, base_branch],
         )
         .with_context(|| format!("opening a worktree for `{branch}`"))?;
 
@@ -250,14 +240,14 @@ impl Worktrees {
     /// would leave the disk growing forever, which is the failure this step
     /// exists to prevent. The diff is frozen into the attempt row first, so
     /// what is being dropped has already been recorded.
-    pub fn remove(&self, env: &ShellEnv, repo: &Path, path: &Path) -> Result<()> {
-        if path.exists() {
-            git(env, repo, &["worktree", "remove", "--force", &path.to_string_lossy()])
-                .with_context(|| format!("removing the worktree at {}", path.display()))?;
+    pub fn remove(&self, hr: &HostRef, repo: &str, path: &str) -> Result<()> {
+        if hr.exists(path) {
+            git(hr, repo, &["worktree", "remove", "--force", path])
+                .with_context(|| format!("removing the worktree at {path}"))?;
         }
         // Clears the administrative entry when the directory was already gone
         // — deleted by hand, or on a volume that did not come back.
-        git(env, repo, &["worktree", "prune"])?;
+        git(hr, repo, &["worktree", "prune"])?;
         Ok(())
     }
 
@@ -277,13 +267,13 @@ impl Worktrees {
     /// asks you to tidy up first.
     pub fn merge_to_base(
         &self,
-        env: &ShellEnv,
-        repo: &Path,
-        worktree: &Path,
+        hr: &HostRef,
+        repo: &str,
+        worktree: &str,
         branch: &str,
         base_branch: &str,
     ) -> Result<String> {
-        let dirty = git(env, worktree, &["status", "--porcelain"])?;
+        let dirty = git(hr, worktree, &["status", "--porcelain"])?;
         if !dirty.trim().is_empty() {
             return Err(anyhow!(
                 "{branch} 還有沒有 commit 的變更，合併不會包含它們。\
@@ -291,14 +281,14 @@ impl Worktrees {
             ));
         }
 
-        let on = git(env, repo, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+        let on = git(hr, repo, &["rev-parse", "--abbrev-ref", "HEAD"])?;
         if on.trim() != base_branch {
             return Err(anyhow!(
                 "這個 repo 目前在 `{}`，不是 `{base_branch}`。切過去再合併。",
                 on.trim()
             ));
         }
-        let repo_dirty = git(env, repo, &["status", "--porcelain"])?;
+        let repo_dirty = git(hr, repo, &["status", "--porcelain"])?;
         if !repo_dirty.trim().is_empty() {
             return Err(anyhow!(
                 "`{base_branch}` 的工作目錄有未提交的變更，先收乾淨再合併。"
@@ -306,7 +296,7 @@ impl Worktrees {
         }
 
         let ahead = git(
-            env,
+            hr,
             repo,
             &["rev-list", "--count", &format!("{base_branch}..{branch}")],
         )?;
@@ -319,7 +309,7 @@ impl Worktrees {
         // `--no-ff` so the attempt stays legible as one piece of work in the
         // history rather than dissolving into the base.
         git(
-            env,
+            hr,
             repo,
             &[
                 "merge",
@@ -329,53 +319,43 @@ impl Worktrees {
                 branch,
             ],
         )?;
-        git(env, repo, &["rev-parse", "HEAD"])
+        git(hr, repo, &["rev-parse", "HEAD"])
     }
 
     /// Push the attempt's branch and open a pull request for it.
     ///
     /// The push runs from the worktree, which is already on the branch. `gh`
-    /// is looked up on the login-shell PATH like everything else, because its
-    /// credentials live in the environment a GUI process does not have.
+    /// resolves inside the repository's host like everything else, because
+    /// its credentials live in that environment, not in ours.
+    #[allow(clippy::too_many_arguments)]
     pub fn push_and_open_pr(
         &self,
-        env: &ShellEnv,
-        worktree: &Path,
+        hr: &HostRef,
+        worktree: &str,
         branch: &str,
         base_branch: &str,
         title: &str,
         body: &str,
     ) -> Result<String> {
-        let dirty = git(env, worktree, &["status", "--porcelain"])?;
+        let dirty = git(hr, worktree, &["status", "--porcelain"])?;
         if !dirty.trim().is_empty() {
             return Err(anyhow!(
                 "{branch} 還有沒有 commit 的變更，推上去不會包含它們。請先 commit。"
             ));
         }
 
-        let gh = env
-            .which("gh")
-            .ok_or_else(|| anyhow!("`gh` 不在 login shell 的 PATH 上，無法開 PR"))?;
+        git(hr, worktree, &["push", "--set-upstream", "origin", branch])?;
 
-        git(env, worktree, &["push", "--set-upstream", "origin", branch])?;
-
-        let out = std::process::Command::new(&gh)
-            .args([
-                "pr",
-                "create",
-                "--base",
-                base_branch,
-                "--head",
-                branch,
-                "--title",
-                title,
-                "--body",
-                body,
-            ])
-            .current_dir(worktree)
-            .envs(&env.vars)
-            .output()
-            .context("running gh pr create")?;
+        let out = hr
+            .run(
+                "gh",
+                &[
+                    "pr", "create", "--base", base_branch, "--head", branch, "--title", title,
+                    "--body", body,
+                ],
+                Some(worktree),
+            )
+            .map_err(|_| anyhow!("`gh` 不在這個環境的 PATH 上，無法開 PR"))?;
         if !out.status.success() {
             return Err(anyhow!(
                 "gh pr create 失敗：{}",
@@ -392,10 +372,10 @@ impl Worktrees {
     /// agent's most common act is creating one. A diff that silently omits
     /// every new file cannot answer "what did this attempt do", which is the
     /// only reason the diff exists.
-    pub fn diff(&self, env: &ShellEnv, worktree: &Path, base_sha: &str) -> Result<String> {
-        let tracked = git(env, worktree, &["diff", base_sha])?;
+    pub fn diff(&self, hr: &HostRef, worktree: &str, base_sha: &str) -> Result<String> {
+        let tracked = git(hr, worktree, &["diff", base_sha])?;
         let untracked = git(
-            env,
+            hr,
             worktree,
             &["ls-files", "--others", "--exclude-standard"],
         )?;
@@ -405,14 +385,11 @@ impl Worktrees {
             // `--no-index` against /dev/null renders a new file as the patch
             // that would create it, so it reads like the rest of the diff.
             // It exits 1 when there is a difference, which there always is.
-            let exe = env
-                .which("git")
-                .ok_or_else(|| anyhow!("`git` not found on the login-shell PATH"))?;
-            let rendered = std::process::Command::new(exe)
-                .args(["diff", "--no-index", "--", "/dev/null", file])
-                .current_dir(worktree)
-                .envs(&env.vars)
-                .output();
+            let rendered = hr.run(
+                "git",
+                &["diff", "--no-index", "--", "/dev/null", file],
+                Some(worktree),
+            );
             if let Ok(o) = rendered {
                 if !out.is_empty() && !out.ends_with('\n') {
                     out.push('\n');
@@ -478,21 +455,33 @@ mod tests {
     /// of the other.
     #[test]
     fn repositories_with_the_same_name_do_not_share_a_directory() {
-        let w = Worktrees::new(PathBuf::from("/tmp/root"));
-        let a = w.dir_for(Path::new("/Users/x/work/api"));
-        let b = w.dir_for(Path::new("/Users/x/side/api"));
+        let a = dir_for(&Host::Local, "/tmp/root", "/Users/x/work/api");
+        let b = dir_for(&Host::Local, "/tmp/root", "/Users/x/side/api");
         assert_ne!(a, b);
-        assert!(a.to_string_lossy().contains("api-"));
-        assert!(b.to_string_lossy().contains("api-"));
+        assert!(a.contains("api-"));
+        assert!(b.contains("api-"));
     }
 
     #[test]
     fn the_same_repository_always_gets_the_same_directory() {
-        let w = Worktrees::new(PathBuf::from("/tmp/root"));
         assert_eq!(
-            w.dir_for(Path::new("/Users/x/work/api")),
-            w.dir_for(Path::new("/Users/x/work/api"))
+            dir_for(&Host::Local, "/tmp/root", "/Users/x/work/api"),
+            dir_for(&Host::Local, "/tmp/root", "/Users/x/work/api")
         );
+    }
+
+    /// A distro-side layout is POSIX regardless of what the app runs on.
+    #[test]
+    fn a_wsl_repositorys_worktrees_land_under_its_own_root() {
+        let host = Host::Wsl {
+            distro: "Ubuntu".into(),
+        };
+        let dir = dir_for(&host, "/home/me/.agentdesk/worktrees", "/home/me/code/api");
+        assert!(
+            dir.starts_with("/home/me/.agentdesk/worktrees/api-"),
+            "{dir}"
+        );
+        assert!(!dir.contains('\\'));
     }
 
     /// Worktrees must not land inside a repository, because a repository's

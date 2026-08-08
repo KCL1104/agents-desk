@@ -111,7 +111,7 @@ fn a_pty_session_reports_its_status_back_through_the_plugin() {
             "--plugin-dir".to_string(),
             server.plugin_dir.to_string_lossy().to_string(),
         ],
-        &cwd.to_string_lossy().to_string(),
+        Some(&cwd.to_string_lossy().to_string()),
         &env,
         &[
             ("AGENTDESK_SESSION_ID".to_string(), sid.to_string()),

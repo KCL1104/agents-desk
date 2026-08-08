@@ -131,7 +131,10 @@ impl PtyRegistry {
         id: &str,
         program: &str,
         args: &[String],
-        cwd: &str,
+        // `None` when the real working directory only exists inside a host
+        // (a WSL distro): the outer process runs from wherever the app is,
+        // and the wrapping carries the true cwd across.
+        cwd: Option<&str>,
         env: &ShellEnv,
         // Per-session variables layered on top of the shell environment — how
         // a status hook learns which session it is reporting for.
@@ -162,7 +165,9 @@ impl PtyRegistry {
         for a in args {
             cmd.arg(a);
         }
-        cmd.cwd(cwd);
+        if let Some(dir) = cwd {
+            cmd.cwd(dir);
+        }
         for (k, v) in &env.vars {
             cmd.env(k, v);
         }

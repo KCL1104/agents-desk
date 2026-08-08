@@ -90,4 +90,25 @@ test.describe('workspace scripts and the multi-repo board', () => {
       '/Users/test/other-app',
     );
   });
+
+  /** A repository inside WSL shares the board with local ones, so its card
+      says which world it lives in, ahead of its name. */
+  test('a wsl card wears its distro ahead of its repo name', async ({ page }) => {
+    await page.addInitScript(installMock);
+    await page.goto('/');
+    await expect(page.locator('.tab')).toHaveCount(1);
+    await page.evaluate(() => {
+      window.__mock.repos['wsl://Ubuntu/home/me/webapp'] = ['main'];
+    });
+    await page.getByTestId('view-board').click();
+
+    await page.getByRole('button', { name: '新增卡片' }).click();
+    await page.getByTestId('task-title').fill('WSL 裡的卡');
+    await page.getByTestId('task-prompt').fill('p');
+    await page.getByTestId('task-repo').fill('wsl://Ubuntu/home/me/webapp');
+    await page.getByTestId('task-branch').fill('main');
+    await page.getByTestId('task-create').click();
+
+    await expect(page.getByTestId('repo-k1')).toContainText('wsl:Ubuntu · webapp');
+  });
 });

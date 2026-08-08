@@ -2,6 +2,7 @@
 
 mod config;
 mod core;
+mod host;
 mod hooks;
 mod i18n;
 mod pty;

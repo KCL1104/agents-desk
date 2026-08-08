@@ -88,6 +88,21 @@ terminal's** (see below).
   Code's own inbound rules: messages from a yolo (bypass-permissions)
   session to a normal one are held for your approval in the receiving
   terminal — that is the CLI's safety model working as designed
+- **The WSL bridge** (M10a): a card's repository can live inside a WSL
+  distro. Write its path as `wsl://<distro>/<path>` and everything runs
+  where the repository is: the distro's own `claude` (login-shell PATH,
+  probed once per distro), git and worktrees in the distro's filesystem
+  under its own `~/.agentdesk/worktrees`, workspace scripts through the
+  distro's `sh`. Commands cross the boundary as
+  `wsl.exe -d <distro> --cd <dir> -e env K=V… <program> <args…>` — no shell
+  in the middle, so a multi-line prompt stays one argument, and the session
+  identity rides across as an `env` prefix rather than trusting WSLENV.
+  Local and WSL cards share one board, each labelled with its world.
+  `ssh://` is reserved and refused with "not yet" — the SSH host is the
+  next milestone on the same seam. Status detection for WSL sessions needs
+  WSL's mirrored networking (`.wslconfig`: `networkingMode=mirrored`) so
+  hooks can reach the app at localhost; under NAT the session runs fine and
+  the badge simply stays quiet
 - **English and 繁體中文**, following your system language and switchable from
   the environment panel. Native notifications follow the same setting
 

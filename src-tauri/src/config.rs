@@ -60,12 +60,20 @@ pub struct RunScript {
     pub command: String,
 }
 
+/// Parse a config file's text. `what` names the file in the error, because
+/// "expected string at line 3" without a path is a riddle, not a report.
+pub fn parse(text: &str, what: &str) -> Result<RepoConfig> {
+    serde_json::from_str(text).with_context(|| format!("parsing {what}"))
+}
+
 /// Read the repository's config, if it has one.
 ///
 /// `None` when the file does not exist — most repositories will not have one,
 /// and that is not a condition. A file that exists but cannot be parsed is an
 /// error carried to whoever tried to use it, because a typo that quietly
 /// disabled setup would surface as "the worktree is mysteriously broken".
+/// The core reads non-local repositories through their host and calls
+/// `parse` itself; this is the local convenience the tests use.
 pub fn load(repo: &Path) -> Result<Option<RepoConfig>> {
     let path = repo.join(FILE);
     let text = match std::fs::read_to_string(&path) {
@@ -73,9 +81,7 @@ pub fn load(repo: &Path) -> Result<Option<RepoConfig>> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
     };
-    let config: RepoConfig =
-        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-    Ok(Some(config))
+    Ok(Some(parse(&text, &path.display().to_string())?))
 }
 
 #[cfg(test)]

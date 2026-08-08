@@ -160,7 +160,8 @@ async fn probe(shell: &str) -> Result<HashMap<String, String>> {
     Ok(parse_env0(dump))
 }
 
-fn parse_env0(dump: &str) -> HashMap<String, String> {
+/// Shared with `host`, which asks the same question of a WSL distro's shell.
+pub fn parse_env0(dump: &str) -> HashMap<String, String> {
     dump.split('\0')
         .filter(|entry| !entry.is_empty())
         .filter_map(|entry| {

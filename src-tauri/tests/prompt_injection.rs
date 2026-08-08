@@ -311,7 +311,7 @@ fn a_multi_line_prompt_reaches_a_fresh_worktree_as_one_message() {
             plugin_dir.to_string_lossy().to_string(),
             prompt.clone(),
         ],
-        &wt.to_string_lossy().to_string(),
+        Some(&wt.to_string_lossy().to_string()),
         &env,
         &[("AGENTDESK_SESSION_ID".to_string(), sid.to_string())],
         100,

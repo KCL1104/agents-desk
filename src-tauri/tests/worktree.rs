@@ -9,11 +9,14 @@
 
 use std::path::{Path, PathBuf};
 
+#[path = "../src/host.rs"]
+mod host;
 #[path = "../src/shell_env.rs"]
 mod shell_env;
 #[path = "../src/worktree.rs"]
 mod worktree;
 
+use crate::host::{Host, HostRef};
 use crate::shell_env::ShellEnv;
 use crate::worktree::{slug, Worktrees};
 
@@ -21,6 +24,17 @@ fn env() -> ShellEnv {
     tokio::runtime::Runtime::new()
         .unwrap()
         .block_on(shell_env::resolve())
+}
+
+/// These tests exercise the git layer itself, on the machine they run on.
+static LOCAL: Host = Host::Local;
+
+fn hr(env: &ShellEnv) -> HostRef<'_> {
+    HostRef {
+        host: &LOCAL,
+        local: env,
+        env,
+    }
 }
 
 fn git(dir: &Path, args: &[&str]) -> String {
@@ -66,6 +80,10 @@ impl Fixture {
         Self { root, repo, trees }
     }
 
+    fn repo_s(&self) -> String {
+        self.repo.to_string_lossy().to_string()
+    }
+
     fn head(&self) -> String {
         git(&self.repo, &["rev-parse", "HEAD"])
     }
@@ -92,11 +110,11 @@ fn two_attempts_on_one_repository_do_not_see_each_other() {
 
     let a = f
         .trees
-        .create(&env, &f.repo, "main", "login", 1)
+        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "login", 1)
         .expect("first attempt");
     let b = f
         .trees
-        .create(&env, &f.repo, "main", "login", 2)
+        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "login", 2)
         .expect("second attempt");
 
     assert_ne!(a.path, b.path);
@@ -104,17 +122,17 @@ fn two_attempts_on_one_repository_do_not_see_each_other() {
     assert_eq!(b.branch, "agentdesk/login-2");
 
     // Each agent writes in its own tree.
-    std::fs::write(a.path.join("app.txt"), "from attempt one\n").unwrap();
-    std::fs::write(a.path.join("only-in-a.txt"), "a\n").unwrap();
-    std::fs::write(b.path.join("app.txt"), "from attempt two\n").unwrap();
+    std::fs::write(Path::new(&a.path).join("app.txt"), "from attempt one\n").unwrap();
+    std::fs::write(Path::new(&a.path).join("only-in-a.txt"), "a\n").unwrap();
+    std::fs::write(Path::new(&b.path).join("app.txt"), "from attempt two\n").unwrap();
 
     assert_eq!(
-        std::fs::read_to_string(b.path.join("app.txt")).unwrap(),
+        std::fs::read_to_string(Path::new(&b.path).join("app.txt")).unwrap(),
         "from attempt two\n",
         "one attempt's edit reached the other's tree"
     );
     assert!(
-        !b.path.join("only-in-a.txt").exists(),
+        !Path::new(&b.path).join("only-in-a.txt").exists(),
         "a file created in one attempt appeared in the other"
     );
     // And the repository the person actually works in is untouched.
@@ -134,14 +152,14 @@ fn each_attempt_records_the_base_it_actually_started_from() {
     let f = Fixture::new("basesha");
 
     let first_base = f.head();
-    let a = f.trees.create(&env, &f.repo, "main", "card", 1).unwrap();
+    let a = f.trees.create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1).unwrap();
     assert_eq!(a.base_sha, first_base);
 
     f.commit_on_main("two\n");
     let second_base = f.head();
     assert_ne!(first_base, second_base);
 
-    let b = f.trees.create(&env, &f.repo, "main", "card", 2).unwrap();
+    let b = f.trees.create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 2).unwrap();
     assert_eq!(b.base_sha, second_base);
     // The first attempt's baseline did not move under it.
     assert_eq!(a.base_sha, first_base);
@@ -155,17 +173,17 @@ fn removing_a_worktree_gives_the_disk_back_and_keeps_the_branch() {
     let env = env();
     let f = Fixture::new("cleanup");
 
-    let a = f.trees.create(&env, &f.repo, "main", "card", 1).unwrap();
-    std::fs::write(a.path.join("app.txt"), "uncommitted\n").unwrap();
-    std::fs::write(a.path.join("scratch.txt"), "junk\n").unwrap();
-    assert!(a.path.exists());
+    let a = f.trees.create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1).unwrap();
+    std::fs::write(Path::new(&a.path).join("app.txt"), "uncommitted\n").unwrap();
+    std::fs::write(Path::new(&a.path).join("scratch.txt"), "junk\n").unwrap();
+    assert!(Path::new(&a.path).exists());
 
-    f.trees.remove(&env, &f.repo, &a.path).expect("remove");
+    f.trees.remove(&hr(&env), &f.repo_s(), &a.path).expect("remove");
 
-    assert!(!a.path.exists(), "the worktree directory is still on disk");
+    assert!(!Path::new(&a.path).exists(), "the worktree directory is still on disk");
     let listed = git(&f.repo, &["worktree", "list"]);
     assert!(
-        !listed.contains(&a.path.to_string_lossy().to_string()),
+        !listed.contains(&a.path),
         "git still lists the worktree: {listed}"
     );
     // The branch is what a merged attempt was merged from; it stays.
@@ -180,12 +198,12 @@ fn removing_a_worktree_whose_directory_is_already_gone_still_tidies_up() {
     let env = env();
     let f = Fixture::new("gonedir");
 
-    let a = f.trees.create(&env, &f.repo, "main", "card", 1).unwrap();
+    let a = f.trees.create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1).unwrap();
     // Deleted by hand, or an external volume that did not come back.
     std::fs::remove_dir_all(&a.path).unwrap();
 
     f.trees
-        .remove(&env, &f.repo, &a.path)
+        .remove(&hr(&env), &f.repo_s(), &a.path)
         .expect("a missing directory must not make cleanup fail");
     let listed = git(&f.repo, &["worktree", "list"]);
     assert!(!listed.contains("card-1"), "stale entry left behind: {listed}");
@@ -204,7 +222,7 @@ fn a_branch_git_already_has_is_walked_past() {
 
     let a = f
         .trees
-        .create(&env, &f.repo, "main", "card", 1)
+        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
         .expect("must not fail on an occupied name");
     assert_eq!(a.branch, "agentdesk/card-3");
     assert_eq!(a.seq, 3, "the number actually taken has to be reported back");
@@ -220,13 +238,13 @@ fn a_title_with_no_ascii_still_produces_a_branch_git_accepts() {
     let s = slug("修好登入頁面的白畫面", "9f8e7d6c-4b2a");
     let a = f
         .trees
-        .create(&env, &f.repo, "main", &s, 1)
+        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", &s, 1)
         .expect("git rejected the branch name");
 
     assert_eq!(a.branch, "agentdesk/task-9f8e7d6c-1");
-    assert!(a.path.exists());
+    assert!(Path::new(&a.path).exists());
     assert_eq!(
-        git(&a.path, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        git(Path::new(&a.path), &["rev-parse", "--abbrev-ref", "HEAD"]),
         "agentdesk/task-9f8e7d6c-1"
     );
 }
@@ -239,11 +257,11 @@ fn the_diff_shows_files_the_agent_created_as_well_as_ones_it_edited() {
     let env = env();
     let f = Fixture::new("diff");
 
-    let a = f.trees.create(&env, &f.repo, "main", "card", 1).unwrap();
-    std::fs::write(a.path.join("app.txt"), "edited by the agent\n").unwrap();
-    std::fs::write(a.path.join("brand_new.rs"), "fn main() {}\n").unwrap();
+    let a = f.trees.create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1).unwrap();
+    std::fs::write(Path::new(&a.path).join("app.txt"), "edited by the agent\n").unwrap();
+    std::fs::write(Path::new(&a.path).join("brand_new.rs"), "fn main() {}\n").unwrap();
 
-    let diff = f.trees.diff(&env, &a.path, &a.base_sha).expect("diff");
+    let diff = f.trees.diff(&hr(&env), &a.path, &a.base_sha).expect("diff");
 
     assert!(diff.contains("edited by the agent"), "the edit is missing:\n{diff}");
     assert!(
@@ -263,13 +281,13 @@ fn the_diff_covers_committed_and_uncommitted_work_together() {
     let env = env();
     let f = Fixture::new("committed");
 
-    let a = f.trees.create(&env, &f.repo, "main", "card", 1).unwrap();
-    std::fs::write(a.path.join("done.txt"), "committed work\n").unwrap();
-    git(&a.path, &["add", "-A"]);
-    git(&a.path, &["commit", "-qm", "agent's commit"]);
-    std::fs::write(a.path.join("app.txt"), "still in progress\n").unwrap();
+    let a = f.trees.create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1).unwrap();
+    std::fs::write(Path::new(&a.path).join("done.txt"), "committed work\n").unwrap();
+    git(Path::new(&a.path), &["add", "-A"]);
+    git(Path::new(&a.path), &["commit", "-qm", "agent's commit"]);
+    std::fs::write(Path::new(&a.path).join("app.txt"), "still in progress\n").unwrap();
 
-    let diff = f.trees.diff(&env, &a.path, &a.base_sha).unwrap();
+    let diff = f.trees.diff(&hr(&env), &a.path, &a.base_sha).unwrap();
     assert!(diff.contains("committed work"), "committed work missing:\n{diff}");
     assert!(diff.contains("still in progress"), "uncommitted work missing:\n{diff}");
 }
@@ -284,7 +302,7 @@ fn a_directory_that_is_not_a_repository_is_refused_up_front() {
     let trees = Worktrees::new(dir.join("worktrees"));
 
     let err = trees
-        .check_repo(&env, &dir, "main")
+        .check_repo(&hr(&env), &dir.to_string_lossy(), "main")
         .expect_err("a plain directory must not be accepted as a repository");
     assert!(
         err.to_string().contains("not a git repository"),
@@ -300,12 +318,12 @@ fn a_base_branch_that_does_not_exist_is_refused_up_front() {
 
     let err = f
         .trees
-        .check_repo(&env, &f.repo, "develop")
+        .check_repo(&hr(&env), &f.repo_s(), "develop")
         .expect_err("a missing base branch must be caught when the card is made");
     assert!(
         err.to_string().contains("no branch `develop`"),
         "unhelpful error: {err}"
     );
     // And nothing was created on the way to finding out.
-    assert!(!f.trees.dir_for(&f.repo).exists());
+    assert!(!Path::new(&f.trees.local_root()).exists());
 }

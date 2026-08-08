@@ -8,6 +8,7 @@ import {
   COLUMN_KEY,
   COLUMNS,
   dropIndex,
+  hostLabel,
   liveLabel,
   liveStateOf,
   liveTone,
@@ -325,12 +326,16 @@ function Card({
       </header>
 
       {/* Which codebase this card is about. Cards from different repos share
-          one board, and a title alone cannot say whose login page it means. */}
+          one board, and a title alone cannot say whose login page it means —
+          or which machine's. */}
       <div
         className="board-card-repo mono small muted"
         data-testid={`repo-${task.id}`}
         title={task.repo_path}
       >
+        {hostLabel(task.repo_path) && (
+          <span className="host-badge">{hostLabel(task.repo_path)} · </span>
+        )}
         {repoName(task.repo_path)}
         <span className="board-card-branch"> ⎇ {task.base_branch}</span>
       </div>

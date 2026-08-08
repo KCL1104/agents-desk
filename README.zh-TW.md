@@ -68,6 +68,19 @@ App 提供的是終端機分頁給不了的：多 session 管理、跨重啟的�
   flag 會直接拒絕啟動；環境面板會顯示這功能可不可用。另外注意 CLI 自己的
   收訊規則：yolo（跳過權限）session 傳給一般 session 的訊息，會在接收端的
   終端機裡等你核准 —— 那是 Claude Code 自己的安全模型在正常運作
+- **WSL 橋接**（M10a）：卡片的 repo 可以住在 WSL distro 裡。路徑寫成
+  `wsl://<distro>/<路徑>`，一切就在 repo 所在的世界執行：用 distro 自己的
+  `claude`（login shell 的 PATH，每個 distro 探測一次）、git 與 worktree
+  都在 distro 的檔案系統（它自己的 `~/.agentdesk/worktrees`）、workspace
+  scripts 走 distro 的 `sh`。指令以
+  `wsl.exe -d <distro> --cd <目錄> -e env K=V… <程式> <參數…>` 過境 ——
+  中間沒有 shell，多行 prompt 保持一個參數；session 身分用 `env` 前綴帶過去，
+  不賭 WSLENV。本機卡和 WSL 卡同一個看板，各自標明自己的世界。`ssh://`
+  已保留、會明說「還沒支援」—— SSH host 是同一道接縫上的下一個里程碑。
+  WSL session 的狀態偵測需要 WSL 的 mirrored networking（`.wslconfig` 設
+  `networkingMode=mirrored`），hooks 才打得到 app 的 localhost；NAT 模式下
+  session 照跑，只是徽章不亮
+
 - **中英雙語**：跟隨系統語言，也可以在環境面板手動切換。系統原生通知會跟著一起換
 
 尚未做：系統匣。
