@@ -142,6 +142,7 @@ test.describe('finishing an attempt', () => {
     await expect(page.getByTestId('merge-attempt')).toHaveText(/合併回 main/);
 
     await page.getByTestId('merge-attempt').click();
+    await page.getByTestId('confirm-merge').click();
 
     await page.getByTestId('view-board').click();
     await expect(page.getByTestId('state-k1')).toHaveText(/已合併/);
@@ -161,6 +162,7 @@ test.describe('finishing an attempt', () => {
     await page.evaluate(() => window.__mock.dirtyWorktrees.add('k1-a1'));
 
     await page.getByTestId('merge-attempt').click();
+    await page.getByTestId('confirm-merge').click();
 
     await expect(page.getByTestId('finish-error')).toContainText('沒有 commit');
     // Nothing was given up on the way to finding out.
@@ -223,6 +225,7 @@ test.describe('finishing an attempt', () => {
 
     await page.getByTestId('inspect-k1').click();
     await page.getByTestId('merge-attempt').click();
+    await page.getByTestId('confirm-merge').click();
 
     await page.getByTestId('view-board').click();
     await expect(page.getByTestId('state-k1')).toHaveText(/已合併/);

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useT } from '../i18n';
+import { useArmed } from './armed';
 import type { Attempt, Lifecycle, SessionMeta, Task } from '../types';
 import { needsYou } from '../types';
 import {
@@ -31,6 +32,8 @@ interface Props {
   onCancelQueued: (taskId: string) => void;
   onNewTask: () => void;
   onDeleteTask: (id: string) => void;
+  /** Say something through the app's aria-live channel. */
+  onAnnounce: (text: string) => void;
 }
 
 /**
@@ -56,10 +59,38 @@ export function Board({
   onCancelQueued,
   onNewTask,
   onDeleteTask,
+  onAnnounce,
 }: Props) {
   const t = useT();
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<{ col: Lifecycle; taskId: string | null } | null>(null);
+  /** The card to refocus once a keyboard move re-renders it in its new
+   *  column — reparenting unmounts the node, and focus must follow the
+   *  card, not fall on the floor. */
+  const refocus = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!refocus.current) return;
+    const el = document.querySelector<HTMLElement>(`[data-testid="task-${refocus.current}"]`);
+    if (el) {
+      el.focus();
+      refocus.current = null;
+    }
+  }, [tasks]);
+
+  /**
+   * The keyboard's way across the board. Dragging is the gesture; this is
+   * the path — the review loop is fully keyboard-driven, and filing the
+   * card as done must not be the one act that demands a mouse.
+   */
+  const moveByKey = (task: Task, step: 1 | -1) => {
+    const i = COLUMNS.indexOf(task.lifecycle);
+    const next = COLUMNS[i + step];
+    if (!next) return;
+    onMove(task.id, next, columnOf(tasks, next).length);
+    refocus.current = task.id;
+    onAnnounce(t('board.movedTo', { title: task.title, col: t(COLUMN_KEY[next]) }));
+  };
 
   const adHoc = sessions.filter((s) => s.attempt_id === null);
   const running = sessions.filter((s) => s.live && s.attempt_id !== null).length;
@@ -154,6 +185,7 @@ export function Board({
                     onInspect={onInspect}
                     onCancelQueued={onCancelQueued}
                     onDelete={() => onDeleteTask(task.id)}
+                    onMoveByKey={(step) => moveByKey(task, step)}
                   />
                 ))}
                 {cards.length === 0 && (
@@ -249,28 +281,6 @@ function Concurrency({ running, tasks }: { running: number; tasks: Task[] }) {
   );
 }
 
-/**
- * Deleting a card takes a task's prompt, branch, and attempt record with it,
- * and on a board you drag cards across, a stray click on a 12px ✕ is routine.
- * So the ✕ arms instead of firing: the second click, on the now-named button,
- * is the one that deletes. Walking away disarms it.
- */
-function useArmedDelete(onDelete: () => void) {
-  const [armed, setArmed] = useState(false);
-  useEffect(() => {
-    if (!armed) return;
-    const t = setTimeout(() => setArmed(false), 4000);
-    return () => clearTimeout(t);
-  }, [armed]);
-  return {
-    armed,
-    fire: () => {
-      if (armed) onDelete();
-      else setArmed(true);
-    },
-  };
-}
-
 function Card({
   task,
   live,
@@ -286,6 +296,7 @@ function Card({
   onInspect,
   onCancelQueued,
   onDelete,
+  onMoveByKey,
 }: {
   task: Task;
   live: Live;
@@ -301,12 +312,13 @@ function Card({
   onInspect: (attempt: Attempt) => void;
   onCancelQueued: (taskId: string) => void;
   onDelete: () => void;
+  onMoveByKey: (step: 1 | -1) => void;
 }) {
   const t = useT();
   const waiting = live.kind === 'session' && needsYou(live.status);
   const hasAttempt = live.kind !== 'none' && live.kind !== 'queued';
   const agent = hasAttempt ? live.attempt.agent : null;
-  const del = useArmedDelete(onDelete);
+  const del = useArmed(onDelete);
 
   // The whole card is the target when there is a session behind it: getting
   // into the TUI is the common act, and making people find a small button
@@ -327,22 +339,25 @@ function Card({
       data-testid={`task-${task.id}`}
       data-lifecycle={task.lifecycle}
       data-live={live.kind}
-      // Enterable cards act like buttons, so they owe the keyboard a way in.
-      // The label is the title alone — without it, the computed name would
-      // recite the whole card, inner buttons included, at every focus.
+      // Every card is focusable — moving it between columns is a keyboard
+      // act now, not only entering it. The label is the title alone: without
+      // it, the computed name would recite the whole card, inner buttons
+      // included, at every focus.
       role={enter ? 'button' : undefined}
-      tabIndex={enter ? 0 : undefined}
-      aria-label={enter ? task.title : undefined}
-      onKeyDown={
-        enter
-          ? (e) => {
-              if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
-                e.preventDefault();
-                enter();
-              }
-            }
-          : undefined
-      }
+      tabIndex={0}
+      aria-label={task.title}
+      onKeyDown={(e) => {
+        if ((e.metaKey || e.ctrlKey) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+          e.preventDefault();
+          e.stopPropagation();
+          onMoveByKey(e.key === 'ArrowRight' ? 1 : -1);
+          return;
+        }
+        if (enter && (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+          e.preventDefault();
+          enter();
+        }
+      }}
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}

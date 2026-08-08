@@ -12,6 +12,7 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
     ['⌘/Ctrl + E', t('keys.jump')],
     ['⌘/Ctrl + 1 · 2 · 3', t('keys.views')],
     ['⌘/Ctrl + ⌥/Alt + ← · →', t('keys.cyclePanes')],
+    ['⌘/Ctrl + ← · →', t('keys.moveCard')],
     ['Ctrl + PgDn · PgUp', t('keys.cycleTabs')],
     ['⌘/Ctrl + I', t('keys.inspector')],
     ['J · K', t('keys.diff')],

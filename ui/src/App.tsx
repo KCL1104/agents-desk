@@ -118,18 +118,46 @@ export default function App() {
    *  in-app signal chain is otherwise visual — a breathing card is silence
    *  to AT, and the OS notification only fires while the window is away. */
   const [announce, setAnnounce] = useState('');
-  const wasWaiting = useRef<Set<string>>(new Set());
+  /** Per-session, the blocked status last spoken — not a set: a session
+   *  moving between two blocked states (資料夾信任 → 等你授權) is news too,
+   *  and set membership would swallow it. */
+  const spokenStatus = useRef<Map<string, string>>(new Map());
+  const announceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const say = useCallback((text: string) => {
+    setAnnounce(text);
+    // Spoken once, then cleared: stale text lingering in the live region
+    // reads back on every re-entry as if it just happened.
+    if (announceTimer.current) clearTimeout(announceTimer.current);
+    announceTimer.current = setTimeout(() => setAnnounce(''), 5000);
+  }, []);
 
   useEffect(() => {
-    const waiting = new Set(sessions.filter((s) => needsYou(s.status)).map((s) => s.id));
+    const fresh: SessionMeta[] = [];
+    const nowWaiting = new Set<string>();
     for (const s of sessions) {
-      if (waiting.has(s.id) && !wasWaiting.current.has(s.id)) {
-        setAnnounce(`${s.title} ${t(STATUS_KEY[s.status])}`);
-        break;
+      if (!needsYou(s.status)) continue;
+      nowWaiting.add(s.id);
+      if (spokenStatus.current.get(s.id) !== s.status) {
+        fresh.push(s);
+        spokenStatus.current.set(s.id, s.status);
       }
     }
-    wasWaiting.current = waiting;
-  }, [sessions, t]);
+    for (const id of [...spokenStatus.current.keys()]) {
+      if (!nowWaiting.has(id)) spokenStatus.current.delete(id);
+    }
+    if (fresh.length === 1) {
+      say(`${fresh[0].title} ${t(STATUS_KEY[fresh[0].status])}`);
+    } else if (fresh.length > 1) {
+      // Several blocked in one update: say all of them, not the first.
+      say(
+        t('announce.multi', {
+          count: fresh.length,
+          titles: fresh.map((s) => s.title).join('、'),
+        }),
+      );
+    }
+  }, [sessions, t, say]);
 
   const [gridRef, size] = useSize<HTMLDivElement>();
 
@@ -824,6 +852,7 @@ export default function App() {
               setShowNewTask(true);
             }}
             onDeleteTask={onDeleteTask}
+            onAnnounce={say}
           />
         )}
 

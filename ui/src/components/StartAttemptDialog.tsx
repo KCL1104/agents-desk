@@ -4,6 +4,7 @@ import { useT } from '../i18n';
 import type { PermissionMode, Task } from '../types';
 import { useLaunchers } from './launchers';
 import { Modal } from './Modal';
+import { FriendlyError } from './FriendlyError';
 
 interface Props {
   task: Task;
@@ -161,11 +162,7 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
           </p>
         )}
 
-        {error && (
-          <p className="dialog-error" role="alert" data-testid="attempt-error">
-            {error}
-          </p>
-        )}
+        {error && <FriendlyError text={error} testid="attempt-error" />}
 
         <div className="modal-actions">
           <button onClick={onCancel}>{t('common.cancel')}</button>

@@ -343,7 +343,10 @@ test.describe('outcomes say so', () => {
     await page.getByTestId('inspect-k1').click();
     await expect(page.getByTestId('inspector')).toBeVisible();
 
+    // Merge arms first — it mutates the base branch, the heaviest act here.
     await page.getByTestId('merge-attempt').click();
+    await expect(page.getByTestId('confirm-merge')).toContainText('確定合併回 main');
+    await page.getByTestId('confirm-merge').click();
     await expect(page.locator('.toast.ok')).toContainText('已合併回 main');
   });
 
@@ -359,6 +362,57 @@ test.describe('outcomes say so', () => {
       timeout: 6000,
     });
     await expect(page.locator('.board-card')).toHaveCount(1);
+  });
+
+  test('a card moves between columns from the keyboard', async ({ page }) => {
+    await boot(page);
+    await toBoard(page);
+    await newCard(page, '修好登入');
+    await expect(page.locator('[data-testid="col-backlog"] .board-card')).toHaveCount(1);
+
+    await page.locator('[data-testid="task-k1"]').focus();
+    await page.keyboard.press('ControlOrMeta+ArrowRight');
+    await expect(page.locator('[data-testid="col-running"] .board-card')).toHaveCount(1);
+    // The move is spoken, and focus follows the card into its new column.
+    await expect(page.getByTestId('live-announce')).toContainText('移到');
+    await expect(page.locator('[data-testid="task-k1"]')).toBeFocused();
+
+    await page.keyboard.press('ControlOrMeta+ArrowLeft');
+    await expect(page.locator('[data-testid="col-backlog"] .board-card')).toHaveCount(1);
+  });
+
+  test('two agents blocking at once are both announced', async ({ page }) => {
+    await boot(page);
+    await toBoard(page);
+    await newCard(page, '第一張');
+    await newCard(page, '第二張');
+    await start(page, 'k1');
+    await toBoard(page);
+    await start(page, 'k2');
+    await toBoard(page);
+
+    // One update, two sessions entering a blocked state: both are spoken.
+    await page.evaluate(() => {
+      for (const id of ['s1', 's2']) {
+        const s = window.__mock.sessions.find((x) => x.id === id);
+        if (s) s.status = 'waiting_permission';
+      }
+      window.__mock.emit('sessions:changed', window.__mock.sorted());
+    });
+    await expect(page.getByTestId('live-announce')).toContainText('2 個 session 等你');
+  });
+
+  test('overview cards wear the card title and open on one click', async ({ page }) => {
+    await boot(page);
+    await toBoard(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await page.getByRole('tab', { name: '總覽' }).click();
+
+    const card = page.getByTestId('card-s1');
+    await expect(card.locator('.ov-title')).toHaveText('修好登入 #1');
+    await card.click();
+    await expect(page.locator('.pane:visible')).toHaveCount(1);
   });
 
   test('a closed session does not sit in 等待輸入', async ({ page }) => {

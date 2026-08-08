@@ -702,6 +702,18 @@ textarea { resize: vertical; }
 }
 .confirm-delete:hover { background: #2a1a1c; }
 
+/* The armed merge: not destructive-red — it is the loop's peak, but it
+   mutates the base branch, so the second click pauses in warn. */
+.confirm-arm {
+  background: transparent; border: 1px solid var(--warn); color: var(--warn);
+}
+.confirm-arm:hover:not(:disabled) { background: #241d10; }
+
+/* The raw refusal, one disclosure behind its translation. */
+.err-details { margin-top: 4px; font-size: 11px; }
+.err-details summary { cursor: pointer; color: var(--fg-dim); }
+.err-details span { display: block; margin-top: 3px; word-break: break-all; }
+
 /* Which codebase the card is about — cards from different repos share the
    board, so each names its repo and base branch. */
 .board-card-repo {

@@ -232,6 +232,10 @@ test.describe('board', () => {
     await boot(page);
     await newCard(page, '修好登入', '/Users/test/not-a-repo');
 
+    // A known refusal arrives translated and actionable; the backend's raw
+    // words wait one disclosure behind it.
+    await expect(page.getByTestId('task-error')).toContainText('不是 git repository');
+    await page.getByTestId('task-error').locator('summary').click();
     await expect(page.getByTestId('task-error')).toContainText('not a git repository');
     // The dialog stays open with the typing intact, and no card was made.
     await expect(page.getByTestId('task-title')).toHaveValue('修好登入');
@@ -241,7 +245,7 @@ test.describe('board', () => {
   test('a base branch that does not exist is refused in the dialog', async ({ page }) => {
     await boot(page);
     await newCard(page, '修好登入', REPO, 'no-such-branch');
-    await expect(page.getByTestId('task-error')).toContainText('no branch');
+    await expect(page.getByTestId('task-error')).toContainText('沒有叫「no-such-branch」的分支');
     await expect(page.locator('.board-card')).toHaveCount(0);
   });
 

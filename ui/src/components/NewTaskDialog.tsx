@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useT } from '../i18n';
 import { Modal } from './Modal';
+import { FriendlyError } from './FriendlyError';
 
 interface Props {
   onCancel: () => void;
@@ -102,11 +103,7 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
         />
         <p className="muted small">{t('newTask.baseHint')}</p>
 
-        {error && (
-          <p className="dialog-error" role="alert" data-testid="task-error">
-            {error}
-          </p>
-        )}
+        {error && <FriendlyError text={error} testid="task-error" />}
 
         <div className="modal-actions">
           <button onClick={onCancel}>{t('common.cancel')}</button>

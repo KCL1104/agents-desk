@@ -176,6 +176,7 @@ driven without the mouse. `⌘/Ctrl+/` shows this list in the app:
 | `⌘/Ctrl+E` | Cycle through the sessions waiting on you |
 | `⌘/Ctrl+1` / `2` / `3` | Terminal wall · board · overview |
 | `⌘/Ctrl+Alt+←` / `→` | Focus the next / previous pane |
+| `⌘/Ctrl+←` / `→` | Move the focused board card one column |
 | `Ctrl+PgDn` / `PgUp` | Next / previous tab |
 | `⌘/Ctrl+I` | Open or close the inspector |
 | `J` / `K` | Walk the diff lines; `Enter` comments on one |

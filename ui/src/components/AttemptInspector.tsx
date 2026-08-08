@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import type { Attempt, AttemptEvent } from '../types';
 import { useT } from '../i18n';
+import { useArmed } from './armed';
+import { FriendlyError } from './FriendlyError';
 import { STATUS_KEY } from '../sections';
 import {
   commentable,
@@ -383,15 +385,6 @@ function Finish({
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [prUrl, setPrUrl] = useState<string | null>(null);
-  /** Discard arms like the card's ✕ does: it ends an attempt and reclaims
-   *  the worktree, a heavier consequence than deleting a card, and it sits
-   *  90px from the PR button. Same guard, same color of consequence. */
-  const [armedDiscard, setArmedDiscard] = useState(false);
-  useEffect(() => {
-    if (!armedDiscard) return;
-    const timer = setTimeout(() => setArmedDiscard(false), 4000);
-    return () => clearTimeout(timer);
-  }, [armedDiscard]);
 
   const run = (what: string, fn: () => Promise<unknown>) => () => {
     setBusy(what);
@@ -409,13 +402,15 @@ function Finish({
       .finally(() => setBusy(null));
   };
 
+  /* Friction proportional to consequence: merge mutates the base branch —
+     the one thing every hint promises an attempt cannot touch — so it arms
+     exactly like discard does. Both name what the second click will do. */
+  const merge = useArmed(run('merge', () => api.mergeAttempt(attempt.id)));
+  const discard = useArmed(run('discard', () => api.finishAttempt(attempt.id, 'discarded')));
+
   return (
     <footer className="inspector-foot">
-      {problem && (
-        <p className="dialog-error" role="alert" data-testid="finish-error">
-          {problem}
-        </p>
-      )}
+      {problem && <FriendlyError text={problem} testid="finish-error" />}
       {prUrl && (
         <p className="mono small" data-testid="pr-url">
           {prUrl}
@@ -423,33 +418,33 @@ function Finish({
       )}
       <div className="row">
         <button
-          className="primary"
+          className={merge.armed ? 'confirm-arm' : 'primary'}
           disabled={busy !== null}
-          data-testid="merge-attempt"
-          onClick={run('merge', () => api.mergeAttempt(attempt.id))}
+          data-testid={merge.armed ? 'confirm-merge' : 'merge-attempt'}
+          onClick={merge.fire}
         >
-          {t('inspector.mergeInto', { branch: baseBranch })}
+          {busy === 'merge'
+            ? t('inspector.working')
+            : merge.armed
+              ? t('inspector.confirmMerge', { branch: baseBranch })
+              : t('inspector.mergeInto', { branch: baseBranch })}
         </button>
         <button
           disabled={busy !== null}
           data-testid="open-pr"
           onClick={run('pr', () => api.openPr(attempt.id))}
         >
-          {t('inspector.openPr')}
+          {busy === 'pr' ? t('inspector.working') : t('inspector.openPr')}
         </button>
         <span className="spacer" />
         <button
-          className={armedDiscard ? 'confirm-delete' : 'danger'}
+          className={discard.armed ? 'confirm-delete' : 'danger'}
           disabled={busy !== null}
-          data-testid={armedDiscard ? 'confirm-discard' : 'discard-attempt'}
+          data-testid={discard.armed ? 'confirm-discard' : 'discard-attempt'}
           title={t('inspector.discardHint')}
-          onClick={
-            armedDiscard
-              ? run('discard', () => api.finishAttempt(attempt.id, 'discarded'))
-              : () => setArmedDiscard(true)
-          }
+          onClick={discard.fire}
         >
-          {armedDiscard ? t('inspector.confirmDiscard') : t('inspector.discard')}
+          {discard.armed ? t('inspector.confirmDiscard') : t('inspector.discard')}
         </button>
       </div>
     </footer>

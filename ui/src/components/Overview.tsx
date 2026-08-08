@@ -93,11 +93,26 @@ function Card({
     <article
       className={`ov-card ${s.status}`}
       data-testid={`card-${s.id}`}
-      onDoubleClick={() => onOpen(s.id)}
+      // Same identity rules as the board: the card is the door, one click
+      // (or Enter) walks through it, and the session wears its one name —
+      // the card title — not its worktree directory. Three attempts on one
+      // card would all read "card-1" by basename.
+      role="button"
+      tabIndex={0}
+      aria-label={s.title}
+      onClick={() => onOpen(s.id)}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+          e.preventDefault();
+          onOpen(s.id);
+        }
+      }}
     >
       <header className="ov-card-head">
         <span className={`dot ${s.status}`} />
-        <span className="ov-title">{basename(s.cwd)}</span>
+        <span className="ov-title" title={s.cwd}>
+          {s.title}
+        </span>
         <span className="ov-agent mono">{s.agent}</span>
       </header>
 
@@ -119,22 +134,38 @@ function Card({
           {since || ''}
         </span>
         <span className="ov-actions">
-          <button onClick={() => onComplete(s.id, !s.completed)}>
+          {/* Buttons inside the card must not also walk through it. */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onComplete(s.id, !s.completed);
+            }}
+          >
             {s.completed ? t('overview.unmarkDone') : t('overview.markDone')}
           </button>
-          {s.live && <button onClick={() => onClose(s.id)}>{t('common.close')}</button>}
+          {s.live && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose(s.id);
+              }}
+            >
+              {t('common.close')}
+            </button>
+          )}
           {/* Primary only while there is a live terminal to look at. On a
               closed card, "reopen" is an option, not the thing 已完成 is for. */}
-          <button className={s.live ? 'primary' : ''} onClick={() => onOpen(s.id)}>
+          <button
+            className={s.live ? 'primary' : ''}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen(s.id);
+            }}
+          >
             {t('common.open')}
           </button>
         </span>
       </footer>
     </article>
   );
-}
-
-function basename(p: string): string {
-  const parts = p.split('/').filter(Boolean);
-  return parts[parts.length - 1] ?? p;
 }

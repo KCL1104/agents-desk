@@ -146,6 +146,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 | `⌘/Ctrl+E` | 在等你的 session 之間循環 |
 | `⌘/Ctrl+1` / `2` / `3` | 終端機牆 · 看板 · 總覽 |
 | `⌘/Ctrl+Alt+←` / `→` | 聚焦下一個 / 上一個 pane |
+| `⌘/Ctrl+←` / `→` | 把聚焦的看板卡片搬一欄 |
 | `Ctrl+PgDn` / `PgUp` | 下一個 / 上一個分頁 |
 | `⌘/Ctrl+I` | 開關檢視器 |
 | `J` / `K` | 在 diff 行之間移動；`Enter` 對該行留言 |
