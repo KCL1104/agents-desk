@@ -422,6 +422,22 @@ impl HostRef<'_> {
 
     /// Run a command inside the host to completion.
     pub fn run(&self, program: &str, args: &[&str], cwd: Option<&str>) -> Result<std::process::Output> {
+        self.run_with_env(program, args, cwd, &[])
+    }
+
+    /// `run`, with extra variables set for this one call. The checkpoint
+    /// snapshot is why this exists: `GIT_INDEX_FILE` pointed at a temp index
+    /// keeps its `add -A` out of the index the agent sees. The variables ride
+    /// the pipelines each doorway already trusts — native envs locally, the
+    /// POSIX `env K=V` prefix through wsl.exe and ssh — and land *after* the
+    /// host's own, so for one call the extra wins.
+    pub fn run_with_env(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&str>,
+        extra: &[(String, String)],
+    ) -> Result<std::process::Output> {
         let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
         match self.host {
             Host::Local => {
@@ -431,20 +447,21 @@ impl HostRef<'_> {
                     .ok_or_else(|| anyhow!("`{program}` not found on the login-shell PATH"))?;
                 let mut cmd = std::process::Command::new(exe);
                 cmd.args(&owned).envs(&self.env.vars);
+                cmd.envs(extra.iter().map(|(k, v)| (k.as_str(), v.as_str())));
                 if let Some(dir) = cwd {
                     cmd.current_dir(dir);
                 }
                 Ok(cmd.output()?)
             }
             Host::Wsl { .. } => {
-                let carried = carry_env(self.env);
+                let carried = carried_with(self.env, extra);
                 let (_, wrapped, _) = self.host.wrap(program, &owned, cwd, &carried);
                 Ok(std::process::Command::new(wsl_exe(self.local))
                     .args(wrapped)
                     .output()?)
             }
             Host::Ssh { host } => {
-                let carried = carry_env(self.env);
+                let carried = carried_with(self.env, extra);
                 let mut a = ssh_base_args(false);
                 a.push("--".to_string());
                 a.push(host.clone());
@@ -458,7 +475,18 @@ impl HostRef<'_> {
 
     /// `run`, then insist it worked, then hand back trimmed stdout.
     pub fn run_ok(&self, program: &str, args: &[&str], cwd: Option<&str>) -> Result<String> {
-        let out = self.run(program, args, cwd)?;
+        self.run_ok_with_env(program, args, cwd, &[])
+    }
+
+    /// `run_with_env` with `run_ok`'s insistence and trimmed stdout.
+    pub fn run_ok_with_env(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&str>,
+        extra: &[(String, String)],
+    ) -> Result<String> {
+        let out = self.run_with_env(program, args, cwd, extra)?;
         if !out.status.success() {
             return Err(anyhow!(
                 "{program} {} failed: {}",
@@ -563,6 +591,15 @@ fn carry_env(env: &ShellEnv) -> Vec<(String, String)> {
         .iter()
         .filter_map(|k| env.vars.get(*k).map(|v| (k.to_string(), v.clone())))
         .collect()
+}
+
+/// `carry_env` plus one call's extras, extras last: POSIX `env` applies
+/// assignments left to right, so on a collision the extra wins — the same
+/// precedence the local path gets from calling `.envs` twice.
+fn carried_with(env: &ShellEnv, extra: &[(String, String)]) -> Vec<(String, String)> {
+    let mut vars = carry_env(env);
+    vars.extend(extra.iter().cloned());
+    vars
 }
 
 /// The per-session extras a PTY launch carries across, on top of `carry_env`.
@@ -748,6 +785,65 @@ prompt".into()],
         };
         assert_eq!(wsl.join("/home/me/", "x"), "/home/me/x");
         assert_eq!(wsl.join("/home/me", "x"), "/home/me/x");
+    }
+
+    /// The env pipeline checkpoints ride on: a variable set for one call is
+    /// there for that call and gone for the next — `GIT_INDEX_FILE` must
+    /// never bleed into a later command that touches the agent's real index.
+    #[test]
+    fn run_with_env_sets_the_variable_for_that_call_only() {
+        let mut env = ShellEnv {
+            vars: Default::default(),
+            shell: "sh".into(),
+            resolved: true,
+        };
+        env.vars
+            .insert("PATH".into(), "/usr/bin:/bin".into());
+        let local = Host::Local;
+        let hr = HostRef {
+            host: &local,
+            local: &env,
+            env: &env,
+        };
+        let extra = [("AGENTDESK_PROBE".to_string(), "set".to_string())];
+        let with = hr
+            .run_ok_with_env("sh", &["-c", "printf %s \"${AGENTDESK_PROBE:-unset}\""], None, &extra)
+            .unwrap();
+        assert_eq!(with, "set");
+        let without = hr
+            .run_ok("sh", &["-c", "printf %s \"${AGENTDESK_PROBE:-unset}\""], None)
+            .unwrap();
+        assert_eq!(without, "unset");
+    }
+
+    /// Through the wrapped doorways the extras join the `env K=V` prefix
+    /// after the carried pair, so on a collision the per-call value wins —
+    /// the same precedence the local path gets from applying envs twice.
+    #[test]
+    fn per_call_extras_ride_after_the_carried_pair_and_win_collisions() {
+        let mut env = ShellEnv {
+            vars: Default::default(),
+            shell: "sh".into(),
+            resolved: true,
+        };
+        env.vars.insert("PATH".into(), "/usr/bin".into());
+        env.vars.insert("HOME".into(), "/home/me".into());
+        let carried = carried_with(
+            &env,
+            &[
+                ("GIT_INDEX_FILE".to_string(), "/tmp/idx".to_string()),
+                ("HOME".to_string(), "/elsewhere".to_string()),
+            ],
+        );
+        let home_positions: Vec<usize> = carried
+            .iter()
+            .enumerate()
+            .filter(|(_, (k, _))| k == "HOME")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(home_positions.len(), 2);
+        assert_eq!(carried[home_positions[1]].1, "/elsewhere");
+        assert!(carried.iter().any(|(k, v)| k == "GIT_INDEX_FILE" && v == "/tmp/idx"));
     }
 
     /// What crosses the boundary is bounded on purpose: the host's own PATH
