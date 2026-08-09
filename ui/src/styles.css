@@ -321,6 +321,34 @@ textarea { resize: vertical; }
 }
 .sidebar-foot:hover { color: var(--fg); background: transparent; }
 
+/* The world switch, in the corner VS Code taught hands to reach for.
+   The chip names where new things open; the menu floats above it. */
+.world { position: relative; margin: 0 8px; }
+.world-chip {
+  display: block; width: 100%; text-align: left;
+  border: none; background: transparent; color: var(--fg-dim);
+  font-size: var(--fs-label); padding: 2px 0;
+}
+.world-chip:hover { color: var(--accent); background: transparent; }
+.world-menu {
+  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30;
+  min-width: 230px; max-width: 320px;
+  padding: 4px; border: 1px solid var(--line); border-radius: var(--radius-s);
+  background: var(--bg-3);
+  box-shadow: var(--bevel), 0 10px 32px rgba(0, 0, 0, 0.5);
+}
+.world-menu-hint { margin: 2px 6px 6px; }
+.world-row {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  width: 100%; text-align: left;
+  border: none; background: transparent; color: var(--fg);
+  font-size: var(--fs-data); padding: 5px 6px; border-radius: var(--radius-xs);
+}
+.world-row:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.world-row.active .world-row-name { color: var(--accent); }
+/* A refusal is content, not a tooltip: it wraps in place, in full. */
+.world-err { color: var(--err); white-space: normal; overflow-wrap: anywhere; }
+
 .dot.saved { background: color-mix(in srgb, var(--fg) 26%, var(--bg)); }
 .dot.exited { background: var(--fg-dim); }
 

@@ -1,6 +1,6 @@
 # 決策文件:世界選擇器(WSL/SSH 像 VS Code 一樣用選的,不用打的)
 
-> 狀態:**提案,待決** · 2026-08 · 來源:使用者需求(「像 VS Code 左下角切換 WSL/SSH 那樣」)
+> 狀態:**已定案,v1 已實作** · 2026-08 · 來源:使用者需求(「像 VS Code 左下角切換 WSL/SSH 那樣」)
 > 參照:VS Code Remote 指示器(狀態列左下角、點開 quick pick、視窗綁定一個 remote)
 
 ## 問題
@@ -60,8 +60,14 @@ Rust:`list_worlds`(枚舉)+ `probe_world`(懶探測,回 claude 版本/錯誤)兩
 
 **驗收**:不打任何 `wsl://` 字面,從左下角選「WSL: Ubuntu」→ 開卡 → 路徑欄打 `/home/me/proj` → 卡片存的是 `wsl://Ubuntu/home/me/proj` 且戴 Ubuntu 徽章;貼 `\\wsl$\Ubuntu\home\me\proj` 得到同樣結果;SSH 別名出現在選單且探測失敗時給完整理由;開 app 不因為任何遠端世界變慢。
 
-## 未決(拍板後開工)
+## 已拍板
 
-1. **左下角鈕的語義**:「新東西的預設世界 + 健康總覽」(建議)vs 全域過濾器(否決理由在上)。
-2. **SSH 來源**:僅 `~/.ssh/config` 別名(建議)vs 加掃 known_hosts(否決:那是指紋快取,不是使用者的意圖)。
-3. **WSL 瀏覽**:接受 UNC 並正規化、瀏覽按鈕可挑 `\\wsl$`(建議做)vs 純打字。
+1. **左下角鈕的語義**:「新東西的預設世界 + 健康總覽」——照建議。實作為 `WorldPicker`(側欄腳、環境鈕上方),選擇存 `localStorage`,選了就地懶探測、結果(claude 版本/找不到 claude/完整錯誤)顯示在被點的那一列上,選單不因點選而關。
+2. **SSH 來源**:僅 `~/.ssh/config` 別名——照建議。`parse_ssh_config` 跳過 `*`/`?` 樣式與 `!` 否定,known_hosts 不碰。
+3. **WSL 瀏覽**:接受 UNC 並正規化——照建議。`normalizeUnc` 把 `\\wsl$\X\p` 與 `\\wsl.localhost\X\p` 翻成 `wsl://X/p`,貼上即生效,且優先於下拉選的世界(貼的東西自帶世界)。
+
+### v1 落點(2026-08)
+
+- Rust:`host.rs` `parse_wsl_list`(UTF-16LE 偵測 + BOM + 濾 docker-desktop 管線 distro)與 `parse_ssh_config`,皆附純函式測試;`core.rs` `list_worlds` / `probe_world`(走既有 `located`/`host_env` 快取,錯誤帶全鏈 `{e:#}`)。
+- UI:`worlds.ts`(`storedWorld`/`rememberWorld`/`worldLabel`/`normalizeUnc`/`composePath`)、`WorldPicker`(左下角)、`WorldSelect`(兩個開啟對話框共用,預設承接左下角、單次可改)、素路徑組裝進 `create_task`/`new_session` 與 branch 預抓。
+- Playwright `worlds.spec.ts` 五條全綠,驗收線達成:整條路不打任何 `wsl://` 字面。

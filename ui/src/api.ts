@@ -217,6 +217,17 @@ export const api = {
       between "the dev server is up" and a blank iframe. */
   probePort: (port: number) => invoke<boolean>('probe_port', { port }),
 
+  /** The worlds a card can live in: WSL distros from `wsl -l`, SSH
+      aliases from ~/.ssh/config. Enumerated, never invented; local reads
+      only — a dead remote cannot slow this down. */
+  listWorlds: () => invoke<{ wsl: string[]; ssh: string[] }>('list_worlds'),
+  /** Reach one world (''=local, 'wsl://X', 'ssh://Y'): its claude's
+      version, null when the CLI is absent there, or the whole reason the
+      world could not be reached. Lazy by design — a person's pick, never
+      startup. */
+  probeWorld: (world: string) =>
+    invoke<{ claude: string | null; error: string | null }>('probe_world', { world }),
+
   /** One diff file as full text, both sides — what the in-place editor
       edits, where a patch string could only be read. */
   attemptFile: (attemptId: string, path: string) =>

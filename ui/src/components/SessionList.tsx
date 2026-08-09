@@ -3,6 +3,7 @@ import { needsYou, type SessionMeta } from '../types';
 import { elapsed, SECTION_KEY, STATUS_KEY, useSections, type Section } from '../sections';
 import { useT } from '../i18n';
 import { DRAG_MIME, encodeDrag } from '../layout';
+import { WorldPicker } from './WorldPicker';
 
 interface Props {
   sessions: SessionMeta[];
@@ -120,6 +121,9 @@ export function SessionList({
         })}
       </div>
 
+      {/* The desk's own corner: where new things open (the world), and
+          how the desk is set (the environment). */}
+      <WorldPicker />
       <button className="sidebar-foot" onClick={onShowEnv}>
         {t('common.env')}
       </button>

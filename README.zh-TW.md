@@ -91,8 +91,10 @@ App 提供的是終端機分頁給不了的：多 session 管理、跨重啟的�
   flag 會直接拒絕啟動；環境面板會顯示這功能可不可用。另外注意 CLI 自己的
   收訊規則：yolo（跳過權限）session 傳給一般 session 的訊息，會在接收端的
   終端機裡等你核准 —— 那是 Claude Code 自己的安全模型在正常運作
-- **WSL 橋接**（M10a）：卡片的 repo 可以住在 WSL distro 裡。路徑寫成
-  `wsl://<distro>/<路徑>`，一切就在 repo 所在的世界執行：用 distro 自己的
+- **WSL 橋接**（M10a）：卡片的 repo 可以住在 WSL distro 裡。從左下角的
+  世界切換（或對話框裡單次選）挑 distro、路徑欄打素路徑就好 —— 貼檔案
+  總管的 `\\wsl$\<distro>\…` 也通，卡片存成 `wsl://<distro>/<路徑>` ——
+  一切就在 repo 所在的世界執行：用 distro 自己的
   `claude`（login shell 的 PATH，每個 distro 探測一次）、git 與 worktree
   都在 distro 的檔案系統（它自己的 `~/.agentdesk/worktrees`）、workspace
   scripts 走 distro 的 `sh`。指令以
@@ -102,8 +104,8 @@ App 提供的是終端機分頁給不了的：多 session 管理、跨重啟的�
   WSL session 的狀態偵測需要 WSL 的 mirrored networking（`.wslconfig` 設
   `networkingMode=mirrored`），hooks 才打得到 app 的 localhost；NAT 模式下
   session 照跑，只是徽章不亮
-- **SSH host**（M10b）：同一道接縫，跨一條線。卡片 repo 寫成
-  `ssh://<host>/<路徑>`，`<host>` 就是你 `~/.ssh/config` 裡的別名 ——
+- **SSH host**（M10b）：同一道接縫，跨一條線。世界切換列出你
+  `~/.ssh/config` 裡的 `Host` 別名（卡片存成 `ssh://<host>/<路徑>`）——
   AgentDesk 不發明任何連線設定，帳號、port、金鑰、跳板全部跟你終端機用的
   一模一樣（需要金鑰認證；要密碼的探測會快速失敗而不是掛住）。遠端的
   login shell 會被探測出 PATH，worktree 開在遠端自己的
@@ -209,8 +211,9 @@ export PATH="$HOME/.cargo/bin:$PATH"
   readline）。輸出裡的網址 ⌘/Ctrl+click 開啟。
 - **分支挑選** —— 開卡對話框直接建議 repo 的分支、按最近使用排序，而不是
   要你憑記憶打字。
-- **世界** —— 走 WSL 或 SSH 的 repo 會在卡片上戴 host 徽章；總覽在超過一個
-  世界時按機器分組。
+- **世界** —— 左下角的切換決定新東西開在哪（WSL distro 與 SSH host 用枚舉
+  的，不發明），點選就地探那個世界的 `claude`；走 WSL 或 SSH 的 repo 會在
+  卡片上戴 host 徽章；總覽在超過一個世界時按機器分組。
 - **無訊號 chip** —— 狀態來自 Claude Code 的 hooks；跑其他 agent 的卡片會
   直說「無狀態訊號」，不讓安靜被讀成沒事。
 

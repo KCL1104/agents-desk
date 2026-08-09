@@ -5,8 +5,8 @@
 
 ## 現況
 
-- main 至 `4fa5bb9`(可編輯 diff);工作分支 `claude/research-popular-tool-frontend-fax4cb` 另有 cost/context 與終端規模化,未併回。
-- 驗證基線:Playwright 282 passed(沙箱跑法:`npx playwright test --config playwright.local.config.ts`,指向預裝 Chromium)、cargo 344 全綠(容器已裝 GTK/WebKit dev 套件)、`npm run build` 乾淨。
+- main 與工作分支 `claude/research-popular-tool-frontend-fax4cb` 同步至世界選擇器(worlds v1);此前已併:可編輯 diff、cost/context、終端規模化、README 視覺素材、群青墨桌識別、status edge 靜化。
+- 驗證基線:Playwright 287 passed + 8 skipped(沙箱跑法:`npx playwright test --config playwright.local.config.ts`,指向預裝 Chromium;skipped = SHOTS 素材 7 + legacy 1)、cargo 350 全綠(容器已裝 GTK/WebKit dev 套件)、`npm run build` 乾淨。
 - 慣例備忘:i18n 是雙語 typed catalog,兩語相同的字串要進 `i18n.spec.ts` 的 SHARED 豁免;每個新 Tauri 指令都要在 `tests/mock-tauri.ts` 補 handler;凡動 agent 看得到的 git 狀態(index、worktree、分支)一律禁止。
 
 ## 第八批:收尾(狀態:**完成**)
@@ -48,6 +48,7 @@
 - **內嵌 dev-server 預覽 + inspect mode**:✅ **已實作**(`dev-preview.md` 定案)。關鍵查證:CSP 為 null(iframe 可行)、埠配發後**沒有記錄**(v1 第一片補 in-memory `preview_port`)、SSH 埠不可達(v1 拒絕,forward 留第二片)。核心判定:**否決注入式 inspect**(修改受測頁 bytes 違反不重繪哲學),採 repo opt-in 的 dev-only script + postMessage 契約,組句走既有 bracketed paste。
 - **可編輯 diff**:✅ **已實作**(`editable-diff.md` 定案)。`file_at_rev`(ls-tree 問存在、raw stdout 讀內容)+ `attempt_file`/`write_attempt_file`(settled 守門 core 層再驗、凍結/parked 拒絕、路徑守門);CM6 unified merge view(`state`/`view`/`merge`/`commands` 四包,+290KB)就地換掉檔案區塊,base 側唯讀;存檔 explicit(鈕 + ⌘S),存後 diff 重讀、該檔 viewed 失效、遞「告訴 agent」;dirty 守門管每扇門(收合/fold/再點 chip);編輯中鎖比較基準 select;j/k 導航對編輯器內按鍵放行。
 - **Cost/context 顯示**:✅ **已實作**(`cost-context.md` 定案)。transcript_path 由 hook body 遞來(不猜路徑);turn_done 縫上增量讀(`HostRef::read_from`,記 byte offset,遠端走 `tail -c`);sidechain 計入累計、不動語境;檢視器 meta 顯示 `語境 {ctx} · ↑{out}`(k/M 壓縮,tooltip 四欄精確);不換算金額、不猜視窗百分比、卡片不戴徽章、非 claude 誠實缺席。
+- **世界選擇器(WSL/SSH)**:✅ **已實作**(`worlds.md` 定案)。核心判定:世界是**卡片的屬性**不是視窗的模式——左下角 `WorldPicker` 只設「新東西預設開在哪」+ 懶探測健康(結果落在被點的那一列),兩個開啟對話框各帶 `WorldSelect` 單次可改;`composePath` 組 `wsl://`/`ssh://` 前綴、`normalizeUnc` 收 `\\wsl$`/`\\wsl.localhost` 貼上;發現靠枚舉不發明(`parse_wsl_list` 處理 UTF-16LE + 濾 docker 管線 distro;`parse_ssh_config` 只收使用者寫過的別名);啟動絕不探遠端。
 - **終端規模化**:✅ **已實作**(`terminal-scale.md` 量測+定案)。實測 Chromium:context 建立永不失敗、超過 16 個**無聲踢最舊**——藏著的 pane 持有 context 會踢掉看著的 pane,故 WebGL 改跟可見性走(隱藏即 dispose,丟失下次顯示自癒);SearchAddon + ⌘F 搜尋列(浮層、no-match 狀態、Esc 還游標,終端機內 Ctrl+Shift+F);WebLinksAddon ⌘/Ctrl+click;scrollback 落盤緩辦(10k 有界維持)。
 
 ## 遠期(記錄,不排程)

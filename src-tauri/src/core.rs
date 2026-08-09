@@ -814,6 +814,24 @@ pub struct Resumed {
     pub restore_error: Option<String>,
 }
 
+/// The worlds a card can live in, enumerated — never invented. WSL comes
+/// from `wsl.exe -l -q`, SSH from the aliases the person already wrote
+/// into `~/.ssh/config`; an empty list is an honest "none here".
+#[derive(Debug, Clone, Serialize)]
+pub struct Worlds {
+    pub wsl: Vec<String>,
+    pub ssh: Vec<String>,
+}
+
+/// What asking a world "are you there, and do you have a claude" found.
+/// `claude: None` with no error is itself an answer: reachable, but the
+/// CLI is not on that world's login-shell PATH.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorldProbe {
+    pub claude: Option<String>,
+    pub error: Option<String>,
+}
+
 /// Both sides of one file in an attempt's diff, as full text — the data
 /// model an editable diff needs, where a patch string cannot be edited.
 /// `base` is `None` for a file the attempt created; `work` is `None` for
@@ -2263,6 +2281,53 @@ impl Core {
                 .ok_or_else(|| anyhow!("this attempt has no checkpoint #{n}"))?,
         };
         self.worktrees.diff(&hr, &wt_loc.path, &base)
+    }
+
+    /* ---------------------------- worlds --------------------------- */
+
+    /// Enumerate the worlds a card could live in. Cheap by construction:
+    /// one `wsl.exe -l -q` (milliseconds, and an instant failure anywhere
+    /// wsl.exe does not exist) and one local file read — never a remote
+    /// probe, so a dead SSH host cannot slow the menu down.
+    pub fn list_worlds(&self) -> Worlds {
+        let wsl = std::process::Command::new("wsl.exe")
+            .args(["-l", "-q"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| host::parse_wsl_list(&o.stdout))
+            .unwrap_or_default();
+        let ssh = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .ok()
+            .map(|home| std::path::Path::new(&home).join(".ssh").join("config"))
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .map(|text| host::parse_ssh_config(&text))
+            .unwrap_or_default();
+        Worlds { wsl, ssh }
+    }
+
+    /// Ask one world whether it is reachable and what claude it carries.
+    /// `world` is the stored-path prefix ('' for local, `wsl://Ubuntu`,
+    /// `ssh://devbox`). Runs the full login-shell probe on first contact
+    /// and answers from the `hosts` cache afterwards — the same cache a
+    /// card's first attempt would warm anyway.
+    pub fn probe_world(&self, world: &str) -> WorldProbe {
+        let raw = if world.is_empty() {
+            "/".to_string()
+        } else {
+            format!("{world}/")
+        };
+        match self.located(&raw) {
+            Ok((_, he)) => WorldProbe {
+                claude: he.claude_version.map(|(a, b, c)| format!("{a}.{b}.{c}")),
+                error: None,
+            },
+            Err(e) => WorldProbe {
+                claude: None,
+                error: Some(format!("{e:#}")),
+            },
+        }
     }
 
     /// Both sides of one file in the diff, as full text — what the editable

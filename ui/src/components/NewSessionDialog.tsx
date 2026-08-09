@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useT } from '../i18n';
 import { splitArgs } from '../profiles';
+import { composePath, storedWorld, type World } from '../worlds';
 import { useLaunchers } from './launchers';
 import { Modal } from './Modal';
+import { WorldSelect } from './WorldSelect';
 
 interface Props {
   onCancel: () => void;
@@ -28,6 +30,7 @@ function remember(cwd: string) {
 export function NewSessionDialog({ onCancel, onCreate }: Props) {
   const t = useT();
   const [cwd, setCwd] = useState(recents()[0] ?? '');
+  const [world, setWorld] = useState<World>(storedWorld);
   const [agent, setAgent] = useState('claude');
   const [args, setArgs] = useState('');
   const launchers = useLaunchers();
@@ -39,8 +42,8 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
   };
 
   const create = () => {
-    const dir = cwd.trim();
-    if (!dir) return;
+    if (cwd.trim() === '') return;
+    const dir = composePath(world, cwd);
     remember(dir);
     onCreate(dir, agent, splitArgs(args));
   };
@@ -59,12 +62,14 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
     <Modal onCancel={onCancel} dirty={args.trim() !== ''}>
         <h2>{t('newSession.title')}</h2>
 
+        <WorldSelect value={world} onChange={setWorld} testid="session-world" />
+
         <label>{t('newSession.cwd')}</label>
         <div className="row">
           <input
             className="mono"
             value={cwd}
-            placeholder="/Users/you/code/your-repo"
+            placeholder={world === '' ? '/Users/you/code/your-repo' : '/home/you/project'}
             onChange={(e) => setCwd(e.target.value)}
             onKeyDown={submitOnEnter}
           />

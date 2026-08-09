@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { api } from '../api';
 import { useT } from '../i18n';
+import { composePath, storedWorld, type World } from '../worlds';
 import { Modal } from './Modal';
+import { WorldSelect } from './WorldSelect';
 import { FriendlyError } from './FriendlyError';
 
 interface Props {
@@ -39,6 +41,11 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
   const [title, setTitle] = useState('');
   const [prompt, setPrompt] = useState('');
   const [repo, setRepo] = useState(recents()[0] ?? '');
+  /** Which world the repo path lives in — defaulted from the bottom-left
+      picker, overridable per card. The scheme never rides the keyboard:
+      `composePath` assembles it, and pasted schemes or \\wsl$ UNC paths
+      win over the dropdown. */
+  const [world, setWorld] = useState<World>(storedWorld);
   const [branch, setBranch] = useState('main');
   /** Creating checks the repository on disk, which takes real time on a
    *  WSL or SSH host — and a button still live during it makes two cards
@@ -56,7 +63,7 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
   // the staleness guard: a fetch for a path no longer in the field can
   // neither land in the list nor rewrite the base.
   useEffect(() => {
-    const path = repo.trim();
+    const path = repo.trim() === '' ? '' : composePath(world, repo);
     if (path === '') {
       setBranches([]);
       return;
@@ -88,7 +95,7 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
       live = false;
       clearTimeout(timer);
     };
-  }, [repo]);
+  }, [repo, world]);
 
   const pick = async () => {
     const picked = await open({ directory: true, multiple: false });
@@ -102,7 +109,7 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
     if (!ready || busy) return;
     setBusy(true);
     void Promise.resolve(
-      onCreate(title.trim(), prompt.trim(), repo.trim(), branch.trim()),
+      onCreate(title.trim(), prompt.trim(), composePath(world, repo), branch.trim()),
     ).finally(() => setBusy(false));
   };
 
@@ -136,13 +143,15 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
         />
         <p className="muted small">{t('newTask.promptHint')}</p>
 
+        <WorldSelect value={world} onChange={setWorld} testid="task-world" />
+
         <label>{t('newTask.repo')}</label>
         <div className="row">
           <input
             className="mono"
             value={repo}
             data-testid="task-repo"
-            placeholder="/Users/you/code/your-repo"
+            placeholder={world === '' ? '/Users/you/code/your-repo' : '/home/you/project'}
             onChange={(e) => setRepo(e.target.value)}
             onKeyDown={submitOnEnter}
           />

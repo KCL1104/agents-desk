@@ -531,6 +531,23 @@ fn probe_port(port: u16) -> bool {
     std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(400)).is_ok()
 }
 
+/* ----------------------------- worlds ------------------------------ */
+
+/// The worlds a card can live in — enumerated from `wsl -l` and
+/// `~/.ssh/config`, never invented, never probed remotely.
+#[tauri::command]
+fn list_worlds(state: State<'_, AppState>) -> StdResult<core::Worlds, String> {
+    Ok(state.core()?.list_worlds())
+}
+
+/// Reach one world and report its claude, or the whole reason it could
+/// not be reached. Deliberately lazy: called on a person's pick, never
+/// at startup.
+#[tauri::command]
+fn probe_world(state: State<'_, AppState>, world: String) -> StdResult<core::WorldProbe, String> {
+    Ok(state.core()?.probe_world(&world))
+}
+
 /* ------------------------- editable diff --------------------------- */
 
 /// Both sides of one file in an attempt's diff, as full text: the base
@@ -788,6 +805,8 @@ fn main() {
             park_attempt,
             resume_attempt,
             probe_port,
+            list_worlds,
+            probe_world,
             attempt_file,
             write_attempt_file,
             cancel_queued,

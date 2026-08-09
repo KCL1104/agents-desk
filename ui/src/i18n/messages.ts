@@ -90,9 +90,6 @@ export const en = {
   'overview.noStatus': 'This agent does not report status',
   'overview.markDone': 'Done',
   'overview.unmarkDone': 'Undo done',
-  // Only shown once a second world exists — see Overview's multiWorld gate.
-  'world.local': 'This machine',
-
   /* ----------------------------- panes -------------------------------- */
   'pane.dragHint':
     'Drop on another pane’s centre to swap, on an edge to split; double-click to zoom',
@@ -425,6 +422,13 @@ export const en = {
   'review.stale': 'line changed',
   'review.staleHint':
     'The quoted line is no longer in the diff — the note still sends, quoting what you saw.',
+  /* ----------------------------- worlds ------------------------------- */
+  'world.local': 'This machine',
+  'world.where': 'World',
+  'world.pick': 'Where new cards and sessions open — WSL distros and SSH hosts included',
+  'world.hint': 'New cards and sessions open here. Each card keeps its own world.',
+  'world.probing': 'reaching…',
+  'world.noClaude': 'no claude on this world’s PATH',
   /* ------------------------ find in terminal -------------------------- */
   'term.find': 'Find in terminal',
   'term.findHint': 'Enter finds the next match, Shift+Enter the previous, Esc closes',
@@ -544,7 +548,6 @@ export const zhTW: Record<MessageKey, string> = {
   'overview.noStatus': '這個 agent 不回報狀態',
   'overview.markDone': '完成',
   'overview.unmarkDone': '取消完成',
-  'world.local': '本機',
 
   /* ----------------------------- panes -------------------------------- */
   'pane.dragHint': '拖到別的 pane 中央可對調，拖到邊緣可切分；雙擊放大',
@@ -867,6 +870,13 @@ export const zhTW: Record<MessageKey, string> = {
   'edit.compareLocked': '關掉編輯器才能切換比較基準',
   'review.stale': '行已變',
   'review.staleHint': '引用的那行已不在 diff 裡 —— 訊息照送，引用的是你當時看到的。',
+  /* ----------------------------- worlds ------------------------------- */
+  'world.local': '本機',
+  'world.where': '世界',
+  'world.pick': '新卡片與新 session 開在哪 —— 包含 WSL distro 與 SSH host',
+  'world.hint': '新開的東西預設在這裡。每張卡各自保有自己的世界。',
+  'world.probing': '連線中…',
+  'world.noClaude': '這個世界的 PATH 上找不到 claude',
   /* ------------------------ find in terminal -------------------------- */
   'term.find': '搜尋終端機',
   'term.findHint': 'Enter 找下一個、Shift+Enter 找上一個、Esc 關閉',

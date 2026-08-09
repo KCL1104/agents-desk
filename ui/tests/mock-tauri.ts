@@ -129,6 +129,10 @@ declare global {
       sessionSeq: number;
       /** What probe_port answers — false plays an unreachable server. */
       portListening: boolean;
+      /** What the world switch enumerates. */
+      worlds: { wsl: string[]; ssh: string[] };
+      /** Seeded by tests: per-world probe answers. */
+      worldProbes: Map<string, { claude: string | null; error: string | null }>;
       maxConcurrent: number;
       /** How many attempts hold a terminal right now. */
       running(): number;
@@ -216,6 +220,10 @@ export function installMock(): void {
     resumeRestoreError: null as string | null,
     sessionSeq: 0,
     portListening: true,
+    /** What the world switch enumerates — a Windows machine's shape. */
+    worlds: { wsl: ['Ubuntu'], ssh: ['devbox'] } as { wsl: string[]; ssh: string[] },
+    /** Seeded by tests: what probing a world answers. */
+    worldProbes: new Map<string, { claude: string | null; error: string | null }>(),
     calls: [] as Array<{ cmd: string; args: unknown }>,
     listeners: new Map<string, number[]>(),
     cbSeq: 0,
@@ -849,6 +857,15 @@ export function installMock(): void {
     test_notification: () => null,
 
     probe_port: () => mock.portListening,
+
+    list_worlds: () => mock.worlds,
+
+    probe_world: (args) => {
+      const world = String(args.world ?? '');
+      return (
+        mock.worldProbes.get(world) ?? { claude: '2.1.226', error: null }
+      );
+    },
 
     checkpoints_enabled: () => mock.checkpointsOn,
 

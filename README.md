@@ -113,7 +113,10 @@ pixel for pixel, beside a plain test runner:
   session to a normal one are held for your approval in the receiving
   terminal — that is the CLI's safety model working as designed
 - **The WSL bridge** (M10a): a card's repository can live inside a WSL
-  distro. Write its path as `wsl://<distro>/<path>` and everything runs
+  distro. Pick the distro from the world switch in the sidebar's bottom
+  corner (or per dialog) and type a plain path — pasting Explorer's
+  `\\wsl$\<distro>\…` form also works; the card stores
+  `wsl://<distro>/<path>` — and everything runs
   where the repository is: the distro's own `claude` (login-shell PATH,
   probed once per distro), git and worktrees in the distro's filesystem
   under its own `~/.agentdesk/worktrees`, workspace scripts through the
@@ -126,9 +129,9 @@ pixel for pixel, beside a plain test runner:
   (`.wslconfig`: `networkingMode=mirrored`) so hooks can reach the app at
   localhost; under NAT the session runs fine and the badge simply stays
   quiet
-- **The SSH host** (M10b): the same seam, across a wire. Write a card's
-  repository as `ssh://<host>/<path>`, where `<host>` is an alias from your
-  own `~/.ssh/config` — AgentDesk invents no connection settings, so users,
+- **The SSH host** (M10b): the same seam, across a wire. The world switch
+  lists the `Host` aliases from your own `~/.ssh/config` (a card stores
+  `ssh://<host>/<path>`) — AgentDesk invents no connection settings, so users,
   ports, keys and jump hosts are exactly what your terminal uses (key-based
   auth; a passworded probe fails fast rather than hanging). The remote's
   login shell is probed for its PATH, worktrees open under the remote
@@ -256,8 +259,11 @@ The pieces that carry the triage loop, in roughly the order you meet them:
   readline. URLs in output open with ⌘/Ctrl+click.
 - **Branch picker** — the new-card dialog suggests the repo's branches
   sorted by recency instead of asking you to type one from memory.
-- **Worlds** — repos over WSL or SSH carry a host badge on their cards, and
-  the overview separates sessions by machine once more than one is involved.
+- **Worlds** — the bottom-left switch picks where new cards and sessions
+  open (WSL distros and SSH hosts enumerated, never invented) and probes
+  the chosen world's `claude` on demand; repos over WSL or SSH carry a
+  host badge on their cards, and the overview separates sessions by
+  machine once more than one is involved.
 - **No-signal chip** — status comes from Claude Code's hooks; a card running
   any other agent says "no status signal" rather than letting silence read
   as calm.

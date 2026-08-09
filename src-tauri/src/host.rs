@@ -634,6 +634,67 @@ impl HostRef<'_> {
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* World discovery                                                     */
+/* ------------------------------------------------------------------ */
+
+/// Distro names out of `wsl.exe -l -q`.
+///
+/// wsl.exe writes **UTF-16LE** — the classic landmine of every wrapper
+/// that ever shelled out to it; a UTF-8 read shows one letter per two
+/// bytes with NULs between. A BOM may lead. Docker Desktop's plumbing
+/// distros are filtered: they are machinery, not worlds anyone opens a
+/// repository in.
+pub fn parse_wsl_list(bytes: &[u8]) -> Vec<String> {
+    let text = if bytes.iter().take(64).any(|b| *b == 0) {
+        let body = if bytes.starts_with(&[0xFF, 0xFE]) { &bytes[2..] } else { bytes };
+        let units: Vec<u16> = body
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        String::from_utf16_lossy(&units)
+    } else {
+        // Honesty valve: should wsl ever grow a UTF-8 mode, or a test
+        // feed plain text, ASCII-looking input decodes as itself.
+        String::from_utf8_lossy(bytes).into_owned()
+    };
+    text.lines()
+        .map(|l| l.trim_matches(['\r', ' ', '\u{0}']).to_string())
+        .filter(|l| !l.is_empty())
+        .filter(|l| l != "docker-desktop" && l != "docker-desktop-data")
+        .collect()
+}
+
+/// `Host` aliases out of an `~/.ssh/config`, in file order.
+///
+/// Only names a person deliberately wrote: wildcard patterns (`*`, `?`)
+/// are matching rules, not destinations, and negations (`!`) are
+/// exclusions. `Include` files are not followed in v1 — the main config
+/// is where aliases people reach for by hand live.
+pub fn parse_ssh_config(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut tokens = line.split_whitespace();
+        let Some(keyword) = tokens.next() else { continue };
+        if !keyword.eq_ignore_ascii_case("host") {
+            continue;
+        }
+        for name in tokens {
+            if name.contains('*') || name.contains('?') || name.starts_with('!') {
+                continue;
+            }
+            if !out.iter().any(|n| n == name) {
+                out.push(name.to_string());
+            }
+        }
+    }
+    out
+}
+
 /// The variables worth carrying into a WSL command. The whole login
 /// environment would be the ideal, but it rides on `wsl.exe`'s command line,
 /// which is a Windows command line with a Windows-sized limit — so what
@@ -667,6 +728,43 @@ pub fn pty_env(env: &ShellEnv, extra: &[(String, String)]) -> Vec<(String, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The classic landmine, reproduced: wsl.exe speaks UTF-16LE with a
+    /// BOM and CRLF line ends — and Docker's plumbing distros are noise.
+    #[test]
+    fn wsl_list_decodes_utf16_and_drops_the_plumbing() {
+        let text = "Ubuntu\r\nDebian\r\ndocker-desktop\r\ndocker-desktop-data\r\n";
+        let mut bytes = vec![0xFF, 0xFE];
+        for unit in text.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        assert_eq!(parse_wsl_list(&bytes), vec!["Ubuntu", "Debian"]);
+        // The honesty valve: plain text decodes as itself.
+        assert_eq!(parse_wsl_list(b"Ubuntu\nAlpine\n"), vec!["Ubuntu", "Alpine"]);
+        assert!(parse_wsl_list(b"").is_empty());
+    }
+
+    /// Aliases a person wrote, and nothing a matcher wrote: wildcards,
+    /// negations, comments and Match blocks all stay out of the menu.
+    #[test]
+    fn ssh_config_yields_only_deliberate_aliases() {
+        let config = "\
+# personal hosts\n\
+Host devbox\n\
+  HostName dev.example.com\n\
+  User me\n\
+\n\
+host build farm-a farm-b\n\
+Host *.internal !prod *\n\
+Match user root\n\
+  Compression yes\n\
+Host devbox\n";
+        assert_eq!(
+            parse_ssh_config(config),
+            vec!["devbox", "build", "farm-a", "farm-b"]
+        );
+        assert!(parse_ssh_config("").is_empty());
+    }
 
     #[test]
     fn plain_paths_stay_local_and_round_trip() {
