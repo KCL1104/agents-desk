@@ -221,6 +221,17 @@ export function useSections(
   return display;
 }
 
+/** A token count, compacted the way people say it: 812, 9.8k, 279k, 2.6M.
+ *  One decimal only while it still means something; the exact figure lives
+ *  in the tooltip beside every use. */
+export function tokens(n: number): string {
+  const short = (v: number, unit: string) =>
+    `${v < 10 ? v.toFixed(1).replace(/\.0$/, '') : String(Math.round(v))}${unit}`;
+  if (n < 1000) return String(n);
+  if (n < 999_500) return short(n / 1000, 'k');
+  return short(n / 1e6, 'M');
+}
+
 /** Elapsed time, in the compact form the sidebar uses. */
 export function elapsed(sinceMs: number, now: number = Date.now()): string {
   if (!sinceMs) return '';

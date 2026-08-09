@@ -71,6 +71,11 @@ pub struct HookReport {
     pub session_id: String,
     pub state: HookState,
     pub activity: Option<Activity>,
+    /// Where Claude Code keeps this conversation's JSONL — the one honest
+    /// source of token usage. A common field of every hook payload; carried
+    /// here so nobody has to reconstruct the path by guessing at claude's
+    /// escaping rules.
+    pub transcript_path: Option<String>,
 }
 
 pub trait HookHandler: Send + Sync + 'static {
@@ -221,14 +226,19 @@ async fn read_request(
         }
     }
 
-    let activity = serde_json::from_slice::<serde_json::Value>(&body)
-        .ok()
-        .and_then(|v| activity_from_payload(&v));
+    let payload = serde_json::from_slice::<serde_json::Value>(&body).ok();
+    let activity = payload.as_ref().and_then(activity_from_payload);
+    let transcript_path = payload
+        .as_ref()
+        .and_then(|v| v.get("transcript_path"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
 
     Some(HookReport {
         session_id: session_id?,
         state: state?,
         activity,
+        transcript_path,
     })
 }
 

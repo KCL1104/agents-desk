@@ -7,7 +7,7 @@ import { Icon } from './Icon';
 import { FileEditor } from './FileEditor';
 import { FriendlyError } from './FriendlyError';
 import { Modal } from './Modal';
-import { elapsed, STATUS_KEY } from '../sections';
+import { elapsed, tokens, STATUS_KEY } from '../sections';
 import { rollup } from '../timeline';
 import {
   autoCollapse,
@@ -366,6 +366,28 @@ export function AttemptInspector({
             title={t('stats.behind', { n: stat.behind, branch: baseBranch })}
           >
             ↓{stat.behind}
+          </span>
+        )}
+        {/* The conversation's token account — context is where the next
+            turn starts from, ↑ is what it has written so far. Tokens, not
+            dollars or percentages: a price table goes stale and a context
+            window we did not measure would be an invented denominator.
+            Absent for agents with no transcript — honest absence. */}
+        {session?.usage != null && (
+          <span
+            data-testid="inspector-usage"
+            title={t('usage.tip', {
+              context: session.usage.context.toLocaleString(),
+              input: session.usage.input.toLocaleString(),
+              output: session.usage.output.toLocaleString(),
+              write: session.usage.cache_write.toLocaleString(),
+              read: session.usage.cache_read.toLocaleString(),
+            })}
+          >
+            {t('usage.line', {
+              ctx: tokens(session.usage.context),
+              out: tokens(session.usage.output),
+            })}
           </span>
         )}
         {attempt.mode !== 'normal' && (

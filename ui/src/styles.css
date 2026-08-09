@@ -268,7 +268,27 @@ textarea { resize: vertical; }
   min-width: 0; min-height: 0; overflow: hidden;
   padding: 5px 4px 5px 7px;
   border: 1px solid transparent; border-radius: var(--radius-s);
+  /* The find bar anchors to the terminal it searches. */
+  position: relative;
 }
+
+/* Find in scrollback (⌘F). An overlay, not a header row: the terminal's
+   size must not change under the TUI when the bar comes and goes. */
+.term-find {
+  position: absolute; top: 6px; right: 14px; z-index: 2;
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 4px;
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  box-shadow: 0 2px 8px color-mix(in srgb, #000 25%, transparent);
+}
+.term-find input {
+  width: 180px; font-size: var(--fs-data);
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--line); border-radius: var(--radius-xs);
+  padding: 2px 6px;
+}
+.term-find input.no-match { border-color: var(--err); color: var(--err); }
 .term-host.focused { border-color: color-mix(in srgb, var(--accent) 25%, var(--line)); }
 
 .term-host .xterm { height: 100%; }

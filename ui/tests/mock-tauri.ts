@@ -20,6 +20,14 @@ export interface MockSession {
   reports_status: boolean;
   /** The $AGENTDESK_PORT a run script was handed, when reachable. */
   preview_port: number | null;
+  /** The conversation's token account — tests seed it, the core computes it. */
+  usage?: {
+    input: number;
+    output: number;
+    cache_read: number;
+    cache_write: number;
+    context: number;
+  } | null;
   activity: { tool: string; detail: string } | null;
   activity_since: number;
   completed: boolean;

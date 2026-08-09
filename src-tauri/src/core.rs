@@ -121,6 +121,76 @@ pub struct SessionMeta {
     /// Transient like the followup flag: the server dies with the PTY, and
     /// a persisted port would be a column that lies after every restart.
     pub preview_port: Option<u16>,
+    /// The conversation's token account, read off its transcript at each
+    /// turn's end. In-memory: the transcript is the durable record, and a
+    /// recompute is one read away.
+    pub usage: Option<Usage>,
+    /// Where that transcript lives, as the hook payload names it. Not
+    /// serialized — a host-side path is plumbing, not something the UI
+    /// renders.
+    #[serde(skip)]
+    pub transcript_path: Option<String>,
+}
+
+/// A session's token account. `context` is the last main-line request's
+/// prompt size — where the next turn starts from; the other four are
+/// cumulative across the conversation, sidechains included, because a
+/// sub-agent's spend is real spend.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+pub struct Usage {
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub cache_write: u64,
+    pub context: u64,
+}
+
+/// One session's progress through its transcript.
+#[derive(Debug, Clone, Copy, Default)]
+struct UsageState {
+    /// Bytes already consumed — always at a line boundary.
+    offset: u64,
+    acc: Usage,
+}
+
+/// Sum the usage in a stretch of transcript JSONL.
+///
+/// Returns the totals of every assistant row in the text, and the context
+/// size of the last **main-line** one (`input + cache_read + cache_write`
+/// ≈ the prompt the next turn will grow from). Sidechain rows count toward
+/// the totals — their spend is real — but never set the context: a
+/// sub-agent's prompt belongs to its own conversation. Rows that fail to
+/// parse are skipped, not fatal: one malformed line must not zero a
+/// session's account.
+fn parse_usage(text: &str) -> (Usage, Option<u64>) {
+    let mut sum = Usage::default();
+    let mut context = None;
+    for line in text.lines() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if v.get("type").and_then(|t| t.as_str()) != Some("assistant") {
+            continue;
+        }
+        let Some(u) = v.get("message").and_then(|m| m.get("usage")) else {
+            continue;
+        };
+        let g = |k: &str| u.get(k).and_then(|x| x.as_u64()).unwrap_or(0);
+        let (i, o, cr, cw) = (
+            g("input_tokens"),
+            g("output_tokens"),
+            g("cache_read_input_tokens"),
+            g("cache_creation_input_tokens"),
+        );
+        sum.input += i;
+        sum.output += o;
+        sum.cache_read += cr;
+        sum.cache_write += cw;
+        if v.get("isSidechain").and_then(|x| x.as_bool()) != Some(true) {
+            context = Some(i + cr + cw);
+        }
+    }
+    (sum, context)
 }
 
 impl SessionMeta {
@@ -155,6 +225,8 @@ impl SessionMeta {
             attempt_id: s.attempt_id,
             has_followup: false,
             preview_port: None,
+            usage: None,
+            transcript_path: None,
         }
     }
 }
@@ -508,6 +580,7 @@ impl HookHandler for Router {
             session_id,
             state,
             activity,
+            transcript_path,
         } = report;
         let status = Status::from_hook(state);
         let at = now_ms();
@@ -523,6 +596,11 @@ impl HookHandler for Router {
             };
             s.reports_status = true;
             s.last_active_at = at;
+            // Where the token account lives. First report wins — the path
+            // is stable for the life of the conversation.
+            if let Some(tp) = transcript_path {
+                s.transcript_path.get_or_insert(tp);
+            }
             let attempt_id = s.attempt_id.clone();
 
             // Only a tool call carries activity. A Stop or Notification report
@@ -618,6 +696,7 @@ impl HookHandler for Router {
             if let Some(core) = self.core.get().and_then(|w| w.upgrade()) {
                 core.flush_followup(&session_id);
                 core.snapshot_after_turn(&session_id);
+                core.usage_after_turn(&session_id);
             }
         }
     }
@@ -718,6 +797,12 @@ pub struct Core {
     /// click during one — would compute the same ordinal and fight over the
     /// temp index; the second caller finds the flag and leaves.
     checkpointing: Mutex<std::collections::HashSet<String>>,
+    /// Per-session progress through its transcript: the byte already
+    /// consumed and the totals so far, so each turn's read costs only what
+    /// the turn wrote. In-memory like the transcript path itself — the
+    /// JSONL is the durable record, and a cached copy that survives a
+    /// restart is a cache that lies after one.
+    usage_state: Mutex<HashMap<String, UsageState>>,
 }
 
 /// What a resume did. `restore_error` set means the worktree is back on
@@ -913,6 +998,7 @@ impl Core {
             hosts: Mutex::new(HashMap::new()),
             checkpoints_on: Mutex::new(checkpoints_on),
             checkpointing: Mutex::new(std::collections::HashSet::new()),
+            usage_state: Mutex::new(HashMap::new()),
         });
 
         // Status reporting is a nicety: if the listener cannot bind, sessions
@@ -1463,6 +1549,8 @@ impl Core {
             attempt_id: Some(attempt_id.clone()),
             has_followup: false,
             preview_port: None,
+            usage: None,
+            transcript_path: None,
         };
 
         // Visible before it can speak. The PTY reports its exit against the
@@ -1611,6 +1699,8 @@ impl Core {
             attempt_id: Some(attempt_id.to_string()),
             has_followup: false,
             preview_port: None,
+            usage: None,
+            transcript_path: None,
         };
         // On the record before it can exit — see `finish_opening`.
         self.sessions
@@ -1918,6 +2008,8 @@ impl Core {
                 Host::Ssh { .. } => None,
                 _ => Some(port),
             },
+            usage: None,
+            transcript_path: None,
         };
 
         let script_env = [
@@ -2032,6 +2124,8 @@ impl Core {
             attempt_id: None,
             has_followup: false,
             preview_port: None,
+            usage: None,
+            transcript_path: None,
         };
 
         // The same variable the scripts see, because the same need exists:
@@ -2510,6 +2604,8 @@ impl Core {
             attempt_id: None,
             has_followup: false,
             preview_port: None,
+            usage: None,
+            transcript_path: None,
         };
 
         // On the record before it can exit — see `finish_opening`.
@@ -3102,6 +3198,68 @@ impl Core {
         });
     }
 
+    /// The other thing a turn's end settles: the token account. Same seam
+    /// as the snapshot, same shape — leave the hook path now, read on a
+    /// thread of its own. Sessions with no recorded transcript (any agent
+    /// that is not claude, or a claude too old to say) simply never appear
+    /// in the books: honest absence, not a zero.
+    pub(crate) fn usage_after_turn(self: &Arc<Self>, session_id: &str) {
+        let (cwd, transcript) = {
+            let sessions = self.sessions.lock().unwrap();
+            let Some(s) = sessions.get(session_id) else { return };
+            let Some(tp) = s.transcript_path.clone() else { return };
+            (s.cwd.clone(), tp)
+        };
+        let core = Arc::clone(self);
+        let sid = session_id.to_string();
+        std::thread::spawn(move || {
+            if let Err(e) = core.read_usage(&sid, &cwd, &transcript) {
+                eprintln!("[core] usage read for {sid} failed: {e:#}");
+            }
+        });
+    }
+
+    /// Read what the transcript has grown since last time and fold it into
+    /// the session's account. The offset only ever advances to a line
+    /// boundary — a half-written line is the next read's problem.
+    fn read_usage(&self, session_id: &str, cwd: &str, transcript: &str) -> Result<()> {
+        let (_, he) = self.located(cwd)?;
+        let hr = he.hr(&self.env);
+        let from = self
+            .usage_state
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .map(|u| u.offset)
+            .unwrap_or(0);
+        let Some(bytes) = hr.read_from(transcript, from)? else {
+            return Ok(());
+        };
+        let consumed = match bytes.iter().rposition(|b| *b == b'\n') {
+            Some(i) => i + 1,
+            None => return Ok(()),
+        };
+        let (delta, context) = parse_usage(&String::from_utf8_lossy(&bytes[..consumed]));
+        let usage = {
+            let mut states = self.usage_state.lock().unwrap();
+            let st = states.entry(session_id.to_string()).or_default();
+            st.offset = from + consumed as u64;
+            st.acc.input += delta.input;
+            st.acc.output += delta.output;
+            st.acc.cache_read += delta.cache_read;
+            st.acc.cache_write += delta.cache_write;
+            if let Some(ctx) = context {
+                st.acc.context = ctx;
+            }
+            st.acc
+        };
+        if let Some(s) = self.sessions.lock().unwrap().get_mut(session_id) {
+            s.usage = Some(usage);
+        }
+        self.broadcast();
+        Ok(())
+    }
+
     fn snapshot_attempt(&self, attempt_id: &str) -> Result<Option<crate::worktree::Checkpoint>> {
         if !self.claim_checkpointing(attempt_id) {
             return Ok(None);
@@ -3282,6 +3440,36 @@ impl Core {
 mod tests {
     use super::*;
     use crate::store::StoredTab;
+
+    /// The transcript arithmetic, against real-shaped rows: totals count
+    /// everything including sidechains, context follows only the main line,
+    /// and a malformed row is skipped rather than zeroing the account.
+    #[test]
+    fn usage_totals_count_sidechains_but_context_follows_the_main_line() {
+        let lines = [
+            r#"{"type":"user","message":{"role":"user"}}"#,
+            r#"{"type":"assistant","isSidechain":false,"message":{"usage":{"input_tokens":10,"output_tokens":100,"cache_read_input_tokens":1000,"cache_creation_input_tokens":50}}}"#,
+            "this line is not json",
+            r#"{"type":"assistant","isSidechain":true,"message":{"usage":{"input_tokens":5,"output_tokens":200,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}"#,
+            r#"{"type":"assistant","message":{"usage":{"input_tokens":2,"output_tokens":30,"cache_read_input_tokens":2000,"cache_creation_input_tokens":8}}}"#,
+        ]
+        .join("\n");
+        let (sum, ctx) = parse_usage(&lines);
+        assert_eq!(sum.input, 17);
+        assert_eq!(sum.output, 330, "the sidechain's spend is real spend");
+        assert_eq!(sum.cache_read, 3000);
+        assert_eq!(sum.cache_write, 58);
+        // The last main-line row: 2 + 2000 + 8. The sidechain in between
+        // must not have hijacked the context.
+        assert_eq!(ctx, Some(2010));
+    }
+
+    #[test]
+    fn a_transcript_with_no_assistant_rows_has_no_context_yet() {
+        let (sum, ctx) = parse_usage(r#"{"type":"user","message":{}}"#);
+        assert_eq!(sum, Usage::default());
+        assert_eq!(ctx, None);
+    }
 
     /// The invoke boundary check for the editable diff: everything a diff
     /// legitimately names passes; everything that would leave the worktree

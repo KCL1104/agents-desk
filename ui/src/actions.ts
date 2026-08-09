@@ -61,6 +61,7 @@ export const ACTIONS: readonly ActionDef[] = [
  *  documents but nobody would run from a palette. */
 export const KEY_DOCS: readonly { combo: string; what: MessageKey }[] = [
   { combo: '⌘/Ctrl + K', what: 'keys.palette' },
+  { combo: '⌘/Ctrl + F', what: 'keys.find' },
   { combo: '⌘/Ctrl + ⌥/Alt + ← · →', what: 'keys.cyclePanes' },
   { combo: '⌘/Ctrl + ← → · ↑ ↓', what: 'keys.moveCard' },
   { combo: 'Ctrl + PgDn · PgUp', what: 'keys.cycleTabs' },

@@ -177,6 +177,13 @@ export PATH="$HOME/.cargo/bin:$PATH"
   （按鈕或 ⌘S），存後 diff 重讀、該檔的「已看」失效，並遞上一則寫明檔名
   的「告訴 agent」訊息。回合進行中入口會藏起來、core 也會拒絕 —— 與還原
   同一套雙層守門。凍結與暫停的 diff 是紀錄，永遠不是文件。
+- **Token 帳** —— 每個 claude session 的花費與語境水位，每回合結束從它
+  自己的 transcript 讀一次（路徑由 hooks 遞來，回合中不輪詢）。檢視器顯示
+  「語境 279k · ↑2.6M」，hover 給四欄精確值。只給 token、不給金額或百分
+  比 —— 價目表會過期，沒量測過的 context window 是發明出來的分母。
+- **終端機搜尋**（`⌘/Ctrl+F`）—— 用浮層搜 10k 行捲動歷史；Enter/Shift+
+  Enter 走上下一個，找不到會直說。終端機內改用 Ctrl+Shift+F（Ctrl+F 屬於
+  readline）。輸出裡的網址 ⌘/Ctrl+click 開啟。
 - **分支挑選** —— 開卡對話框直接建議 repo 的分支、按最近使用排序，而不是
   要你憑記憶打字。
 - **世界** —— 走 WSL 或 SSH 的 repo 會在卡片上戴 host 徽章；總覽在超過一個

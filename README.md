@@ -220,6 +220,16 @@ The pieces that carry the triage loop, in roughly the order you meet them:
   note naming the file. Mid-turn the entry hides *and* the core refuses —
   the same two-layer guard restore has. Frozen and parked diffs are
   records, never documents.
+- **Token account** — each claude session's spend and context, read off
+  its own transcript at every turn's end (hooks carry the path; nothing is
+  polled mid-turn). The inspector shows `ctx 279k · ↑2.6M` with the exact
+  four-way breakdown on hover. Tokens, never dollars or percentages — a
+  price table goes stale, and a context window we didn't measure would be
+  an invented denominator.
+- **Find in terminal** (`⌘/Ctrl+F`) — search the 10k-line scrollback from
+  a small overlay; Enter/Shift+Enter step through matches, a miss says so.
+  From inside a terminal the chord adds Shift, since Ctrl+F belongs to
+  readline. URLs in output open with ⌘/Ctrl+click.
 - **Branch picker** — the new-card dialog suggests the repo's branches
   sorted by recency instead of asking you to type one from memory.
 - **Worlds** — repos over WSL or SSH carry a host badge on their cards, and

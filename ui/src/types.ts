@@ -120,6 +120,17 @@ export interface SessionMeta {
       app (local and WSL; an SSH host's port lives on the remote). Transient
       — the server dies with the PTY. */
   preview_port?: number | null;
+  /** The conversation's token account, read off its transcript at each
+      turn's end. Mirrors core.rs Usage. Absent until a claude session's
+      first Stop — and forever, honestly, for agents with no transcript. */
+  usage?: {
+    input: number;
+    output: number;
+    cache_read: number;
+    cache_write: number;
+    /** The last request's prompt size — where the next turn starts from. */
+    context: number;
+  } | null;
 }
 
 /** Which notifications the desk raises. Mirrors core.rs NotifyPrefs —

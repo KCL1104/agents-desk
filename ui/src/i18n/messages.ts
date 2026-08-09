@@ -416,6 +416,15 @@ export const en = {
   'edit.discard': 'Discard the edits',
   'edit.keep': 'Keep editing',
   'edit.compareLocked': 'Close the editor to switch the baseline',
+  /* ------------------------ find in terminal -------------------------- */
+  'term.find': 'Find in terminal',
+  'term.findHint': 'Enter finds the next match, Shift+Enter the previous, Esc closes',
+  'term.noMatch': 'No match in the scrollback',
+  'keys.find': 'Find in the focused terminal (from inside it: Ctrl+Shift+F)',
+  /* --------------------------- token account -------------------------- */
+  'usage.line': 'ctx {ctx} · ↑{out}',
+  'usage.tip':
+    'This conversation’s token account, read from its transcript at each turn’s end. Context {context} is the last request’s prompt — where the next turn starts from. Cumulative: {input} in · {output} out · {write} cache-written · {read} cache-read.',
 
   /* ----------------------------- profiles ------------------------------ */
   'profile.namePlaceholder': 'opus, quiet claude, …',
@@ -843,6 +852,15 @@ export const zhTW: Record<MessageKey, string> = {
   'edit.discard': '放棄修改',
   'edit.keep': '繼續編輯',
   'edit.compareLocked': '關掉編輯器才能切換比較基準',
+  /* ------------------------ find in terminal -------------------------- */
+  'term.find': '搜尋終端機',
+  'term.findHint': 'Enter 找下一個、Shift+Enter 找上一個、Esc 關閉',
+  'term.noMatch': '捲動歷史裡沒有符合',
+  'keys.find': '在聚焦的終端機裡搜尋（終端機內改用 Ctrl+Shift+F）',
+  /* --------------------------- token account -------------------------- */
+  'usage.line': '語境 {ctx} · ↑{out}',
+  'usage.tip':
+    '這場對話的 token 帳，每回合結束時從 transcript 讀一次。語境 {context} 是上一輪請求的 prompt 大小 —— 下一輪從這裡起跑。累計：輸入 {input}、輸出 {output}、快取寫入 {write}、快取讀取 {read}。',
 
   /* ----------------------------- profiles ------------------------------ */
   'profile.namePlaceholder': 'opus、安靜的 claude、…',

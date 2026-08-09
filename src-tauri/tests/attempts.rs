@@ -2054,6 +2054,83 @@ fn a_hand_edit_is_refused_mid_turn_and_lands_once_the_attempt_settles() {
         .is_err());
 }
 
+/* ---------------------------- token account ----------------------------- */
+
+/// The whole cost pipeline end to end: a Stop hook whose body names the
+/// transcript, the turn-end read on its own thread, and the account landing
+/// on the session for the next broadcast — incrementally, so the second
+/// turn only pays for its own lines.
+#[test]
+fn a_turns_end_reads_the_transcript_and_the_account_lands_on_the_session() {
+    let h = Harness::new("usage");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.start(&task, "claude");
+
+    let transcript = h.root.join("transcript.jsonl");
+    std::fs::write(
+        &transcript,
+        concat!(
+            r#"{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":100,"cache_read_input_tokens":1000,"cache_creation_input_tokens":50}}}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+
+    // The Stop payload, as Claude Code posts it: common fields in the body.
+    h.hook(
+        &a.session_id,
+        "idle",
+        serde_json::json!({
+            "hook_event_name": "Stop",
+            "transcript_path": transcript.to_string_lossy(),
+        }),
+    );
+    assert!(
+        wait_for(Duration::from_secs(5), || {
+            h.core
+                .sessions()
+                .iter()
+                .find(|s| s.id == a.session_id)
+                .and_then(|s| s.usage)
+                .is_some_and(|u| u.output == 100 && u.context == 1060)
+        }),
+        "the first turn's account never landed: {:?}",
+        h.core.sessions().iter().find(|s| s.id == a.session_id).and_then(|s| s.usage)
+    );
+
+    // The next turn appends — a sidechain (spend counts, context must not
+    // move to it) and a main-line row. Totals accumulate across reads.
+    let mut file = std::fs::OpenOptions::new().append(true).open(&transcript).unwrap();
+    use std::io::Write as _;
+    writeln!(
+        file,
+        r#"{{"type":"assistant","isSidechain":true,"message":{{"usage":{{"input_tokens":1,"output_tokens":40,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}}}}"#
+    )
+    .unwrap();
+    writeln!(
+        file,
+        r#"{{"type":"assistant","message":{{"usage":{{"input_tokens":2,"output_tokens":60,"cache_read_input_tokens":2000,"cache_creation_input_tokens":8}}}}}}"#
+    )
+    .unwrap();
+    drop(file);
+
+    h.hook(&a.session_id, "running", serde_json::Value::Null);
+    h.hook(&a.session_id, "idle", serde_json::Value::Null);
+    assert!(
+        wait_for(Duration::from_secs(5), || {
+            h.core
+                .sessions()
+                .iter()
+                .find(|s| s.id == a.session_id)
+                .and_then(|s| s.usage)
+                .is_some_and(|u| u.output == 200 && u.context == 2010 && u.input == 13)
+        }),
+        "the second turn's increment never landed: {:?}",
+        h.core.sessions().iter().find(|s| s.id == a.session_id).and_then(|s| s.usage)
+    );
+}
+
 /// The badge counts what is blocking a person, across the board and the
 /// ad-hoc sessions alike, because they are the same list underneath.
 #[test]

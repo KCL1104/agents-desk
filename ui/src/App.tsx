@@ -699,6 +699,15 @@ export default function App() {
         e.preventDefault();
         paletteReturn.current = document.activeElement as HTMLElement | null;
         setShowPalette(true);
+      } else if ((e.key === 'f' || e.key === 'F') && !shellsOwn) {
+        // Find in the focused terminal. Same shell rule as every letter:
+        // Ctrl+F from inside a terminal is readline's cursor-forward, so
+        // in there the chord is Ctrl+Shift+F. The pane owns the find bar;
+        // the event names which one, the theme event's precedent.
+        if (view === 'terminal' && focusedId !== null) {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('agentdesk:find', { detail: focusedId }));
+        }
       } else if ((e.key === 'i' || e.key === 'I') && !shellsOwn) {
         if (view === 'terminal' && (inspectId || activeAttemptId)) {
           e.preventDefault();

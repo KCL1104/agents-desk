@@ -1,8 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import { api } from '../api';
+import { useT } from '../i18n';
 import { xtermTheme } from '../theme';
 
 /** base64 -> bytes. The PTY sends bytes so xterm's own UTF-8 decoder can
@@ -37,9 +40,16 @@ export function TerminalView({
   /** Only the focused pane takes keystrokes and blinks its cursor. */
   focused?: boolean;
 }) {
+  const t = useT();
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const searchRef = useRef<SearchAddon | null>(null);
+  /** The find bar, and whether the last search came up empty — the input
+      wears that state rather than failing silently. */
+  const [finding, setFinding] = useState(false);
+  const [noMatch, setNoMatch] = useState(false);
+  const findInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -71,20 +81,18 @@ export function TerminalView({
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
-    // WebGL keeps a redraw-heavy TUI smooth, but WKWebView drops the context
-    // more readily than Chromium does, and a dropped context paints a torn,
-    // half-stale frame. Dispose on loss so xterm falls back to its DOM
-    // renderer, which is slower and correct.
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => {
-        console.warn('[term] WebGL context lost; falling back to the DOM renderer');
-        webgl.dispose();
-      });
-      term.loadAddon(webgl);
-    } catch {
-      /* DOM renderer is fine */
-    }
+    // WebGL is loaded per *visibility*, not here — see the effect below.
+    // Search rides the whole scrollback; links open in the browser on
+    // ⌘/Ctrl+click only, because a plain click belongs to the TUI's own
+    // mouse protocol and to text selection.
+    const search = new SearchAddon();
+    term.loadAddon(search);
+    searchRef.current = search;
+    term.loadAddon(
+      new WebLinksAddon((event, uri) => {
+        if (event.metaKey || event.ctrlKey) void api.openExternal(uri);
+      }),
+    );
 
     termRef.current = term;
     fitRef.current = fit;
@@ -157,8 +165,42 @@ export function TerminalView({
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
+      searchRef.current = null;
     };
   }, [id]);
+
+  // WebGL rides visibility. Measured (Chromium): creating a context never
+  // fails — the browser silently kills the *oldest* once more than 16 are
+  // alive. Every live session keeps its terminal mounted, so contexts held
+  // by hidden panes would evict the very panes on screen. Visible panes
+  // are bounded by the layout; hidden ones render nothing and need nothing.
+  // A context lost anyway (WKWebView sheds them under memory pressure)
+  // falls back to the DOM renderer and heals on the next reveal.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!visible || !term) return;
+    let webgl: WebglAddon | null = null;
+    try {
+      webgl = new WebglAddon();
+      webgl.onContextLoss(() => {
+        console.warn('[term] WebGL context lost; falling back to the DOM renderer');
+        webgl?.dispose();
+        webgl = null;
+      });
+      term.loadAddon(webgl);
+    } catch {
+      /* DOM renderer is fine */
+    }
+    return () => {
+      // Also runs at unmount, possibly after term.dispose() has already
+      // taken the addon with it — disposing twice must stay a no-op.
+      try {
+        webgl?.dispose();
+      } catch {
+        /* already gone with the terminal */
+      }
+    };
+  }, [visible, id]);
 
   // Refit on reveal: xterm cannot measure a display:none element. Only the
   // focused pane takes the caret, so keystrokes cannot land in the wrong
@@ -188,12 +230,78 @@ export function TerminalView({
     if (term) term.options.cursorBlink = focused;
   }, [focused]);
 
+  // ⌘/Ctrl+F, routed by the App's one keyboard table: the event names
+  // which pane, this pane answers only to its own name — the theme
+  // event's precedent for talking to components that are not in the
+  // prop chain.
+  useEffect(() => {
+    const onFind = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== id) return;
+      setFinding(true);
+      // Already open: the chord means "put the caret back in the box".
+      findInputRef.current?.focus();
+    };
+    window.addEventListener('agentdesk:find', onFind);
+    return () => window.removeEventListener('agentdesk:find', onFind);
+  }, [id]);
+
+  useEffect(() => {
+    if (finding) findInputRef.current?.focus();
+  }, [finding]);
+
+  const closeFind = () => {
+    setFinding(false);
+    setNoMatch(false);
+    termRef.current?.focus();
+  };
+
+  const findStep = (q: string, forward: boolean) => {
+    if (q === '' || searchRef.current === null) return;
+    const hit = forward ? searchRef.current.findNext(q) : searchRef.current.findPrevious(q);
+    // "Not found" as a worn state, not a silent shrug — the input turns
+    // and the tooltip says why.
+    setNoMatch(!hit);
+  };
+
   return (
     <div
       className="term-host"
       ref={hostRef}
       data-session-id={id}
       style={{ display: visible ? 'block' : 'none' }}
-    />
+    >
+      {finding && (
+        <div className="term-find" data-testid={`term-find-${id}`}>
+          <input
+            ref={findInputRef}
+            className={`mono${noMatch ? ' no-match' : ''}`}
+            placeholder={t('term.find')}
+            aria-label={t('term.find')}
+            aria-invalid={noMatch || undefined}
+            title={noMatch ? t('term.noMatch') : t('term.findHint')}
+            data-testid={`term-find-input-${id}`}
+            onChange={() => setNoMatch(false)}
+            onKeyDown={(e) => {
+              // The bar owns its keys; the terminal under it must not
+              // hear them, nor any global Esc listener above.
+              e.stopPropagation();
+              if (e.key === 'Enter') {
+                findStep(e.currentTarget.value, !e.shiftKey);
+              } else if (e.key === 'Escape') {
+                closeFind();
+              }
+            }}
+          />
+          <button
+            className="icon"
+            aria-label={t('common.close')}
+            title={t('common.close')}
+            onClick={closeFind}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

@@ -5,8 +5,8 @@
 
 ## 現況
 
-- main 至 `cd5caf9`(critique 迭代);工作分支 `claude/research-popular-tool-frontend-fax4cb` 另有可編輯 diff 的決策文件與實作,未併回。
-- 驗證基線:Playwright 274 passed(沙箱跑法:`npx playwright test --config playwright.local.config.ts`,指向預裝 Chromium)、cargo 339 全綠(容器已裝 GTK/WebKit dev 套件)、`npm run build` 乾淨。
+- main 至 `4fa5bb9`(可編輯 diff);工作分支 `claude/research-popular-tool-frontend-fax4cb` 另有 cost/context 與終端規模化,未併回。
+- 驗證基線:Playwright 279 passed(沙箱跑法:`npx playwright test --config playwright.local.config.ts`,指向預裝 Chromium)、cargo 344 全綠(容器已裝 GTK/WebKit dev 套件)、`npm run build` 乾淨。
 - 慣例備忘:i18n 是雙語 typed catalog,兩語相同的字串要進 `i18n.spec.ts` 的 SHARED 豁免;每個新 Tauri 指令都要在 `tests/mock-tauri.ts` 補 handler;凡動 agent 看得到的 git 狀態(index、worktree、分支)一律禁止。
 
 ## 第八批:收尾(狀態:**完成**)
@@ -47,8 +47,8 @@
 - **Parked 暫停態**:✅ **已實作**(`parked.md` 定案)。`parked_at`(migration V5)而非第五個 outcome;park = 拒絕 mid-turn → shelf checkpoint → doomed sessions(含 shell)→ 收地 → drain_queue,分支名進剪貼簿;resume = `attach`(原路徑長回既有分支,佔用即拒)→ shelf restore(失敗上浮 toast 不回滾)→ 既有 `reopen_attempt`;parked 的 diff 與終局凍結 diff 都走 checkpoint-對-base(`diff_range`,免 worktree);mock session id 改單調計數(park 移除列後不可重發)。
 - **內嵌 dev-server 預覽 + inspect mode**:✅ **已實作**(`dev-preview.md` 定案)。關鍵查證:CSP 為 null(iframe 可行)、埠配發後**沒有記錄**(v1 第一片補 in-memory `preview_port`)、SSH 埠不可達(v1 拒絕,forward 留第二片)。核心判定:**否決注入式 inspect**(修改受測頁 bytes 違反不重繪哲學),採 repo opt-in 的 dev-only script + postMessage 契約,組句走既有 bracketed paste。
 - **可編輯 diff**:✅ **已實作**(`editable-diff.md` 定案)。`file_at_rev`(ls-tree 問存在、raw stdout 讀內容)+ `attempt_file`/`write_attempt_file`(settled 守門 core 層再驗、凍結/parked 拒絕、路徑守門);CM6 unified merge view(`state`/`view`/`merge`/`commands` 四包,+290KB)就地換掉檔案區塊,base 側唯讀;存檔 explicit(鈕 + ⌘S),存後 diff 重讀、該檔 viewed 失效、遞「告訴 agent」;dirty 守門管每扇門(收合/fold/再點 chip);編輯中鎖比較基準 select;j/k 導航對編輯器內按鍵放行。
-- **Cost/context 顯示**:唯一誠實來源是 `~/.claude/projects/` transcript JSONL(hooks 無 token 資料,已驗證);不做即時 ticker;不內建價目表。
-- **終端規模化(先量測再決策)**:WebGL context 上限(每 pane 一個 `WebglAddon`,WebView 約 8–16 個)、SearchAddon、WebLinksAddon、scrollback 落盤。
+- **Cost/context 顯示**:✅ **已實作**(`cost-context.md` 定案)。transcript_path 由 hook body 遞來(不猜路徑);turn_done 縫上增量讀(`HostRef::read_from`,記 byte offset,遠端走 `tail -c`);sidechain 計入累計、不動語境;檢視器 meta 顯示 `語境 {ctx} · ↑{out}`(k/M 壓縮,tooltip 四欄精確);不換算金額、不猜視窗百分比、卡片不戴徽章、非 claude 誠實缺席。
+- **終端規模化**:✅ **已實作**(`terminal-scale.md` 量測+定案)。實測 Chromium:context 建立永不失敗、超過 16 個**無聲踢最舊**——藏著的 pane 持有 context 會踢掉看著的 pane,故 WebGL 改跟可見性走(隱藏即 dispose,丟失下次顯示自癒);SearchAddon + ⌘F 搜尋列(浮層、no-match 狀態、Esc 還游標,終端機內 Ctrl+Shift+F);WebLinksAddon ⌘/Ctrl+click;scrollback 落盤緩辦(10k 有界維持)。
 
 ## 遠期(記錄,不排程)
 

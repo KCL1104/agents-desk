@@ -556,6 +556,43 @@ impl HostRef<'_> {
         }
     }
 
+    /// The file's bytes from `offset` to the end, `None` when it does not
+    /// exist. For append-only files read repeatedly — each call costs only
+    /// what has grown since the last one. Bytes, not text: the caller owns
+    /// deciding where a line ends, and a lossy conversion here would break
+    /// the byte arithmetic the offset depends on.
+    pub fn read_from(&self, path: &str, offset: u64) -> Result<Option<Vec<u8>>> {
+        match self.host {
+            Host::Local => {
+                use std::io::{Read as _, Seek as _};
+                let mut f = match std::fs::File::open(path) {
+                    Ok(f) => f,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                    Err(e) => return Err(e.into()),
+                };
+                f.seek(std::io::SeekFrom::Start(offset))?;
+                let mut buf = Vec::new();
+                f.read_to_end(&mut buf)?;
+                Ok(Some(buf))
+            }
+            _ => {
+                if !self.exists(path) {
+                    return Ok(None);
+                }
+                // `tail -c +N` is 1-based: +1 is the whole file.
+                let from = format!("+{}", offset.saturating_add(1));
+                let out = self.run("tail", &["-c", &from, "--", path], None)?;
+                if !out.status.success() {
+                    return Err(anyhow!(
+                        "reading {path} from byte {offset}: {}",
+                        String::from_utf8_lossy(&out.stderr).trim()
+                    ));
+                }
+                Ok(Some(out.stdout))
+            }
+        }
+    }
+
     /// Delete one file inside the host. A file already gone is not an
     /// error — the point is the absence, not the act.
     pub fn remove_file(&self, path: &str) -> Result<()> {
