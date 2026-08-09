@@ -449,8 +449,12 @@ textarea { resize: vertical; }
   position: relative;
   display: flex; flex-direction: column; gap: 7px;
   background: var(--bg-2); border: 1px solid var(--line);
-  /* The status edge: the second axis of the board, worn by every card.
-     A deliberate signature, not decoration — the color IS the data. */
+  /* The status edge: the second axis of the board. Quiet at rest — color
+     on the edge means something is HAPPENING (a turn, a blocked agent),
+     never merely "a session exists". A resting color is a stripe, and a
+     board of stripes is how state language degrades into decoration —
+     measured against Vibe Kanban, whose cards keep a flat neutral frame
+     and reserve container color for the user's own selection. */
   /* impeccable-disable-next-line side-tab -- the 3px status edge is the product's state language */
   border-left: 3px solid var(--line);
   border-radius: var(--radius); padding: 10px 12px;
@@ -459,8 +463,8 @@ textarea { resize: vertical; }
    glance without having to read every card. */
 .ov-card.waiting_permission { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 5%, var(--bg-2)); }
 .ov-card.waiting_input { border-left-color: var(--warn); }
+/* Mid-turn is an event; idle is not. An idle card wears no color. */
 .ov-card.running, .ov-card.starting { border-left-color: var(--accent); }
-.ov-card.idle { border-left-color: var(--ok); }
 /* Closed cards recede by losing their fill and edge, not by fading their
    text: the 開啟 button on them is still an action at full strength. */
 .ov-card.exited, .ov-card.saved {
@@ -666,7 +670,8 @@ button.board-cta:hover {
   position: relative;
   display: flex; flex-direction: column; gap: 6px;
   background: var(--bg-3); border: 1px solid var(--line);
-  /* The status edge again — same signature as .ov-card, same reason. */
+  /* The status edge again — same signature as .ov-card, same rule:
+     quiet at rest, color only while something happens. */
   /* impeccable-disable-next-line side-tab -- the 3px status edge is the product's state language */
   border-left: 3px solid var(--line);
   border-radius: var(--radius); padding: 9px 11px;
@@ -718,11 +723,15 @@ button.board-cta:hover {
     animation: none;
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 28%, transparent);
   }
-  .board-card.astir { animation: none; }
+  /* The honest static equivalent: mid-turn keeps its accent edge, it
+     just stops glowing. */
+  .board-card.astir { animation: none; border-left-color: var(--accent); }
   .board-cta { animation: none; border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
 }
 
-.board-card[data-live='session'] { border-left-color: var(--accent); }
+/* Merely having a session is rest, not an event — the edge stays quiet.
+   (The accent resting edge died here: a board of calm cards was a board
+   of blue stripes, and the shimmer had nothing left to say.) */
 .board-card[data-live='stopped'] { border-left-color: color-mix(in srgb, var(--fg) 26%, var(--bg)); }
 /* Parked is asleep on purpose: quieter than stopped — a fainter edge and
    a receded fill — but warmer than finished, because it is still alive.
