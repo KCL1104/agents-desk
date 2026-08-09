@@ -158,7 +158,7 @@ function Row({
       // pretending to contain buttons, which is the one shape ARIA forbids.
       // The label carries the status so AT hears which row is waiting.
       role="group"
-      aria-label={`${s.title}，${t(STATUS_KEY[s.status])}${unseen ? `，${t('unseen.label')}` : ''}`}
+      aria-label={`${s.title}${t('common.sep')}${t(STATUS_KEY[s.status])}${unseen ? `${t('common.sep')}${t('unseen.label')}` : ''}`}
       // Dragging a row into the grid is the direct way to say which sessions
       // the layout should hold.
       draggable

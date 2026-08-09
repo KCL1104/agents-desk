@@ -181,10 +181,6 @@ textarea { resize: vertical; }
   font-size: var(--fs-label); letter-spacing: 0.08em; color: var(--fg-dim);
   border-bottom: 1px solid var(--line);
 }
-.waiting-banner {
-  margin: 8px; border-color: color-mix(in srgb, var(--warn) 25%, var(--bg-2)); color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 7%, var(--bg-2)); text-align: left;
-}
 .session-groups { overflow-y: auto; flex: 1; }
 .group { margin-bottom: 10px; }
 .group-head { padding: 6px 12px 2px; color: var(--fg-dim); font-size: var(--fs-label); }
@@ -227,7 +223,7 @@ textarea { resize: vertical; }
   border-top: 1px solid var(--line);
   font-size: var(--fs-body); font-weight: 600;
 }
-.modal label { display: block; font-size: var(--fs-label); color: var(--fg-dim); margin: 12px 0 4px; }
+.modal label { display: block; font-size: var(--fs-label); color: var(--fg-dim); margin: 14px 0 4px; }
 .modal .row { display: flex; gap: 7px; }
 .modal .row button { flex: none; }
 /* Side-by-side labeled fields inside a dialog row. */
@@ -263,11 +259,13 @@ textarea { resize: vertical; }
 
 /* The pane is padded, not the terminal itself: xterm measures its host to
    pick cols/rows, so padding inside would make it miscount.
-   min-* 0 lets a grid cell actually shrink instead of overflowing. */
+   min-* 0 lets a grid cell actually shrink instead of overflowing.
+   One declaration for the one place terminals render (inside a pane, which
+   owns the border and the focus ring) — a second bare .term-host block
+   used to shadow this one's border silently. */
 .term-host {
-  min-width: 0; min-height: 0; overflow: hidden;
-  padding: 5px 4px 5px 7px;
-  border: 1px solid transparent; border-radius: var(--radius-s);
+  flex: 1; min-width: 0; min-height: 0; overflow: hidden;
+  padding: 4px 4px 4px 7px;
   /* The find bar anchors to the terminal it searches. */
   position: relative;
 }
@@ -289,7 +287,6 @@ textarea { resize: vertical; }
   padding: 2px 6px;
 }
 .term-find input.no-match { border-color: var(--err); color: var(--err); }
-.term-host.focused { border-color: color-mix(in srgb, var(--accent) 25%, var(--line)); }
 
 .term-host .xterm { height: 100%; }
 .term-host .xterm-viewport::-webkit-scrollbar { width: 9px; }
@@ -559,10 +556,6 @@ textarea { resize: vertical; }
 .pane:hover .pane-eject,
 .pane:focus-within .pane-eject { opacity: 1; }
 .pane-eject:hover { color: var(--err); background: transparent; }
-
-/* The terminal fills what the header leaves. min-height 0 lets it shrink
-   inside the flex column instead of pushing the pane taller than its cell. */
-.term-host { flex: 1; min-height: 0; padding: 4px 4px 4px 7px; border: none; }
 
 .session-row[draggable='true'] { cursor: grab; }
 
@@ -1029,6 +1022,14 @@ button.board-cta:hover {
 .file-editor .cm-changeGutter { width: 3px; }
 .file-editor .cm-changedLineGutter { background: var(--ok); }
 .file-editor .cm-deletedLineGutter { background: var(--err); }
+
+/* A pending comment whose quoted line has left the diff — marked, not
+   silently aged: the note still sends, quoting what was seen. */
+.review-stale {
+  flex: none; font-size: var(--fs-micro); color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line));
+  border-radius: 999px; padding: 0 6px;
+}
 
 /* The repo's run scripts: one chip per script, under the branch line. */
 .inspector-run {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, type AttemptStat, type Checkpoint } from '../api';
 import type { Attempt, AttemptEvent, SessionMeta } from '../types';
 import { useT } from '../i18n';
@@ -556,13 +556,19 @@ export function AttemptInspector({
             onEditSaved={onEditSaved}
             // The pre-composed note, sent by a human hand — the same
             // contract restore's banner keeps, and only where sending is
-            // measured.
+            // measured. Mid-turn it queues for Stop, exactly as a review
+            // batch does: sent now it would land inside the turn it is
+            // warning about. A failure surfaces — the terminal it would
+            // show up in may not even be on screen.
             editTell={
               session?.live === true && session.agent === 'claude'
                 ? (file) => {
-                    void api.sendFollowup(session.id, t('edit.note', { file })).catch(() => {
-                      /* the terminal shows what actually arrived */
-                    });
+                    const text = t('edit.note', { file });
+                    const deliver =
+                      session.status === 'running'
+                        ? api.queueFollowup(session.id, text)
+                        : api.sendFollowup(session.id, text);
+                    void deliver.catch((e) => setError(String(e)));
                   }
                 : null
             }
@@ -571,7 +577,18 @@ export function AttemptInspector({
             <Modal onCancel={() => setConfirmClose(false)}>
               <h2>{t('edit.discardTitle')}</h2>
               <p className="small muted">{t('edit.discardBody', { file: editing })}</p>
+              {/* Keep first and primary: the Modal focuses its first control,
+                  and Enter — the reflex key after a surprising dialog — must
+                  land on the choice that loses nothing. Friction stays
+                  proportional to consequence even in a two-button modal. */}
               <div className="row">
+                <button
+                  className="primary"
+                  data-testid="editor-keep"
+                  onClick={() => setConfirmClose(false)}
+                >
+                  {t('edit.keep')}
+                </button>
                 <button
                   className="danger"
                   data-testid="editor-discard"
@@ -582,9 +599,6 @@ export function AttemptInspector({
                   }}
                 >
                   {t('edit.discard')}
-                </button>
-                <button data-testid="editor-keep" onClick={() => setConfirmClose(false)}>
-                  {t('edit.keep')}
                 </button>
               </div>
             </Modal>
@@ -603,10 +617,12 @@ export function AttemptInspector({
                   className="chip"
                   data-testid="restore-tell"
                   onClick={() => {
-                    void api.sendFollowup(session.id, t('ckpt.note')).catch(() => {
-                      /* the terminal shows what actually arrived */
-                    });
-                    setRestored(null);
+                    // A failed tell lands back on the banner it left from —
+                    // its terminal may not even be on screen to show it.
+                    void api
+                      .sendFollowup(session.id, t('ckpt.note'))
+                      .then(() => setRestored(null))
+                      .catch((e) => setRestored(String(e)));
                   }}
                 >
                   {t('ckpt.tell')}
@@ -637,6 +653,7 @@ export function AttemptInspector({
           session={session}
           picked={picked}
           comments={comments}
+          diffText={diff}
           onPick={setPicked}
           onChange={onComments}
           onSent={refresh}
@@ -673,6 +690,7 @@ function Review({
   session,
   picked,
   comments,
+  diffText,
   onPick,
   onChange,
   onSent,
@@ -682,6 +700,9 @@ function Review({
   session: SessionMeta | null;
   picked: Picked | null;
   comments: ReviewComment[];
+  /** The diff as currently shown — a pending comment whose quoted line is
+      no longer in it gets marked stale rather than aging silently. */
+  diffText: string | null;
   onPick: (p: Picked | null) => void;
   onChange: (c: ReviewComment[]) => void;
   onSent: () => void;
@@ -707,6 +728,9 @@ function Review({
     onChange([...comments, { ...picked, note: note.trim() }]);
     setNote('');
     onPick(null);
+    // The compose box borrowed the caret; hand it back to the diff so the
+    // next j resumes the walk instead of stranding focus on <body>.
+    document.querySelector<HTMLElement>('[data-testid="diff-body"]')?.focus();
   };
 
   const send = () => {
@@ -790,6 +814,14 @@ function Review({
                   {c.file === null ? '' : c.line === null ? c.file : `${c.file}:${c.line}`}
                 </span>
                 <span className="review-note-text small">{c.note}</span>
+                {/* The quoted line has left the diff — a hand edit, a
+                    restore, a refresh. The note still sends, quoting what
+                    was seen; the reader deserves to know it is history. */}
+                {diffText !== null && c.excerpt !== '' && !diffText.includes(c.excerpt) && (
+                  <span className="review-stale" title={t('review.staleHint')}>
+                    {t('review.stale')}
+                  </span>
+                )}
                 <button
                   className="icon"
                   aria-label={t('review.remove')}
@@ -1044,6 +1076,9 @@ function DiffPane({
    *  800 lines, files already marked viewed — and a click reverses any of
    *  it; the click is remembered, the policy is not fought. */
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  /** Where the j/k (or n/p) walk last stood, so focus that wandered into
+      the compose box and back resumes there instead of at the top. */
+  const lastStop = useRef<HTMLElement | null>(null);
   const [wrap, setWrap] = useState(() => localStorage.getItem(WRAP_KEY) === '1');
 
   const fileKey = (s: FileSection, si: number) => s.file ?? `#${si}`;
@@ -1101,10 +1136,17 @@ function DiffPane({
       if (stops.length === 0) return;
       e.preventDefault();
       const at = stops.indexOf(document.activeElement as HTMLElement);
+      // Focus fell off the walk (adding a comment moves it into the
+      // compose box and back out again): resume where the walk left off
+      // instead of marching a 12-comment review back to the top each time.
+      const remembered = lastStop.current;
       const next =
         at < 0
-          ? stops[0]
+          ? remembered !== null && stops.includes(remembered)
+            ? remembered
+            : stops[0]
           : stops[Math.min(stops.length - 1, Math.max(0, at + (forward ? 1 : -1)))];
+      lastStop.current = next;
       next.focus();
       next.scrollIntoView({ block: 'nearest' });
     };
@@ -1112,6 +1154,22 @@ function DiffPane({
       walk('.diff-line.commentable', e.key === 'j');
     } else if (e.key === 'n' || e.key === 'p') {
       walk('.diff-file-name', e.key === 'n');
+    } else if (e.key === 'e' || e.key === 'v') {
+      // On a file header (n/p's stops), e edits and v toggles viewed —
+      // the header's own chips, reachable without leaving the walk. The
+      // chips themselves stay tabIndex=-1; these keys are their keyboard.
+      const head = (document.activeElement as HTMLElement | null)?.closest('.diff-file');
+      if (head === null || head === undefined) return;
+      const si = Number(head.id.replace('diff-file-', ''));
+      const s = sections[si];
+      if (!s || s.file === null) return;
+      e.preventDefault();
+      if (e.key === 'v') {
+        toggleViewed(s.file);
+      } else if (canEdit) {
+        if (editing === s.file) onEditClose();
+        else if (editing === null) onEditOpen(s.file);
+      }
     }
   };
 
@@ -1180,7 +1238,7 @@ function DiffPane({
         data-testid="diff-body"
         tabIndex={0}
         title={t('inspector.diffKeys')}
-        aria-keyshortcuts="j k n p Enter"
+        aria-keyshortcuts="j k n p e v Enter"
         onKeyDown={onDiffKeys}
       >
       {sections.map((s, si) => {
@@ -1277,6 +1335,10 @@ function DiffPane({
               // within it — per-line tabstops made a 300-line diff a
               // 300-stop wall between the header and the merge button.
               role={commentable(l) ? 'button' : undefined}
+              // A noted line's highlight is silence to a screen reader;
+              // pressed is the nearest honest word for "already carries
+              // feedback" on a line that acts as a button.
+              aria-pressed={commentable(l) ? noted(l) : undefined}
               tabIndex={commentable(l) ? -1 : undefined}
               onKeyDown={
                 commentable(l)

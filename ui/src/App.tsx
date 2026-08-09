@@ -196,7 +196,9 @@ export default function App() {
       say(
         t('announce.multi', {
           count: fresh.length,
-          titles: fresh.map((s) => s.title).join('、'),
+          // The list separator is a word in a locale's own punctuation —
+          // a hardcoded 、 reads Chinese into an English sentence.
+          titles: fresh.map((s) => s.title).join(t('common.listSep')),
         }),
       );
     }
@@ -703,8 +705,12 @@ export default function App() {
         // Find in the focused terminal. Same shell rule as every letter:
         // Ctrl+F from inside a terminal is readline's cursor-forward, so
         // in there the chord is Ctrl+Shift+F. The pane owns the find bar;
-        // the event names which one, the theme event's precedent.
-        if (view === 'terminal' && focusedId !== null) {
+        // the event names which one, the theme event's precedent. From
+        // inside the drawer the chord stays dead: opening a terminal's
+        // find while reading the diff would answer the wrong question.
+        const inDrawer =
+          e.target instanceof Element && e.target.closest('.inspector') !== null;
+        if (view === 'terminal' && focusedId !== null && !inDrawer) {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('agentdesk:find', { detail: focusedId }));
         }
@@ -1328,9 +1334,9 @@ export default function App() {
                               line: pick.line,
                             }),
                           )
-                          .catch(() => {
-                            /* the terminal shows what actually arrived */
-                          });
+                          // The terminal this would land in may be off
+                          // screen; a failed tell must not die silently.
+                          .catch((e) => pushToast('error', String(e)));
                         setPick(null);
                       }
                     : null

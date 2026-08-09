@@ -941,6 +941,15 @@ export function installMock(): void {
       }
       const key = `${attemptId}:${path}`;
       const entry = mock.files.get(key) ?? { base: null, work: null };
+      // The freshness contract, mirrored: a disk that moved since the
+      // editor read it refuses the save.
+      if (args.expected != null && (entry.work ?? '') !== String(args.expected)) {
+        throw new Error(
+          `${path} changed on disk after the editor read it — a shell, a script, or ` +
+            'another turn wrote here. Close the editor and reopen it to see the current ' +
+            'text; saving now would overwrite that work unseen',
+        );
+      }
       entry.work = contents;
       mock.files.set(key, entry);
       // The worktree changed, so the next diff read must say so: this

@@ -132,7 +132,7 @@ function Card({
       // and the session wears its one name, the card title, not its
       // worktree directory.
       role="group"
-      aria-label={`${s.title}，${t(STATUS_KEY[s.status])}${unseen ? `，${t('unseen.label')}` : ''}`}
+      aria-label={`${s.title}${t('common.sep')}${t(STATUS_KEY[s.status])}${unseen ? `${t('common.sep')}${t('unseen.label')}` : ''}`}
     >
       <header className="ov-card-head">
         <span className={`dot ${s.status}`} />

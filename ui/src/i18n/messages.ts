@@ -18,6 +18,11 @@ export const en = {
   'common.choose': 'Choose…',
   'common.loading': 'Loading…',
   'common.env': 'Environment',
+  /* Joiners live in the catalog: a hardcoded 、 or ， reads Chinese
+     punctuation into an English sentence, and vice versa. `sep` joins
+     label-and-state phrases (aria-labels); `listSep` joins list items. */
+  'common.sep': ', ',
+  'common.listSep': ', ',
 
   /* ------------------------------ boot -------------------------------- */
   'boot.node': 'Node 20+ on your login shell PATH',
@@ -397,7 +402,8 @@ export const en = {
   'preview.note':
     'In the preview I am pointing at {component} ({file}:{line}) — the next feedback is about this element.',
   'ckpt.timelineHint': 'Every prompt row carries ↩ — restore the code to before that turn.',
-  'inspector.diffKeys': 'j/k walk the lines, n/p the files; Enter comments on the focused one',
+  'inspector.diffKeys':
+    'j/k walk the lines, n/p the files; on a file header e edits and v toggles viewed; Enter comments on the focused line',
   'ckpt.compare': 'Against',
   'ckpt.compareBase': 'Base — the whole attempt',
   'ckpt.compareN': 'Checkpoint #{n} · {time}',
@@ -416,13 +422,18 @@ export const en = {
   'edit.discard': 'Discard the edits',
   'edit.keep': 'Keep editing',
   'edit.compareLocked': 'Close the editor to switch the baseline',
+  'review.stale': 'line changed',
+  'review.staleHint':
+    'The quoted line is no longer in the diff — the note still sends, quoting what you saw.',
   /* ------------------------ find in terminal -------------------------- */
   'term.find': 'Find in terminal',
   'term.findHint': 'Enter finds the next match, Shift+Enter the previous, Esc closes',
-  'term.noMatch': 'No match in the scrollback',
+  'term.prev': 'Previous match',
+  'term.next': 'Next match',
+  'term.noMatch': 'No match',
   'keys.find': 'Find in the focused terminal (from inside it: Ctrl+Shift+F)',
   /* --------------------------- token account -------------------------- */
-  'usage.line': 'ctx {ctx} · ↑{out}',
+  'usage.line': 'context {ctx} · output {out}',
   'usage.tip':
     'This conversation’s token account, read from its transcript at each turn’s end. Context {context} is the last request’s prompt — where the next turn starts from. Cumulative: {input} in · {output} out · {write} cache-written · {read} cache-read.',
 
@@ -466,6 +477,8 @@ export const zhTW: Record<MessageKey, string> = {
   'common.choose': '選擇…',
   'common.loading': '讀取中…',
   'common.env': '環境',
+  'common.sep': '，',
+  'common.listSep': '、',
 
   /* ------------------------------ boot -------------------------------- */
   'boot.node': 'Node 20+ 必須在你的 login shell PATH 上',
@@ -612,7 +625,7 @@ export const zhTW: Record<MessageKey, string> = {
   'board.retryHint': '用另一個 agent 再開一個 attempt',
   'board.deleteCard': '刪除卡片',
   'board.confirmDelete': '確定刪除？',
-  'board.deleteBusy': 'agent 回合進行中 —— 刪除會連 session 和 worktree 一起帶走。等它安靜下來,或先暫停。',
+  'board.deleteBusy': 'agent 回合進行中 —— 刪除會連 session 和 worktree 一起帶走。等它安靜下來，或先暫停。',
   'board.movedTo': '{title} 移到 {col}',
   'board.reordered': '{title} 移到第 {n} 位',
   'announce.multi': '{count} 個 session 等你：{titles}',
@@ -814,8 +827,8 @@ export const zhTW: Record<MessageKey, string> = {
   'board.parkHint': '把 worktree 與併發槽還回去 —— 分支、檢查點、對話都留著',
   'park.done': '已暫停。分支 {branch} 已在剪貼簿 —— 工作與對話都留著。',
   'park.restoreFailed':
-    '已繼續,但暫停時的工作沒有完整回來:{err}。worktree 已在分支上 —— 可從時間軸還原。',
-  'park.restoreParked': '已暫停 —— 先繼續,再還原',
+    '已繼續，但暫停時的工作沒有完整回來：{err}。worktree 已在分支上 —— 可從時間軸還原。',
+  'park.restoreParked': '已暫停 —— 先繼續，再還原',
   /* ---------------------------- preview ------------------------------ */
   'preview.title': 'Dev server 預覽',
   'preview.open': '預覽',
@@ -833,7 +846,7 @@ export const zhTW: Record<MessageKey, string> = {
   'preview.note':
     '我在預覽裡指著 {component}（{file}:{line}）—— 接下來的回饋是關於這個元件。',
   'ckpt.timelineHint': '每個 prompt 列都有 ↩ —— 可把程式碼還原到那一輪之前。',
-  'inspector.diffKeys': 'j/k 走行、n/p 走檔;Enter 對聚焦的那行留言',
+  'inspector.diffKeys': 'j/k 走行、n/p 走檔；檔頭上 e 編輯、v 切換已看；Enter 對聚焦的那行留言',
   'ckpt.compare': '比較對象',
   'ckpt.compareBase': 'Base —— 整個 attempt',
   'ckpt.compareN': '檢查點 #{n} · {time}',
@@ -852,13 +865,17 @@ export const zhTW: Record<MessageKey, string> = {
   'edit.discard': '放棄修改',
   'edit.keep': '繼續編輯',
   'edit.compareLocked': '關掉編輯器才能切換比較基準',
+  'review.stale': '行已變',
+  'review.staleHint': '引用的那行已不在 diff 裡 —— 訊息照送，引用的是你當時看到的。',
   /* ------------------------ find in terminal -------------------------- */
   'term.find': '搜尋終端機',
   'term.findHint': 'Enter 找下一個、Shift+Enter 找上一個、Esc 關閉',
-  'term.noMatch': '捲動歷史裡沒有符合',
+  'term.prev': '上一個符合',
+  'term.next': '下一個符合',
+  'term.noMatch': '沒有符合',
   'keys.find': '在聚焦的終端機裡搜尋（終端機內改用 Ctrl+Shift+F）',
   /* --------------------------- token account -------------------------- */
-  'usage.line': '語境 {ctx} · ↑{out}',
+  'usage.line': '語境 {ctx} · 輸出 {out}',
   'usage.tip':
     '這場對話的 token 帳，每回合結束時從 transcript 讀一次。語境 {context} 是上一輪請求的 prompt 大小 —— 下一輪從這裡起跑。累計：輸入 {input}、輸出 {output}、快取寫入 {write}、快取讀取 {read}。',
 

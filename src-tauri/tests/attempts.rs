@@ -2011,7 +2011,7 @@ fn a_hand_edit_is_refused_mid_turn_and_lands_once_the_attempt_settles() {
     // refuse, whatever buttons the UI happens to be hiding.
     let err = h
         .core
-        .write_attempt_file(&a.attempt_id, "app.txt", "hand edit\n")
+        .write_attempt_file(&a.attempt_id, "app.txt", "hand edit\n", None)
         .expect_err("a mid-turn write must be refused");
     assert!(err.to_string().contains("mid-turn"), "unhelpful: {err}");
 
@@ -2020,7 +2020,7 @@ fn a_hand_edit_is_refused_mid_turn_and_lands_once_the_attempt_settles() {
     assert!(
         wait_for(Duration::from_secs(5), || h
             .core
-            .write_attempt_file(&a.attempt_id, "app.txt", "hand edit\n")
+            .write_attempt_file(&a.attempt_id, "app.txt", "hand edit\n", Some("one\n"))
             .is_ok()),
         "a settled write must go through"
     );
@@ -2033,6 +2033,18 @@ fn a_hand_edit_is_refused_mid_turn_and_lands_once_the_attempt_settles() {
     assert_eq!(file.base.as_deref(), Some("one\n"));
     assert_eq!(file.work.as_deref(), Some("hand edit\n"));
 
+    // The freshness contract: an editor still believing the disk holds the
+    // base text is stale — the write above moved it — and last-write-wins
+    // would erase that unseen. Refused, with the reason.
+    let err = h
+        .core
+        .write_attempt_file(&a.attempt_id, "app.txt", "third\n", Some("one\n"))
+        .expect_err("a stale write must be refused");
+    assert!(err.to_string().contains("changed on disk"), "unhelpful: {err}");
+    h.core
+        .write_attempt_file(&a.attempt_id, "app.txt", "third\n", Some("hand edit\n"))
+        .expect("the fresh expectation goes through");
+
     // A file the attempt never touched at base, deleted in the worktree:
     // work side None, not an error.
     std::fs::remove_file(Path::new(&a.worktree_path).join("app.txt")).unwrap();
@@ -2042,7 +2054,7 @@ fn a_hand_edit_is_refused_mid_turn_and_lands_once_the_attempt_settles() {
     // Paths that would leave the worktree stop at the invoke boundary.
     assert!(h
         .core
-        .write_attempt_file(&a.attempt_id, "../escape.txt", "x")
+        .write_attempt_file(&a.attempt_id, "../escape.txt", "x", None)
         .is_err());
 
     // Parked there is no ground to read or write; both commands say so.
@@ -2050,7 +2062,7 @@ fn a_hand_edit_is_refused_mid_turn_and_lands_once_the_attempt_settles() {
     assert!(h.core.attempt_file(&a.attempt_id, "app.txt").is_err());
     assert!(h
         .core
-        .write_attempt_file(&a.attempt_id, "app.txt", "y")
+        .write_attempt_file(&a.attempt_id, "app.txt", "y", None)
         .is_err());
 }
 

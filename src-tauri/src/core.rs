@@ -2298,7 +2298,19 @@ impl Core {
     /// and this only removes the navigation. Restore's two rules carry
     /// over whole: settled only — re-verified here, because UI gating goes
     /// stale — and the "tell the agent" note stays a human act, upstairs.
-    pub fn write_attempt_file(&self, attempt_id: &str, path: &str, contents: &str) -> Result<()> {
+    ///
+    /// `expected` is the text the editor believes the disk holds — what it
+    /// loaded, or last saved. When it is given and the disk disagrees, the
+    /// save is refused: a shell, a run script, or a turn that started and
+    /// settled while the editor sat open has written here, and last-write-
+    /// wins would destroy that work without anyone seeing it go.
+    pub fn write_attempt_file(
+        &self,
+        attempt_id: &str,
+        path: &str,
+        contents: &str,
+        expected: Option<&str>,
+    ) -> Result<()> {
         ensure_worktree_relative(path)?;
         let attempt = self
             .store
@@ -2328,7 +2340,18 @@ impl Core {
         }
         let (wt_loc, he) = self.located(&attempt.worktree_path)?;
         let hr = he.hr(&self.env);
-        hr.write_file(&hr.join(&wt_loc.path, path), contents)?;
+        let full = hr.join(&wt_loc.path, path);
+        if let Some(expected) = expected {
+            let current = hr.read_to_string(&full)?.unwrap_or_default();
+            if current != expected {
+                return Err(anyhow!(
+                    "{path} changed on disk after the editor read it — a shell, a script, or \
+                     another turn wrote here. Close the editor and reopen it to see the current \
+                     text; saving now would overwrite that work unseen"
+                ));
+            }
+        }
+        hr.write_file(&full, contents)?;
         Ok(())
     }
 

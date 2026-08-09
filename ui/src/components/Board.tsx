@@ -484,8 +484,8 @@ function Card({
       // rest stay focusable themselves so ⌘←/→ still has somewhere to land.
       role="group"
       tabIndex={enter ? -1 : 0}
-      aria-label={`${task.title}，${waiting ? '⚠ ' : ''}${liveLabel(live, t)}${
-        unread ? `，${t('unseen.label')}` : ''
+      aria-label={`${task.title}${t('common.sep')}${waiting ? '⚠ ' : ''}${liveLabel(live, t)}${
+        unread ? `${t('common.sep')}${t('unseen.label')}` : ''
       }`}
       onKeyDown={(e) => {
         if (!(e.metaKey || e.ctrlKey)) return;

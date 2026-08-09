@@ -177,6 +177,82 @@ test.describe('editable diff', () => {
     await expect(page.locator('.diff-edit')).toHaveCount(0);
   });
 
+  /**
+   * The freshness contract: an editor whose disk moved underneath it — a
+   * shell, a script, a later turn — is refused instead of silently
+   * overwriting that work. Last-write-wins is how edits vanish unseen.
+   */
+  test('a save over a file that changed on disk is refused with the reason', async ({
+    page,
+  }) => {
+    await settledAttempt(page);
+    await page.getByTestId('inspect-k1').click();
+    await page.getByTestId('diff-edit-0').click();
+    await page.locator('.file-editor .cm-content').click();
+    await page.keyboard.type('mine');
+
+    // Someone else writes while the editor sits open.
+    await page.evaluate(() => {
+      const entry = window.__mock.files.get('k1-a1:src/auth.py')!;
+      entry.work = 'def login():\n    return other_work\n';
+    });
+
+    await page.getByTestId('editor-save').click();
+    await expect(page.getByTestId('editor-error')).toContainText('changed on disk');
+    // The typed text survives the refusal — nothing was thrown away.
+    await expect(page.locator('.file-editor .cm-content')).toContainText('mine');
+  });
+
+  /** The header chips' keyboard: on a focused file header, e opens the
+      editor and v toggles viewed — the walk never needs the mouse. */
+  test('e and v act on the focused file header', async ({ page }) => {
+    await settledAttempt(page);
+    await page.getByTestId('inspect-k1').click();
+    const body = page.getByTestId('diff-body');
+    await body.click();
+
+    // n lands on the file header; v marks it viewed and folds it.
+    await page.keyboard.press('n');
+    await page.keyboard.press('v');
+    await expect(page.getByTestId('viewed-count')).toBeVisible();
+    await page.keyboard.press('v');
+    await expect(page.getByTestId('viewed-count')).toHaveCount(0);
+
+    // e opens the in-place editor; Esc inside it asks through the same
+    // dirty guard the Close chip uses (clean here, so it just closes).
+    await page.keyboard.press('e');
+    await expect(page.getByTestId('file-editor')).toBeVisible();
+    await page.locator('.file-editor .cm-content').click();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('file-editor')).toHaveCount(0);
+  });
+
+  /** A pending comment outlives the line it quoted; it wears the fact. */
+  test('a comment whose line left the diff is marked stale', async ({ page }) => {
+    await settledAttempt(page);
+    await page.getByTestId('inspect-k1').click();
+
+    // Comment on the context line — the one whose rendered text will not
+    // reappear once the mock re-renders the file as a full replacement.
+    // (Context lines carry no variant class; the first commentable line
+    // of this fixture is the context line ` def login():`.)
+    await page.locator('.diff-line.commentable').first().click();
+    await page.getByTestId('review-note').fill('這行有問題');
+    await page.getByTestId('review-add').click();
+    await expect(page.locator('.review-pending li')).toHaveCount(1);
+    await expect(page.locator('.review-stale')).toHaveCount(0);
+
+    // The worktree moves on: an edit replaces the quoted line, the diff
+    // is re-read, and the note's anchor is history.
+    await page.getByTestId('diff-edit-0').click();
+    await page.locator('.file-editor .cm-content').click();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('replacement = 1');
+    await page.getByTestId('editor-save').click();
+    await expect(page.locator('.review-stale')).toBeVisible();
+  });
+
   /** Typed text is never lost to a click that meant something milder. */
   test('closing with unsaved changes asks first, through every door', async ({ page }) => {
     await settledAttempt(page);

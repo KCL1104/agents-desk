@@ -222,9 +222,11 @@ export const api = {
   attemptFile: (attemptId: string, path: string) =>
     invoke<AttemptFile>('attempt_file', { attemptId, path }),
   /** Write one worktree file — a human's own edit. The core re-verifies
-      settled; the UI hiding the button is not the guard. */
-  writeAttemptFile: (attemptId: string, path: string, contents: string) =>
-    invoke<void>('write_attempt_file', { attemptId, path, contents }),
+      settled; the UI hiding the button is not the guard. `expected` is
+      the text the editor loaded — a disk that disagrees refuses the save
+      rather than letting last-write-wins erase someone else's work. */
+  writeAttemptFile: (attemptId: string, path: string, contents: string, expected?: string) =>
+    invoke<void>('write_attempt_file', { attemptId, path, contents, expected }),
 
   /** Open a URL in the system browser. Through the opener plugin, because a
       plain anchor inside the webview would navigate the app itself. */

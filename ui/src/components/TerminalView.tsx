@@ -152,6 +152,10 @@ export function TerminalView({
     };
 
     const onData = term.onData((data) => void api.termWrite(id, data));
+    // A "no match" verdict describes the buffer at the moment of the
+    // search; new output makes it stale, and a red box that outlives its
+    // truth teaches people to ignore it.
+    const onWrote = term.onWriteParsed(() => setNoMatch(false));
     const observer = new ResizeObserver(onResize);
     observer.observe(host);
 
@@ -161,6 +165,7 @@ export function TerminalView({
       window.removeEventListener('agentdesk:theme', onTheme);
       observer.disconnect();
       onData.dispose();
+      onWrote.dispose();
       void unlistenPromise.then((off) => off());
       term.dispose();
       termRef.current = null;
@@ -292,6 +297,24 @@ export function TerminalView({
               }
             }}
           />
+          {/* The stepping the tooltip promises, standing where it can be
+              seen: Enter and these are the same two moves. */}
+          <button
+            className="icon"
+            aria-label={t('term.prev')}
+            title={t('term.prev')}
+            onClick={() => findStep(findInputRef.current?.value ?? '', false)}
+          >
+            ‹
+          </button>
+          <button
+            className="icon"
+            aria-label={t('term.next')}
+            title={t('term.next')}
+            onClick={() => findStep(findInputRef.current?.value ?? '', true)}
+          >
+            ›
+          </button>
           <button
             className="icon"
             aria-label={t('common.close')}

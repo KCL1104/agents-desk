@@ -50,8 +50,8 @@ export function FileEditor({ attemptId, file, onTell, onSaved, onRequestClose, o
 
   // The handler props live in refs so the editor is built once per file,
   // not rebuilt on every parent render.
-  const handlers = useRef({ onDirtyChange, onSaved });
-  handlers.current = { onDirtyChange, onSaved };
+  const handlers = useRef({ onDirtyChange, onSaved, onRequestClose });
+  handlers.current = { onDirtyChange, onSaved, onRequestClose };
 
   useEffect(() => {
     if (saidSaved === false) return;
@@ -65,8 +65,11 @@ export function FileEditor({ attemptId, file, onTell, onSaved, onRequestClose, o
     const text = v.state.doc.toString();
     setSaving(true);
     setSaveError(null);
+    // `savedText` rides along as the freshness contract: if the disk no
+    // longer holds what this editor read, the core refuses instead of
+    // letting this save erase a shell's or a later turn's work unseen.
     void api
-      .writeAttemptFile(attemptId, file, text)
+      .writeAttemptFile(attemptId, file, text, savedText.current)
       .then(() => {
         savedText.current = text;
         setDirty(false);
@@ -103,6 +106,15 @@ export function FileEditor({ attemptId, file, onTell, onSaved, onRequestClose, o
                 key: 'Mod-s',
                 run: () => {
                   saveRef.current();
+                  return true;
+                },
+              },
+              // Esc asks to leave — the same door as the Close chip, so
+              // the dirty guard hears it too.
+              {
+                key: 'Escape',
+                run: () => {
+                  handlers.current.onRequestClose();
                   return true;
                 },
               },
@@ -143,6 +155,11 @@ export function FileEditor({ attemptId, file, onTell, onSaved, onRequestClose, o
 
   return (
     <div className="file-editor" data-testid="file-editor">
+      {/* The save's answer, spoken as well as worn: the chip swap is
+          silence to a screen reader. */}
+      <span className="visually-hidden" aria-live="polite">
+        {saidSaved ? t('edit.saved') : ''}
+      </span>
       <div className="file-editor-bar">
         <button
           className="chip"

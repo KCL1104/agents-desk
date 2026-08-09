@@ -548,17 +548,19 @@ fn attempt_file(
 }
 
 /// Write one file in the attempt's worktree — a human's own edit. Refused
-/// mid-turn in the core, not just hidden in the UI.
+/// mid-turn in the core, not just hidden in the UI; refused too when the
+/// disk no longer matches `expected`, the text the editor loaded.
 #[tauri::command]
 fn write_attempt_file(
     state: State<'_, AppState>,
     attempt_id: String,
     path: String,
     contents: String,
+    expected: Option<String>,
 ) -> StdResult<(), String> {
     state
         .core()?
-        .write_attempt_file(&attempt_id, &path, &contents)
+        .write_attempt_file(&attempt_id, &path, &contents, expected.as_deref())
         .map_err(|e| format!("{e:#}"))
 }
 
