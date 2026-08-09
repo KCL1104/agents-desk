@@ -402,7 +402,7 @@ export function AttemptInspector({
               title={t('board.parkHint')}
               onClick={onPark}
             >
-              ⏸ {t('board.park')}
+              <Icon name="pause" /> {t('board.park')}
             </button>
           )}
         </div>

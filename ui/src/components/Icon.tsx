@@ -15,6 +15,7 @@ export type IconName =
   | 'pencil'
   | 'flag'
   | 'play'
+  | 'pause'
   | 'dot'
   | 'reload'
   | 'wrap';
@@ -31,6 +32,12 @@ const DRAWN: Record<IconName, JSX.Element> = {
   pencil: <path d="M11.2 2.6l2.2 2.2-7 7.1-3 .9.9-3Z" fill="none" />,
   flag: <path d="M4 14.5V2m0 .8h7.4l-2 2.7 2 2.7H4" fill="none" />,
   play: <path d="M5.2 3v10l8-5Z" fill="currentColor" stroke="none" />,
+  pause: (
+    <>
+      <path d="M5.8 3.2v9.6" />
+      <path d="M10.2 3.2v9.6" />
+    </>
+  ),
   dot: <circle cx="8" cy="8" r="4.2" fill="currentColor" stroke="none" />,
   reload: (
     <>

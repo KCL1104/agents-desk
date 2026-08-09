@@ -740,8 +740,11 @@ button.board-cta:hover {
 .card-elapsed { color: var(--fg-faint); font-weight: 400; }
 .board-card-activity { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-data); }
 
-.board-card-foot { display: flex; align-items: center; gap: 6px; padding-top: 5px; }
-.board-card-foot button { padding: 3px 9px; font-size: var(--fs-label); }
+/* Buttons wrap as whole buttons, never inside a word: a CJK label broken
+   across lines (繼/續 stacked) reads as a different word. A tight column
+   flows the row instead. */
+.board-card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 5px; }
+.board-card-foot button { padding: 3px 9px; font-size: var(--fs-label); white-space: nowrap; }
 
 /* Outside the columns on purpose: no worktree, no branch, no lifecycle. */
 .board-adhoc {
