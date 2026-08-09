@@ -9,6 +9,29 @@
 App 提供的是終端機分頁給不了的：多 session 管理、跨重啟的清單、以及
 **跟終端機一致的執行環境**（見下方）。
 
+![看板：agent 分佈在整個生命週期 —— 執行中、等你、可合併、已合併、暫停](docs/media/board.zh.png)
+
+**Review 迴圈一鏡到底** —— 在活著的終端機旁邊開 diff、對行留言、最後一行
+自己在 diff 裡改掉、告訴 agent、合併：
+
+![檢視 attempt、就地手改檔案、告訴 agent、合併 —— 都在同一個抽屜裡](docs/media/demo.gif)
+
+<details>
+<summary><b>更多畫面</b> —— 抽屜特寫與終端機牆</summary>
+
+檢視器：diff 就地展開成編輯器（base 唯讀嵌在行間、worktree 側可改）、
+這個 attempt 的 token 帳、一則待送的 review 留言、以及點擊前就先跑好的
+合併檢查：
+
+![檢視器抽屜，可編輯 diff 展開中](docs/media/inspector.zh.png)
+
+終端機牆：每個 session 都是真的 PTY —— 真的 Claude Code TUI 一個像素
+不差，旁邊是一般的 test runner：
+
+![兩個真終端機並排](docs/media/wall.zh.png)
+
+</details>
+
 ---
 
 ## 現況

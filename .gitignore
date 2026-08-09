@@ -10,3 +10,4 @@ playwright-report/
 
 # Claude Code personal settings
 .claude/settings.local.json
+docs/media/.rec/

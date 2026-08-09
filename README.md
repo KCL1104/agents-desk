@@ -11,6 +11,30 @@ What the app adds is what terminal tabs cannot give you: managing many sessions,
 a list that survives restarts, and **an execution environment identical to your
 terminal's** (see below).
 
+![The board: agents across the lifecycle — running, waiting on you, ready to merge, merged, parked](docs/media/board.en.png)
+
+**The review loop, end to end** — open the diff beside the live terminal,
+comment on a line, fix the last line yourself right in the diff, tell the
+agent, merge:
+
+![Review an attempt, hand-edit a file in place, tell the agent, and merge — in one drawer](docs/media/demo.gif)
+
+<details>
+<summary><b>More screens</b> — the drawer up close, and the terminal wall</summary>
+
+The inspector: the diff with an in-place editor open (base inline and
+read-only, worktree side editable), the attempt's token account, a pending
+review comment, and the merge path's own checks run before the click:
+
+![The inspector drawer with the editable diff open](docs/media/inspector.en.png)
+
+The terminal wall: every session is a real PTY — the real Claude Code TUI,
+pixel for pixel, beside a plain test runner:
+
+![Two real terminals side by side](docs/media/wall.en.png)
+
+</details>
+
 ---
 
 ## Where it is
