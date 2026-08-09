@@ -48,6 +48,10 @@ interface Props {
   onOpenShell: () => void;
   /** Park this attempt: ground given back, work and conversation kept. */
   onPark: () => void;
+  /** A dev server is up in this worktree ('ready'), or up but unreachable
+      because its port lives on an SSH remote ('ssh'), or absent (null). */
+  previewState: 'ready' | 'ssh' | null;
+  onOpenPreview: () => void;
 }
 
 type Pane = 'diff' | 'timeline';
@@ -99,6 +103,8 @@ export function AttemptInspector({
   onRunScript,
   onOpenShell,
   onPark,
+  previewState,
+  onOpenPreview,
 }: Props) {
   const t = useT();
   const [width, setWidth] = useState(storedWidth);
@@ -393,6 +399,20 @@ export function AttemptInspector({
               </>
             )}
           </button>
+          {/* The dev server, on the desk — or, for an SSH attempt, the
+              honest refusal: the port lives on the remote, and a disabled
+              button wearing the reason beats a button that never appears. */}
+          {previewState !== null && (
+            <button
+              className="chip mono"
+              data-testid="open-preview"
+              disabled={previewState === 'ssh'}
+              title={previewState === 'ssh' ? t('preview.sshHint') : t('preview.openHint')}
+              onClick={onOpenPreview}
+            >
+              <Icon name="frame" /> {t('preview.open')}
+            </button>
+          )}
           {/* Park, offered exactly when restore is: a settled worktree.
               Single click — the reversible act needs no arming. */}
           {!midTurn && (

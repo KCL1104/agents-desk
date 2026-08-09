@@ -116,6 +116,10 @@ export interface SessionMeta {
   /** A message is queued to go in when this turn ends. Transient — never
       stored, absent from restores. */
   has_followup?: boolean;
+  /** The $AGENTDESK_PORT a run script was handed, when reachable from the
+      app (local and WSL; an SSH host's port lives on the remote). Transient
+      — the server dies with the PTY. */
+  preview_port?: number | null;
 }
 
 /** Which notifications the desk raises. Mirrors core.rs NotifyPrefs —

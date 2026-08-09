@@ -18,6 +18,8 @@ export interface MockSession {
   last_active_at: number;
   live: boolean;
   reports_status: boolean;
+  /** The $AGENTDESK_PORT a run script was handed, when reachable. */
+  preview_port: number | null;
   activity: { tool: string; detail: string } | null;
   activity_since: number;
   completed: boolean;
@@ -114,6 +116,8 @@ declare global {
       resumeRestoreError: string | null;
       /** Monotonic session id source — ids are never reissued. */
       sessionSeq: number;
+      /** What probe_port answers — false plays an unreachable server. */
+      portListening: boolean;
       maxConcurrent: number;
       /** How many attempts hold a terminal right now. */
       running(): number;
@@ -199,6 +203,7 @@ export function installMock(): void {
     checkpointQuiet: false,
     resumeRestoreError: null as string | null,
     sessionSeq: 0,
+    portListening: true,
     calls: [] as Array<{ cmd: string; args: unknown }>,
     listeners: new Map<string, number[]>(),
     cbSeq: 0,
@@ -342,6 +347,7 @@ export function installMock(): void {
       last_active_at: now(),
       live: true,
       reports_status: false,
+      preview_port: null,
       activity: null,
       activity_since: 0,
       completed: false,
@@ -630,7 +636,11 @@ export function installMock(): void {
       const t = mock.tasks.find((x) => x.id === taskId)!;
       const seq = t.attempts.length + 1;
       const attemptId = `${t.id}-a${seq}`;
-      const session = makeSession(`/Users/test/worktrees/card-${seq}`, agent);
+      // The worktree lives in the repo's own world, as the core insists:
+      // an ssh:// repo gets an ssh:// worktree, and everything keying off
+      // the path's world (preview reachability) sees the truth.
+      const world = t.repo_path.match(/^(wsl|ssh):\/\/[^/]+/)?.[0] ?? '';
+      const session = makeSession(`${world}/Users/test/worktrees/card-${seq}`, agent);
       session.title = `${t.title} #${seq}`;
       session.attempt_id = attemptId;
       // A brand-new worktree always opens on the folder-trust prompt, and no
@@ -826,6 +836,8 @@ export function installMock(): void {
 
     test_notification: () => null,
 
+    probe_port: () => mock.portListening,
+
     checkpoints_enabled: () => mock.checkpointsOn,
 
     set_checkpoints_enabled: (args) => {
@@ -885,6 +897,7 @@ export function installMock(): void {
       // makes it: no card, no slot.
       const s = makeSession(attempt.worktree_path, 'sh');
       s.title = `▶ ${name}`;
+      s.preview_port = attempt.worktree_path.startsWith('ssh://') ? null : 4173;
       mock.sessions.push(s);
       mock.snapshots.set(s.id, { data: '', seq: 0 });
       mock.pushSessions();

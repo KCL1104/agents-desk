@@ -809,6 +809,46 @@ button.board-cta:hover {
 /* The drawer belongs to the terminal view; a peek is not a review. */
 .term-area.as-preview .inspector { display: none; }
 
+/* ---------- dev server preview ---------- */
+
+/* The peek's patch of ground, worn by an iframe: same width, same edge.
+   The page inside is exactly what the server sent — cross-origin, never
+   proxied, never injected. */
+.preview-panel {
+  flex: none; width: 520px; max-width: 44vw;
+  display: flex; flex-direction: column; min-height: 0;
+  border-left: 1px solid var(--line); background: var(--bg-2);
+}
+.preview-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 9px; border-bottom: 1px solid var(--line);
+}
+.preview-url { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-head .chip { flex: none; cursor: pointer; }
+.preview-frame { flex: 1; border: none; background: #fff; }
+
+/* The pick, worn where it happened — accent, like the queued banner: a
+   plan in motion, not a problem. */
+.preview-pick {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0; padding: 6px var(--gutter-x); font-size: var(--fs-data);
+  color: var(--accent);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-2));
+}
+.preview-pick > .mono {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.preview-pick .chip { flex: none; cursor: pointer; }
+
+/* Dead or unreachable gets words, never a blank frame — blank and broken
+   must not look alike. */
+.preview-cover {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px;
+  padding: 20px; text-align: center;
+}
+
 .inspector {
   position: relative;
   width: 460px; max-width: 46vw; flex: none;

@@ -166,6 +166,11 @@ export PATH="$HOME/.cargo/bin:$PATH"
   worktree 與併發槽還回去，分支、檢查點、對話全部留著（分支名同時進剪貼
   簿）。繼續時 worktree 在原路徑長回來、暫停時的工作原樣還原，`--continue`
   接上原本的對話。
+- **Dev server 預覽** —— ▶ run script 起的頁面直接掛在桌邊：iframe 顯示的
+  就是 server 送出的樣子 —— 不代理、不注入。server 死了面板會說，不留白框。
+  repo 自掛 inspect script（`docs/examples/agentdesk-inspect.js`）後，
+  Alt+click 任何元件就變成「{component} —— {file}:{line}」，一鍵送進 agent
+  的終端機。
 - **分支挑選** —— 開卡對話框直接建議 repo 的分支、按最近使用排序，而不是
   要你憑記憶打字。
 - **世界** —— 走 WSL 或 SSH 的 repo 會在卡片上戴 host 徽章；總覽在超過一個

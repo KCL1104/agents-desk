@@ -206,6 +206,12 @@ The pieces that carry the triage loop, in roughly the order you meet them:
   conversation all stay (the branch name lands on your clipboard). Resume
   grows the worktree back at its old path, restores the parked work, and
   `--continue` picks the conversation up where it left off.
+- **Dev server preview** — a ▶ run script's page, on the desk: an iframe
+  beside the terminals showing exactly what the server sends — never
+  proxied, never injected. A dead server says so instead of going blank.
+  Opt into inspect (`docs/examples/agentdesk-inspect.js`) and Alt+click
+  turns any element into "{component} — {file}:{line}", one click away
+  from the agent's terminal.
 - **Branch picker** — the new-card dialog suggests the repo's branches
   sorted by recency instead of asking you to type one from memory.
 - **Worlds** — repos over WSL or SSH carry a host badge on their cards, and

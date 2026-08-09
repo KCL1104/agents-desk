@@ -1,6 +1,6 @@
 # 決策文件:內嵌 dev-server 預覽 + inspect mode
 
-> 狀態:**提案,待決** · 2026-08 · 來源:前端研究報告 Tier 3(Vibe Kanban preview / click-to-component)
+> 狀態:**已定案,v1 已實作**(三片全落地;未決三項依建議拍板)· 2026-08 · 來源:前端研究報告 Tier 3(Vibe Kanban preview / click-to-component)
 > 參照:Vibe Kanban 的 preview 面板與 inspect(機制為研究報告轉述,injection 細節未驗證)
 
 ## 問題
@@ -60,8 +60,8 @@ run_script 當下把埠寫進該 ad-hoc session 的 meta(`preview_port: Option<u
 
 **驗收**:▶ dev 起來後一鍵看到頁面;server 結束後面板說「已結束」而非空白;SSH attempt 沒有預覽按鈕且理由可讀;掛了範例 script 的 repo 裡 Alt+click 元件,claude 終端機收到一句可讀的指位訊息,沒掛的 repo 預覽照常、只是沒有 inspect;Playwright 蓋面板開關與 message → paste 的線路。
 
-## 未決(拍板後開工)
+## 未決 → 已拍板(v1 依建議採納)
 
-1. **預覽面板與看板 peek 搶同一塊地**:同時要看 peek 和預覽時誰讓位?(建議:同一個槽,後開的贏——桌面右側只有一塊地,兩個都要就進外部瀏覽器)
-2. **inspect script 的散發**:docs 範例貼進 repo,還是發 `@agentdesk/inspect` 套件?(建議:v1 先 docs 範例,等第三個人要再發套件)
-3. **VK 機制標註**:injection 細節為轉述,維持標註。
+1. **槽位**:同一塊地,明確的開啟壓過 hover 驅動的 peek——預覽開著時 peek 讓位,關掉就還回去(hover 不構成「後開」;兩個都要就進外部瀏覽器)。
+2. **inspect script**:docs 範例(`docs/examples/agentdesk-inspect.js`,React `_debugSource` + Vue `__file`),等第三個人要再發套件。
+3. **VK 機制標註**:維持轉述標註。

@@ -205,6 +205,10 @@ export const api = {
   openShell: (attemptId: string, cols: number, rows: number) =>
     invoke<string>('open_shell', { attemptId, cols, rows }),
 
+  /** Whether anything answers on localhost at this port — the difference
+      between "the dev server is up" and a blank iframe. */
+  probePort: (port: number) => invoke<boolean>('probe_port', { port }),
+
   /** Open a URL in the system browser. Through the opener plugin, because a
       plain anchor inside the webview would navigate the app itself. */
   openExternal: (url: string) => invoke<void>('plugin:opener|open_url', { url, with: null }),

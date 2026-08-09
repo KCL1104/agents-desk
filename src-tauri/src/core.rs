@@ -116,6 +116,11 @@ pub struct SessionMeta {
     /// A message is queued to go in when this turn ends. Transient, like
     /// the PTY it waits on — never stored, false on every restore.
     pub has_followup: bool,
+    /// The `$AGENTDESK_PORT` a run script was handed, when the app can
+    /// reach it (local and WSL; an SSH host's port lives on the remote).
+    /// Transient like the followup flag: the server dies with the PTY, and
+    /// a persisted port would be a column that lies after every restart.
+    pub preview_port: Option<u16>,
 }
 
 impl SessionMeta {
@@ -149,6 +154,7 @@ impl SessionMeta {
             completed: s.completed,
             attempt_id: s.attempt_id,
             has_followup: false,
+            preview_port: None,
         }
     }
 }
@@ -1429,6 +1435,7 @@ impl Core {
             completed: false,
             attempt_id: Some(attempt_id.clone()),
             has_followup: false,
+            preview_port: None,
         };
 
         // Visible before it can speak. The PTY reports its exit against the
@@ -1576,6 +1583,7 @@ impl Core {
             completed: false,
             attempt_id: Some(attempt_id.to_string()),
             has_followup: false,
+            preview_port: None,
         };
         // On the record before it can exit — see `finish_opening`.
         self.sessions
@@ -1875,6 +1883,14 @@ impl Core {
             // it on the card, and the card is about the agent.
             attempt_id: None,
             has_followup: false,
+            // Reachable worlds only: local directly, WSL through mirrored
+            // networking. An SSH host's port lives on the remote, and a
+            // recorded port nobody can dial would put a preview button on
+            // a door that opens onto a wall.
+            preview_port: match &he.host {
+                Host::Ssh { .. } => None,
+                _ => Some(port),
+            },
         };
 
         let script_env = [
@@ -1988,6 +2004,7 @@ impl Core {
             // is about the agent, and this terminal is about you.
             attempt_id: None,
             has_followup: false,
+            preview_port: None,
         };
 
         // The same variable the scripts see, because the same need exists:
@@ -2398,6 +2415,7 @@ impl Core {
             completed: false,
             attempt_id: None,
             has_followup: false,
+            preview_port: None,
         };
 
         // On the record before it can exit — see `finish_opening`.

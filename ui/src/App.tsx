@@ -6,7 +6,8 @@ import { Icon } from './components/Icon';
 import { needsYou } from './types';
 import type { BootStatus, Lifecycle, PermissionMode, SessionMeta, Status, Tab, Task } from './types';
 import { STATUS_KEY } from './sections';
-import type { ReviewComment } from './review';
+import { followupSendable, type ReviewComment } from './review';
+import { PreviewPanel } from './components/PreviewPanel';
 import { BootGate } from './components/BootGate';
 import { SessionList } from './components/SessionList';
 import { EdgeDrop, EmptyGrid, Pane } from './components/Pane';
@@ -335,6 +336,23 @@ export default function App() {
     [attempts, inspectId],
   );
 
+  /** Whether the inspected attempt has a previewable dev server: a live
+   *  script session in its worktree carrying the recorded port. 'ssh'
+   *  means one is running but its port lives on the remote — the button
+   *  appears disabled, wearing that reason, instead of not existing. */
+  const inspectedPreview = useMemo(() => {
+    if (!inspected || inspected.outcome !== null) return null;
+    const wt = inspected.worktree_path.replace(/\/$/, '');
+    const script = sessions.find(
+      (s) => s.live && s.agent === 'sh' && (s.cwd === wt || s.cwd.startsWith(`${wt}/`)),
+    );
+    if (!script) return null;
+    if (script.preview_port == null) {
+      return wt.startsWith('ssh://') ? ('ssh' as const) : null;
+    }
+    return { port: script.preview_port, sessionId: script.id };
+  }, [inspected, sessions]);
+
   // With the drawer open, moving to another session's pane moves the drawer
   // with it. Reading one attempt's diff while looking at another's terminal
   // is the one arrangement that could actively mislead.
@@ -351,17 +369,56 @@ export default function App() {
    *  whose session is live, sticky until another takes it. */
   const [previewId, setPreviewId] = useState<string | null>(null);
 
+  /** The dev-server preview: an iframe on the peek's patch of ground.
+   *  One patch, and the explicit act outranks the hover — the peek is
+   *  suppressed while this is open and comes back the moment it closes.
+   *  Both at once means the external browser (the decision doc's call). */
+  const [devPreview, setDevPreview] = useState<{
+    port: number;
+    sessionId: string;
+    agentSessionId: string | null;
+  } | null>(null);
+  /** The element last picked inside the previewed page, via the opt-in
+   *  inspect script's postMessage. */
+  const [pick, setPick] = useState<{ component: string; file: string; line: number } | null>(
+    null,
+  );
+
+  // The one sanctioned channel from the previewed page: the pick grammar,
+  // from the preview's own origin, and nothing else.
+  useEffect(() => {
+    if (devPreview === null) return;
+    const allowed = new Set([
+      `http://localhost:${devPreview.port}`,
+      `http://127.0.0.1:${devPreview.port}`,
+    ]);
+    const onMessage = (e: MessageEvent) => {
+      if (!allowed.has(e.origin)) return;
+      const d = e.data as
+        | { type?: unknown; component?: unknown; file?: unknown; line?: unknown }
+        | null;
+      if (!d || d.type !== 'agentdesk:pick' || typeof d.file !== 'string') return;
+      setPick({
+        component: typeof d.component === 'string' ? d.component : '?',
+        file: d.file,
+        line: typeof d.line === 'number' ? d.line : 0,
+      });
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [devPreview]);
+
   /** The board's live peek: the hovered card's session, else the focused
    *  one. Claude Squad's list+preview, GUI-shaped — and because it is the
    *  same mounted pane, the preview is the terminal, not a copy of it. */
   const previewSession = useMemo(() => {
-    if (view !== 'board') return null;
+    if (view !== 'board' || devPreview !== null) return null;
     const liveOf = (id: string | null) => {
       const s = id ? sessions.find((x) => x.id === id) : undefined;
       return s?.live ? s.id : null;
     };
     return liveOf(previewId) ?? liveOf(focusedId);
-  }, [view, previewId, sessions, focusedId]);
+  }, [view, previewId, sessions, focusedId, devPreview]);
 
   /** The open attempt behind each live session — for the ⚡ badge in the
    *  views where supervision actually happens, not only on the board. */
@@ -1226,8 +1283,57 @@ export default function App() {
             onRunScript={(name) => void onRunScript(inspected.id, name)}
             onOpenShell={() => void onOpenShell(inspected.id)}
             onPark={() => void onParkAttempt(inspected.id)}
+            previewState={
+              inspectedPreview === null ? null : inspectedPreview === 'ssh' ? 'ssh' : 'ready'
+            }
+            onOpenPreview={() => {
+              if (inspectedPreview !== null && inspectedPreview !== 'ssh') {
+                setPick(null);
+                setDevPreview({ ...inspectedPreview, agentSessionId: inspected.session_id });
+              }
+            }}
           />
         )}
+
+        {devPreview !== null &&
+          (() => {
+            const teller = devPreview.agentSessionId
+              ? sessions.find((s) => s.id === devPreview.agentSessionId)
+              : undefined;
+            const canTell =
+              pick !== null && teller !== undefined && teller.live && followupSendable(teller.agent);
+            return (
+              <PreviewPanel
+                port={devPreview.port}
+                live={sessions.some((s) => s.id === devPreview.sessionId && s.live)}
+                pick={pick}
+                onTell={
+                  canTell
+                    ? () => {
+                        void api
+                          .sendFollowup(
+                            teller.id,
+                            t('preview.note', {
+                              component: pick.component,
+                              file: pick.file,
+                              line: pick.line,
+                            }),
+                          )
+                          .catch(() => {
+                            /* the terminal shows what actually arrived */
+                          });
+                        setPick(null);
+                      }
+                    : null
+                }
+                onDismissPick={() => setPick(null)}
+                onClose={() => {
+                  setDevPreview(null);
+                  setPick(null);
+                }}
+              />
+            );
+          })()}
         </div>
         </div>
       </main>

@@ -520,6 +520,17 @@ fn run_script(
         .map_err(|e| format!("{e:#}"))
 }
 
+/* --------------------------- dev preview --------------------------- */
+
+/// Whether anything answers on localhost at this port right now — the
+/// difference between "the dev server is up" and a blank iframe that
+/// could mean anything. Blank and broken must not look alike.
+#[tauri::command]
+fn probe_port(port: u16) -> bool {
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(400)).is_ok()
+}
+
 /* ---------------------------- parked ------------------------------- */
 
 /// Park an attempt: keep the branch, the checkpoints and the conversation,
@@ -743,6 +754,7 @@ fn main() {
             restore_checkpoint,
             park_attempt,
             resume_attempt,
+            probe_port,
             cancel_queued,
             concurrency,
             set_concurrency,

@@ -379,6 +379,21 @@ export const en = {
   'park.restoreFailed':
     'Resumed, but the parked work did not come down cleanly: {err}. The worktree is on its branch — restore from the timeline.',
   'park.restoreParked': 'Parked — resume first, then restore',
+  /* ---------------------------- preview ------------------------------ */
+  'preview.title': 'Dev server preview',
+  'preview.open': 'Preview',
+  'preview.openHint': 'See the dev server beside the desk — the page exactly as it serves it',
+  'preview.sshHint':
+    'The server runs on the remote host, so its port is not reachable from here. Open a tunnel of your own, or a browser on that machine.',
+  'preview.copy': 'Copy',
+  'preview.reload': 'Reload the page',
+  'preview.external': 'Open in the browser',
+  'preview.dead': 'The server has ended — its terminal closed.',
+  'preview.notListening': 'Nothing is answering at {url} yet.',
+  'preview.retry': 'Check again',
+  'preview.pick': '{component} — {file}:{line}',
+  'preview.note':
+    'In the preview I am pointing at {component} ({file}:{line}) — the next feedback is about this element.',
   'ckpt.compare': 'Against',
   'ckpt.compareBase': 'Base — the whole attempt',
   'ckpt.compareN': 'Checkpoint #{n} · {time}',
@@ -771,6 +786,21 @@ export const zhTW: Record<MessageKey, string> = {
   'park.restoreFailed':
     '已繼續,但暫停時的工作沒有完整回來:{err}。worktree 已在分支上 —— 可從時間軸還原。',
   'park.restoreParked': '已暫停 —— 先繼續,再還原',
+  /* ---------------------------- preview ------------------------------ */
+  'preview.title': 'Dev server 預覽',
+  'preview.open': '預覽',
+  'preview.openHint': '把 dev server 掛在桌邊看 —— 頁面就是 server 送出的樣子',
+  'preview.sshHint':
+    'server 在遠端機器上，埠從這裡打不到。自己開一條 tunnel，或在那台機器的瀏覽器看。',
+  'preview.copy': '複製',
+  'preview.reload': '重新載入頁面',
+  'preview.external': '用瀏覽器開啟',
+  'preview.dead': 'server 已結束 —— 它的終端機關了。',
+  'preview.notListening': '{url} 目前沒有回應。',
+  'preview.retry': '再試一次',
+  'preview.pick': '{component} —— {file}:{line}',
+  'preview.note':
+    '我在預覽裡指著 {component}（{file}:{line}）—— 接下來的回饋是關於這個元件。',
   'ckpt.compare': '比較對象',
   'ckpt.compareBase': 'Base —— 整個 attempt',
   'ckpt.compareN': '檢查點 #{n} · {time}',

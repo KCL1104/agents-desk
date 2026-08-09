@@ -16,6 +16,7 @@ export type IconName =
   | 'flag'
   | 'play'
   | 'pause'
+  | 'frame'
   | 'dot'
   | 'reload'
   | 'wrap';
@@ -39,6 +40,12 @@ const DRAWN: Record<IconName, JSX.Element> = {
     </>
   ),
   dot: <circle cx="8" cy="8" r="4.2" fill="currentColor" stroke="none" />,
+  frame: (
+    <>
+      <rect x="2.2" y="3" width="11.6" height="10" rx="1.5" fill="none" />
+      <path d="M2.2 6h11.6" />
+    </>
+  ),
   reload: (
     <>
       <path d="M13 8a5 5 0 1 1-1.46-3.54" fill="none" />
