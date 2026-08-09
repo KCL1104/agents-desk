@@ -778,8 +778,11 @@ function Finish({
   /* Friction proportional to consequence: merge mutates the base branch —
      the one thing every hint promises an attempt cannot touch — so it arms
      exactly like discard does. Both name what the second click will do. */
-  const merge = useArmed(run('merge', () => api.mergeAttempt(attempt.id)));
-  const discard = useArmed(run('discard', () => api.finishAttempt(attempt.id, 'discarded')));
+  // Seven seconds, not the default four: the armed label names a branch,
+  // and disarming while the reader checks that name punishes hesitation —
+  // the one response an armed merge should invite.
+  const merge = useArmed(run('merge', () => api.mergeAttempt(attempt.id)), 7000);
+  const discard = useArmed(run('discard', () => api.finishAttempt(attempt.id, 'discarded')), 7000);
 
   return (
     <footer className="inspector-foot">
@@ -1050,6 +1053,8 @@ function DiffPane({
         className={`diff mono${wrap ? ' wrap' : ''}`}
         data-testid="diff-body"
         tabIndex={0}
+        title={t('inspector.diffKeys')}
+        aria-keyshortcuts="j k n p Enter"
         onKeyDown={onDiffKeys}
       >
       {sections.map((s, si) => {
@@ -1226,7 +1231,13 @@ function Timeline({
     );
   }
   return (
-    <ol className="timeline" data-testid="timeline">
+    <>
+      {/* The net gets one visible line: yolo advertises the leap loudly,
+          and the retreat that makes it rational must not be a ghost. */}
+      {onRestore !== null && checkpoints.length > 0 && (
+        <p className="tl-restore-hint muted small">{t('ckpt.timelineHint')}</p>
+      )}
+      <ol className="timeline" data-testid="timeline">
       {rows.map((e, i) => (
         <li
           key={`${e.at}-${i}`}
@@ -1293,7 +1304,8 @@ function Timeline({
           )}
         </li>
       ))}
-    </ol>
+      </ol>
+    </>
   );
 }
 

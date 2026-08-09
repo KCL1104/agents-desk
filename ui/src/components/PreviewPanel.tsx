@@ -96,7 +96,7 @@ export function PreviewPanel({ port, live, pick, onTell, onDismissPick, onClose 
         >
           ↗
         </button>
-        <button className="icon" onClick={onClose} title={t('common.close')} aria-label={t('common.close')}>
+        <button className="icon" onClick={onClose} title={t('preview.close')} aria-label={t('preview.close')}>
           ✕
         </button>
       </header>

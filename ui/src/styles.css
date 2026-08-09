@@ -109,6 +109,14 @@ body {
   display: inline-block; vertical-align: -0.125em;
 }
 
+/* The floor under every small control: an 11px glyph may keep its size,
+   but the thing a pointer must hit does not go below 18px square. */
+.row-action, .pane-eject, .pane-zoom, .tab-close {
+  min-width: 18px; min-height: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+button.icon { min-height: 18px; }
+
 /* A chip is a chip whatever element carries it — the PATH entries in the
    env panel are spans, and unstyled they fuse into one bogus path. */
 .chip {
@@ -593,7 +601,9 @@ textarea { resize: vertical; }
 
 .board-cols {
   display: grid; gap: 12px; align-items: start;
-  grid-template-columns: repeat(4, minmax(210px, 1fr));
+  /* 180px is the floor a card stays readable at; below that the board
+     scrolls rather than clipping 完成 off the world. */
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
   min-height: 0;
 }
 
@@ -803,7 +813,7 @@ button.board-cta:hover {
    jump in just to look. Sized to stay above the width where a TUI's box
    drawing comes apart. */
 .term-area.as-preview {
-  flex: none; width: 520px; max-width: 44vw;
+  flex: none; width: clamp(320px, 30vw, 520px);
   border-left: 1px solid var(--line);
 }
 /* The drawer belongs to the terminal view; a peek is not a review. */
@@ -815,7 +825,7 @@ button.board-cta:hover {
    The page inside is exactly what the server sent — cross-origin, never
    proxied, never injected. */
 .preview-panel {
-  flex: none; width: 520px; max-width: 44vw;
+  flex: none; width: clamp(320px, 30vw, 520px);
   display: flex; flex-direction: column; min-height: 0;
   border-left: 1px solid var(--line); background: var(--bg-2);
 }
@@ -1017,6 +1027,7 @@ button.board-cta:hover {
    mutates the base branch, so the second click pauses in warn. */
 .confirm-arm {
   background: transparent; border: 1px solid var(--warn); color: var(--warn);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .confirm-arm:hover:not(:disabled) { background: color-mix(in srgb, var(--warn) 5%, var(--bg-3)); }
 
@@ -1199,13 +1210,16 @@ button.board-cta:hover {
 /* A message between cards is an act, not a grind — it takes the accent. */
 .tl-row.tl-send .tl-tool { color: var(--accent); }
 
+/* One line, once: the retreat exists. */
+.tl-restore-hint { margin: 0; padding: 6px var(--gutter-x) 0; }
+
 /* The retreat, anchored where a turn began. Quiet until armed — then it
    names the act, the two-click grammar every destructive button speaks. */
 .tl-restore {
   flex: none; margin-left: auto; align-self: flex-start;
   padding: 0 7px; font-size: var(--fs-data);
-  background: none; border: 1px solid transparent; border-radius: var(--radius-xs);
-  color: var(--fg-faint);
+  background: none; border: 1px solid var(--line); border-radius: var(--radius-xs);
+  color: var(--fg-dim);
 }
 .tl-restore:hover:not(:disabled) { color: var(--fg); border-color: var(--line); }
 .tl-restore.armed { color: var(--warn); border-color: var(--warn); font-size: var(--fs-label); }
@@ -1216,6 +1230,7 @@ button.board-cta:hover {
   display: flex; align-items: center; gap: 8px;
   padding: 5px var(--gutter-x); border-bottom: 1px solid var(--line);
 }
+.compare-row label { flex: none; white-space: nowrap; }
 .compare-row select { font-size: var(--fs-data); padding: 2px 6px; }
 
 /* What the restore did (or refused) — stays until dismissed, because it

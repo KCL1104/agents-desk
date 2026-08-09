@@ -817,7 +817,7 @@ export default function App() {
         }
         pushToast('ok', t('park.done', { branch }));
       } catch (e) {
-        pushToast('error', String(e));
+        pushToast('error', t('error.park', { err: String(e) }));
       }
     },
     [pushToast],
@@ -835,7 +835,7 @@ export default function App() {
         }
         await onOpen(r.session_id);
       } catch (e) {
-        pushToast('error', String(e));
+        pushToast('error', t('error.resumeAttempt', { err: String(e) }));
       }
     },
     [onOpen, pushToast],

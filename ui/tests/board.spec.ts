@@ -353,16 +353,25 @@ test.describe('board', () => {
     expect(first).toBeNull();
   });
 
-  test('deleting a card takes its attempt session with it', async ({ page }) => {
+  test('deleting a card takes its attempt session with it — once the agent settles', async ({
+    page,
+  }) => {
     await boot(page);
     await newCard(page, '修好登入');
     await start(page, 'k1');
     await page.getByTestId('view-board').click();
     await expect(page.locator('.session-row')).toHaveCount(1);
 
+    // Mid-turn the ✕ is a wall wearing words: deleting would take the
+    // live session and its worktree with it — same guard park uses.
+    const del = page.locator('[data-testid="task-k1"] [aria-label="刪除卡片"]');
+    await expect(del).toBeDisabled();
+    await page.evaluate(() => window.__mock.report('s1', 'idle'));
+    await expect(del).toBeEnabled();
+
     // The first click only arms: a stray click on a 12px ✕ must not be able
     // to take a task's history with it.
-    await page.locator('[data-testid="task-k1"] [aria-label="刪除卡片"]').click();
+    await del.click();
     await expect(page.locator('.board-card')).toHaveCount(1);
     await page.getByTestId('confirm-delete-k1').click();
     await expect(page.locator('.board-card')).toHaveCount(0);

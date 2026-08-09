@@ -446,6 +446,15 @@ function Card({
   // for it would be the wrong thing to optimise.
   const enter = live.kind === 'session' ? () => onOpenSession(live.session.id) : undefined;
 
+  /** A live turn in flight: parking checks this, and now so does the ✕ —
+   *  deleting the card would take the running session and its worktree
+   *  with it, and that is not a stray-click kind of loss. */
+  const busy =
+    live.kind === 'session' &&
+    live.status !== 'idle' &&
+    live.status !== 'saved' &&
+    live.status !== 'exited';
+
   // The shimmer: mid-turn, and only mid-turn — the breath outranks it, so
   // a card that is both blocked and busy breathes and does not shimmer.
   const astir =
@@ -547,18 +556,6 @@ function Card({
         {/* The attempt's footprint, and where its branch stands. ↓ wears the
             warning color because it is a merge refusal you have not hit yet
             — the one number that says "rebase before you try". */}
-        {stat && (stat.adds > 0 || stat.dels > 0 || stat.ahead > 0 || stat.behind > 0) && (
-          <span
-            className="card-stat"
-            data-testid={`stat-${task.id}`}
-            title={t('stats.hint', { branch: task.base_branch })}
-          >
-            {stat.adds > 0 && <span className="diff-count add">+{stat.adds}</span>}
-            {stat.dels > 0 && <span className="diff-count del">−{stat.dels}</span>}
-            {stat.ahead > 0 && <span className="stat-ahead">↑{stat.ahead}</span>}
-            {stat.behind > 0 && <span className="stat-behind">↓{stat.behind}</span>}
-          </span>
-        )}
       </div>
 
       <div className="board-card-state" data-testid={`state-${task.id}`}>
@@ -571,6 +568,22 @@ function Card({
         )}
         {liveLabel(live, t)}
         {hasAttempt && <span className="muted small mono"> #{live.attempt.seq}</span>}
+        {/* The attempt's footprint rides the state line, where nothing
+            truncates: +42 −9 vanishing into the repo line's ellipsis was
+            the number triage runs on, gone at exactly the narrow widths
+            the peek causes. ↓ stays the one warning-colored count. */}
+        {stat && (stat.adds > 0 || stat.dels > 0 || stat.ahead > 0 || stat.behind > 0) && (
+          <span
+            className="card-stat"
+            data-testid={`stat-${task.id}`}
+            title={t('stats.hint', { branch: task.base_branch })}
+          >
+            {stat.adds > 0 && <span className="diff-count add">+{stat.adds}</span>}
+            {stat.dels > 0 && <span className="diff-count del">−{stat.dels}</span>}
+            {stat.ahead > 0 && <span className="stat-ahead">↑{stat.ahead}</span>}
+            {stat.behind > 0 && <span className="stat-behind">↓{stat.behind}</span>}
+          </span>
+        )}
         {/* Hooks are Claude Code's; for anyone else 「安靜」 must never be
             read as 「沒事」— the absence of signal is itself the signal. */}
         {live.kind === 'session' &&
@@ -695,7 +708,16 @@ function Card({
           </button>
         )}
         <span className="spacer" />
-        {del.armed ? (
+        {busy ? (
+          <button
+            className="icon"
+            disabled
+            title={t('board.deleteBusy')}
+            aria-label={t('board.deleteCard')}
+          >
+            ✕
+          </button>
+        ) : del.armed ? (
           <button
             className="confirm-delete"
             onClick={stop(del.fire)}
