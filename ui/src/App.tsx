@@ -746,6 +746,44 @@ export default function App() {
     [onOpen],
   );
 
+  /** Park: keep the work and the conversation, give back the ground. The
+   *  branch name lands on the clipboard — the next thought after parking
+   *  is usually "look at that branch somewhere else". */
+  const onParkAttempt = useCallback(
+    async (attemptId: string) => {
+      try {
+        const branch = await api.parkAttempt(attemptId);
+        try {
+          await navigator.clipboard.writeText(branch);
+        } catch {
+          /* headless or denied: the toast still names the branch */
+        }
+        pushToast('ok', t('park.done', { branch }));
+      } catch (e) {
+        pushToast('error', String(e));
+      }
+    },
+    [pushToast],
+  );
+
+  /** Resume a parked attempt and land in its terminal, conversation and
+   *  all. A restore failure is reported, not rolled back: the worktree is
+   *  honestly back on its branch either way. */
+  const onResumeParked = useCallback(
+    async (attemptId: string) => {
+      try {
+        const r = await api.resumeAttempt(attemptId, INITIAL_COLS, INITIAL_ROWS);
+        if (r.restore_error !== null) {
+          pushToast('error', t('park.restoreFailed', { err: r.restore_error }));
+        }
+        await onOpen(r.session_id);
+      } catch (e) {
+        pushToast('error', String(e));
+      }
+    },
+    [onOpen, pushToast],
+  );
+
   /**
    * Review an attempt: open the drawer, and put its terminal up beside it.
    *
@@ -1036,6 +1074,8 @@ export default function App() {
               setStarting(task);
             }}
             onResume={onResumeAttempt}
+            onPark={onParkAttempt}
+            onResumeParked={onResumeParked}
             onInspect={onInspectAttempt}
             onCancelQueued={onCancelQueued}
             onNewTask={() => {
@@ -1185,6 +1225,7 @@ export default function App() {
             onMerged={(branch) => pushToast('ok', t('inspector.merged', { branch }))}
             onRunScript={(name) => void onRunScript(inspected.id, name)}
             onOpenShell={() => void onOpenShell(inspected.id)}
+            onPark={() => void onParkAttempt(inspected.id)}
           />
         )}
         </div>

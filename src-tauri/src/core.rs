@@ -697,6 +697,15 @@ pub struct Core {
     checkpointing: Mutex<std::collections::HashSet<String>>,
 }
 
+/// What a resume did. `restore_error` set means the worktree is back on
+/// its branch but the shelf checkpoint did not come down cleanly — half
+/// done and visible, retryable from the timeline, never rolled back.
+#[derive(Debug, Clone, Serialize)]
+pub struct Resumed {
+    pub session_id: String,
+    pub restore_error: Option<String>,
+}
+
 /// What a restore did: where the worktree now stands, and the automatic
 /// "now" checkpoint kept first so the restore itself can be reverted.
 #[derive(Debug, Clone, Serialize)]
@@ -1471,6 +1480,7 @@ impl Core {
             outcome: None,
             frozen_diff: None,
             created_at: at,
+            parked_at: None,
         })?;
 
         self.persist(&meta);
@@ -1506,6 +1516,11 @@ impl Core {
         if attempt.outcome.is_some() {
             return Err(anyhow!(
                 "attempt {attempt_id} is finished; its worktree has been removed"
+            ));
+        }
+        if attempt.parked_at.is_some() {
+            return Err(anyhow!(
+                "attempt {attempt_id} is parked — resume it, which grows the worktree back first"
             ));
         }
         let (wt_loc, he) = self.located(&attempt.worktree_path)?;
@@ -1609,12 +1624,26 @@ impl Core {
         let situated = self.located(&worktree).ok();
 
         // Best effort: a worktree that has already been deleted by hand must
-        // not stop the attempt from being closed out.
-        let diff = situated.as_ref().and_then(|(loc, he)| {
-            self.worktrees
-                .diff(&he.hr(&self.env), &loc.path, &attempt.base_sha)
-                .ok()
-        });
+        // not stop the attempt from being closed out. A parked attempt has
+        // no worktree by design — its frozen diff is base against the shelf
+        // checkpoint, read straight from the object store.
+        let diff = if attempt.parked_at.is_some() {
+            task.as_ref().and_then(|t| {
+                let (repo_loc, he) = self.located(&t.repo_path).ok()?;
+                let hr = he.hr(&self.env);
+                let cps = self.worktrees.checkpoints(&hr, &repo_loc.path, &attempt.id).ok()?;
+                let last = cps.last()?;
+                self.worktrees
+                    .diff_range(&hr, &repo_loc.path, &attempt.base_sha, &last.sha)
+                    .ok()
+            })
+        } else {
+            situated.as_ref().and_then(|(loc, he)| {
+                self.worktrees
+                    .diff(&he.hr(&self.env), &loc.path, &attempt.base_sha)
+                    .ok()
+            })
+        };
 
         self.store
             .finish_attempt(&attempt.id, outcome, diff.as_deref())?;
@@ -2057,6 +2086,31 @@ impl Core {
                      its refs are gone and the frozen diff is the record"
                 )),
             };
+        }
+        // Parked: no worktree to diff against, but the shelf checkpoint is
+        // the worktree as it was parked — so the diff runs tree against
+        // tree in the main checkout, ending at the shelf.
+        if attempt.parked_at.is_some() {
+            let task = self.task(&attempt.task_id)?;
+            let (repo_loc, he) = self.located(&task.repo_path)?;
+            let hr = he.hr(&self.env);
+            let cps = self.worktrees.checkpoints(&hr, &repo_loc.path, attempt_id)?;
+            let Some(last) = cps.last() else {
+                // Parked clean at base: nothing ever changed.
+                return Ok(String::new());
+            };
+            let from = match against {
+                None | Some(0) => attempt.base_sha.clone(),
+                Some(n) => cps
+                    .iter()
+                    .find(|c| c.n == n)
+                    .map(|c| c.sha.clone())
+                    .ok_or_else(|| anyhow!("this attempt has no checkpoint #{n}"))?,
+            };
+            if from == last.sha {
+                return Ok(String::new());
+            }
+            return self.worktrees.diff_range(&hr, &repo_loc.path, &from, &last.sha);
         }
         let (wt_loc, he) = self.located(&attempt.worktree_path)?;
         let hr = he.hr(&self.env);
@@ -2748,6 +2802,130 @@ impl Core {
         );
     }
 
+    /* ---------------------------- parked --------------------------- */
+
+    /// Park: keep the work and the conversation, give back the ground.
+    ///
+    /// The branch and the checkpoint refs stay; the worktree, every session
+    /// living in it — the attempt shell included — and the concurrency slot
+    /// are returned. What is uncommitted rides a pre-park checkpoint across
+    /// (a failure to keep it aborts the park: losing work silently is the
+    /// one failure this feature must not have). Refused mid-turn, for
+    /// exactly restore's reason. Returns the branch name, for the clipboard.
+    pub fn park_attempt(&self, attempt_id: &str) -> Result<String> {
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        if attempt.outcome.is_some() {
+            return Err(anyhow!("this attempt is finished — there is nothing left to park"));
+        }
+        if attempt.parked_at.is_some() {
+            return Err(anyhow!("this attempt is already parked"));
+        }
+        let busy = self.sessions.lock().unwrap().values().any(|s| {
+            s.attempt_id.as_deref() == Some(attempt_id)
+                && s.live
+                && !matches!(s.status, Status::Idle | Status::Saved | Status::Exited)
+        });
+        if busy {
+            return Err(anyhow!(
+                "the agent is mid-turn in this worktree. Parking now would pull the ground out \
+                 from under its edits. Wait for the turn to end — or close the session — and \
+                 park then"
+            ));
+        }
+
+        // The shelf: whatever is uncommitted goes into a checkpoint the
+        // worktree's removal cannot take with it.
+        self.snapshot_attempt(attempt_id)?;
+
+        let task = self.task(&attempt.task_id)?;
+        let (wt_loc, he) = self.located(&attempt.worktree_path)?;
+        let repo_loc = host::locate(&task.repo_path)?;
+
+        // The sessions living in the directory go with it — the attempt's
+        // own, the shell, a dev server — same rule as finishing.
+        let doomed: Vec<String> = self
+            .sessions
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|s| {
+                s.attempt_id.as_deref() == Some(attempt_id)
+                    || s.cwd == attempt.worktree_path
+                    || s.cwd
+                        .starts_with(&format!("{}/", attempt.worktree_path.trim_end_matches('/')))
+            })
+            .map(|s| s.id.clone())
+            .collect();
+        for id in doomed {
+            self.ptys.kill(&id);
+            let _ = self.store.archive_session(&id);
+            self.sessions.lock().unwrap().remove(&id);
+        }
+        self.shells.lock().unwrap().remove(attempt_id);
+
+        self.worktrees
+            .remove(&he.hr(&self.env), &repo_loc.path, &wt_loc.path)?;
+        self.store.set_parked(attempt_id, Some(now_ms() as i64))?;
+
+        self.emit_tasks();
+        self.broadcast();
+        // The whole point: the slot is free now, and the queue should know.
+        self.drain_queue();
+        Ok(attempt.branch)
+    }
+
+    /// Resume: grow the ground back and walk the old road.
+    ///
+    /// The worktree reattaches to the attempt's branch at its recorded path
+    /// — `--continue` finds the conversation by cwd, so the path is not
+    /// negotiable — then the shelf checkpoint restores the exact content
+    /// that was parked, and the existing reopen flow takes it from there.
+    /// Attach succeeding *is* the resume; a restore failure afterwards is
+    /// reported and retryable, never rolled back into fake cleanliness.
+    pub fn resume_attempt(&self, attempt_id: &str, cols: u16, rows: u16) -> Result<Resumed> {
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        if attempt.outcome.is_some() {
+            return Err(anyhow!("this attempt is finished; the frozen diff is its record"));
+        }
+        if attempt.parked_at.is_none() {
+            return Err(anyhow!("this attempt is not parked"));
+        }
+        let task = self.task(&attempt.task_id)?;
+        let (repo_loc, he) = self.located(&task.repo_path)?;
+        let hr = he.hr(&self.env);
+        let wt_path = host::locate(&attempt.worktree_path)?.path;
+
+        self.worktrees
+            .attach(&hr, &repo_loc.path, &wt_path, &attempt.branch)?;
+        self.store.set_parked(attempt_id, None)?;
+
+        // The shelf comes down before the agent looks: the branch tip may
+        // be behind what was parked, and skipping this would lose work
+        // quietly. Restore before any terminal exists — no one to race.
+        let restore_error = (|| -> Result<()> {
+            let cps = self.worktrees.checkpoints(&hr, &repo_loc.path, attempt_id)?;
+            if let Some(cp) = cps.last() {
+                self.worktrees.restore_checkpoint(&hr, &wt_path, &cp.sha)?;
+            }
+            Ok(())
+        })()
+        .err()
+        .map(|e| format!("{e:#}"));
+
+        let session_id = self.reopen_attempt(attempt_id, cols, rows)?;
+        self.emit_tasks();
+        Ok(Resumed {
+            session_id,
+            restore_error,
+        })
+    }
+
     /* ------------------------- checkpoints ------------------------- */
 
     pub fn checkpoints_enabled(&self) -> bool {
@@ -2769,6 +2947,15 @@ impl Core {
         if attempt.outcome.is_some() {
             // Finished: the refs are gone by design, the frozen diff remains.
             return Ok(Vec::new());
+        }
+        // Parked has no worktree, but the refs live in the repo's shared
+        // git dir — read them from the main checkout.
+        if attempt.parked_at.is_some() {
+            let task = self.task(&attempt.task_id)?;
+            let (repo_loc, he) = self.located(&task.repo_path)?;
+            return self
+                .worktrees
+                .checkpoints(&he.hr(&self.env), &repo_loc.path, attempt_id);
         }
         let (loc, he) = self.located(&attempt.worktree_path)?;
         self.worktrees
@@ -2829,7 +3016,9 @@ impl Core {
             .store
             .get_attempt(attempt_id)?
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
-        if attempt.outcome.is_some() {
+        // Finished has nothing left to snapshot; parked already holds its
+        // shelf checkpoint and has no worktree to read.
+        if attempt.outcome.is_some() || attempt.parked_at.is_some() {
             return Ok(None);
         }
         let (loc, he) = self.located(&attempt.worktree_path)?;
@@ -2865,6 +3054,11 @@ impl Core {
         if attempt.outcome.is_some() {
             return Err(anyhow!(
                 "this attempt is finished — its worktree is gone and the frozen diff is the record"
+            ));
+        }
+        if attempt.parked_at.is_some() {
+            return Err(anyhow!(
+                "this attempt is parked — resume it first, then restore"
             ));
         }
         let busy = self.sessions.lock().unwrap().values().any(|s| {

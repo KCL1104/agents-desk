@@ -37,6 +37,8 @@ export interface MockAttempt {
   outcome: string | null;
   frozen_diff: string | null;
   created_at: number;
+  /** Set while parked — worktree and slot given back, resumable. */
+  parked_at: number | null;
   session_id: string | null;
 }
 
@@ -108,6 +110,10 @@ declare global {
       checkpoints: Map<string, Array<{ n: number; sha: string; at: number }>>;
       /** Makes the next manual checkpoint answer "nothing new". */
       checkpointQuiet: boolean;
+      /** Seeded by tests: what resume_attempt reports as restore_error. */
+      resumeRestoreError: string | null;
+      /** Monotonic session id source — ids are never reissued. */
+      sessionSeq: number;
       maxConcurrent: number;
       /** How many attempts hold a terminal right now. */
       running(): number;
@@ -191,6 +197,8 @@ export function installMock(): void {
     checkpointsOn: true,
     checkpoints: new Map<string, Array<{ n: number; sha: string; at: number }>>(),
     checkpointQuiet: false,
+    resumeRestoreError: null as string | null,
+    sessionSeq: 0,
     calls: [] as Array<{ cmd: string; args: unknown }>,
     listeners: new Map<string, number[]>(),
     cbSeq: 0,
@@ -320,7 +328,10 @@ export function installMock(): void {
     mock.profiles.find((p) => p.name === name)?.agent ?? name;
 
   const makeSession = (cwd: string, agent: string): MockSession => {
-    const id = `s${mock.sessions.length + 1}`;
+    // A counter, not the array length: parking removes rows, and a freed
+    // id must never be reissued to a different terminal.
+    mock.sessionSeq += 1;
+    const id = `s${mock.sessionSeq}`;
     return {
       id,
       cwd,
@@ -640,6 +651,7 @@ export function installMock(): void {
         outcome: null,
         frozen_diff: null,
         created_at: now(),
+        parked_at: null,
         session_id: session.id,
       });
       t.lifecycle = 'running';
@@ -688,6 +700,54 @@ export function installMock(): void {
       mock.pushSessions();
       mock.pushTasks();
       return attempt.session_id;
+    },
+
+    park_attempt: (args) => {
+      const attempt = mock.tasks
+        .flatMap((t) => t.attempts)
+        .find((a) => a.id === args.attemptId);
+      if (!attempt) throw new Error(`no such attempt: ${String(args.attemptId)}`);
+      if (attempt.outcome !== null) throw new Error('this attempt is finished');
+      if (attempt.parked_at !== null) throw new Error('this attempt is already parked');
+      const session = mock.sessions.find((s) => s.attempt_id === attempt.id);
+      if (session && session.live && !['idle', 'saved', 'exited'].includes(session.status)) {
+        throw new Error('the agent is mid-turn in this worktree');
+      }
+      // The shelf checkpoint the core always keeps first.
+      const list = mock.checkpoints.get(attempt.id) ?? [];
+      list.push({
+        n: (list[list.length - 1]?.n ?? 0) + 1,
+        sha: `shelf${list.length + 1}00`,
+        at: Math.floor(Date.now() / 1000),
+      });
+      mock.checkpoints.set(attempt.id, list);
+      // Sessions living in the worktree go with it — shell included.
+      mock.sessions = mock.sessions.filter(
+        (s) => s.attempt_id !== attempt.id && !s.cwd.startsWith(attempt.worktree_path),
+      );
+      attempt.parked_at = Date.now();
+      attempt.session_id = null;
+      mock.drainQueue();
+      mock.pushSessions();
+      mock.pushTasks();
+      return attempt.branch;
+    },
+
+    resume_attempt: (args) => {
+      const attempt = mock.tasks
+        .flatMap((t) => t.attempts)
+        .find((a) => a.id === args.attemptId);
+      if (!attempt) throw new Error(`no such attempt: ${String(args.attemptId)}`);
+      if (attempt.parked_at === null) throw new Error('this attempt is not parked');
+      attempt.parked_at = null;
+      const session = makeSession(attempt.worktree_path, attempt.agent);
+      session.attempt_id = attempt.id;
+      attempt.session_id = session.id;
+      mock.sessions.push(session);
+      if (!mock.snapshots.has(session.id)) mock.snapshots.set(session.id, { data: '', seq: 0 });
+      mock.pushSessions();
+      mock.pushTasks();
+      return { session_id: session.id, restore_error: mock.resumeRestoreError };
     },
 
     finish_attempt: (args) => {

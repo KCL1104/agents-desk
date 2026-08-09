@@ -495,3 +495,88 @@ test.describe('the visual system speaks', () => {
     await expect(page.getByTestId('task-k1')).toHaveAttribute('data-outcome', 'merged');
   });
 });
+
+test.describe('parked — work kept, ground given back', () => {
+  test('a settled card parks: session gone, card asleep, branch in the toast', async ({
+    page,
+  }) => {
+    await boot(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await page.getByTestId('view-board').click();
+    await page.evaluate(() => window.__mock.report('s1', 'idle'));
+
+    await page.getByTestId('park-k1').click();
+
+    // The card is asleep, resumable — and its session left the sidebar:
+    // parked things stop paying the attention tax.
+    await expect(page.getByTestId('task-k1')).toHaveAttribute('data-live', 'parked');
+    await expect(page.getByTestId('state-k1')).toHaveText(/已暫停/);
+    await expect(page.getByTestId('resume-k1')).toBeVisible();
+    await expect(page.locator('[data-testid="session-s1"]')).toHaveCount(0);
+    await expect(page.locator('.toast.ok')).toContainText('agentdesk/card-1');
+
+    // The shelf checkpoint was kept before the ground went.
+    const kept = await page.evaluate(() => window.__mock.checkpoints.get('k1-a1'));
+    expect(kept?.length).toBe(1);
+  });
+
+  test('mid-turn there is no park button — the guard is ahead of the click', async ({ page }) => {
+    await boot(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await page.getByTestId('view-board').click();
+
+    await page.evaluate(() => window.__mock.report('s1', 'running'));
+    await expect(page.getByTestId('park-k1')).toHaveCount(0);
+    await page.evaluate(() => window.__mock.report('s1', 'idle'));
+    await expect(page.getByTestId('park-k1')).toBeVisible();
+  });
+
+  test('resume wakes it into a terminal, and a restore failure is said, not hidden', async ({
+    page,
+  }) => {
+    await boot(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await page.getByTestId('view-board').click();
+    await page.evaluate(() => window.__mock.report('s1', 'idle'));
+    await page.getByTestId('park-k1').click();
+    await expect(page.getByTestId('task-k1')).toHaveAttribute('data-live', 'parked');
+
+    await page.getByTestId('resume-k1').click();
+    // Landed in the terminal, conversation continued on a fresh session.
+    await expect(page.locator('.pane[data-session-id="s2"]')).toBeVisible();
+
+    // Park again; this time the shelf refuses to come down cleanly.
+    await page.getByTestId('view-board').click();
+    await page.evaluate(() => {
+      window.__mock.report('s2', 'idle');
+      window.__mock.resumeRestoreError = 'restore blew up';
+    });
+    await page.getByTestId('park-k1').click();
+    await page.getByTestId('resume-k1').click();
+    await expect(page.locator('.toast.error')).toContainText('restore blew up');
+    // Honestly half-done: the terminal is still there to work in.
+    await expect(page.locator('.pane[data-session-id="s3"]')).toBeVisible();
+  });
+
+  test('a parked drawer offers no worktree acts, and restore says resume first', async ({
+    page,
+  }) => {
+    await boot(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await page.getByTestId('view-board').click();
+    await page.evaluate(() => window.__mock.report('s1', 'idle'));
+    await page.getByTestId('park-k1').click();
+
+    await page.getByTestId('inspect-k1').click();
+    // No shell, no ▶, no ⚑ — every chip in that row needs ground.
+    await expect(page.getByTestId('run-scripts')).toHaveCount(0);
+    await page.getByTestId('inspector-timeline-tab').click();
+    const restore = page.getByTestId('restore-0');
+    await expect(restore).toBeDisabled();
+    await expect(restore).toHaveAttribute('title', /先繼續/);
+  });
+});

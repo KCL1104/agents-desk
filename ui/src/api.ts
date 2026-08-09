@@ -48,6 +48,13 @@ export interface Checkpoint {
   at: number;
 }
 
+/** What a resume did. Mirrors core.rs Resumed: `restore_error` set means
+    the worktree is back but the shelf did not come down cleanly. */
+export interface Resumed {
+  session_id: string;
+  restore_error: string | null;
+}
+
 /** What a restore did. Mirrors core.rs Restored. */
 export interface Restored {
   /** The checkpoint the worktree now matches — 0 is the attempt's base. */
@@ -152,6 +159,14 @@ export const api = {
 
   /** The repository's branches, recency first, for the base picker. */
   listBranches: (repoPath: string) => invoke<string[]>('list_branches', { repoPath }),
+
+  /** Park: keep the branch, the checkpoints and the conversation; give
+      back the worktree and the slot. Returns the branch, for the clipboard. */
+  parkAttempt: (attemptId: string) => invoke<string>('park_attempt', { attemptId }),
+  /** Resume a parked attempt: worktree back at its old path, shelf
+      restored, terminal reopened on the old conversation. */
+  resumeAttempt: (attemptId: string, cols: number, rows: number) =>
+    invoke<Resumed>('resume_attempt', { attemptId, cols, rows }),
 
   /** Whether the end of a turn snapshots the worktree. */
   checkpointsEnabled: () => invoke<boolean>('checkpoints_enabled'),

@@ -34,6 +34,10 @@ interface Props {
   onMove: (id: string, lifecycle: Lifecycle, position: number) => void;
   onStart: (task: Task) => void;
   onResume: (attemptId: string) => void;
+  /** Park: keep the work and the conversation, give back the ground. */
+  onPark: (attemptId: string) => void;
+  /** Wake a parked attempt: worktree back, shelf restored, terminal on. */
+  onResumeParked: (attemptId: string) => void;
   /** Open the diff and timeline for this attempt, beside its terminal. */
   onInspect: (attempt: Attempt) => void;
   onCancelQueued: (taskId: string) => void;
@@ -64,6 +68,8 @@ export function Board({
   onMove,
   onStart,
   onResume,
+  onPark,
+  onResumeParked,
   onInspect,
   onCancelQueued,
   onNewTask,
@@ -257,6 +263,8 @@ export function Board({
                     onPreview={onPreview}
                     onStart={() => onStart(task)}
                     onResume={onResume}
+                    onPark={onPark}
+                    onResumeParked={onResumeParked}
                     onInspect={onInspect}
                     onCancelQueued={onCancelQueued}
                     onDelete={() => onDeleteTask(task.id)}
@@ -385,6 +393,8 @@ function Card({
   onPreview,
   onStart,
   onResume,
+  onPark,
+  onResumeParked,
   onInspect,
   onCancelQueued,
   onDelete,
@@ -406,6 +416,8 @@ function Card({
   onPreview: (id: string) => void;
   onStart: () => void;
   onResume: (attemptId: string) => void;
+  onPark: (attemptId: string) => void;
+  onResumeParked: (attemptId: string) => void;
   onInspect: (attempt: Attempt) => void;
   onCancelQueued: (taskId: string) => void;
   onDelete: () => void;
@@ -630,6 +642,31 @@ function Card({
             onClick={stop(() => onResume(live.attempt.id))}
           >
             {t('board.resume')}
+          </button>
+        )}
+        {/* Waking a parked card grows the worktree back at its old path,
+            brings the shelf down, and continues the old conversation. */}
+        {live.kind === 'parked' && (
+          <button
+            className="primary"
+            data-testid={`resume-${task.id}`}
+            onClick={stop(() => onResumeParked(live.attempt.id))}
+          >
+            {t('board.resume')}
+          </button>
+        )}
+        {/* Park is offered exactly when restore is: a settled worktree.
+            Single click — it is the reversible act; arming is for the
+            irreversible ones. */}
+        {(live.kind === 'stopped' ||
+          (live.kind === 'session' &&
+            (live.status === 'idle' || live.status === 'saved' || live.status === 'exited'))) && (
+          <button
+            data-testid={`park-${task.id}`}
+            title={t('board.parkHint')}
+            onClick={stop(() => onPark(live.attempt.id))}
+          >
+            {t('board.park')}
           </button>
         )}
         {/* Answers "what did this one change, and what did it do" without

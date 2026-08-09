@@ -6,7 +6,7 @@
 ## 現況
 
 - main = 研究報告 + 六批實作 + checkpoints 決策文件(至 `5b6d3ad`),工作分支 `claude/research-popular-tool-frontend-fax4cb` 與 main 同步。
-- 驗證基線:Playwright 262 passed(沙箱跑法:`npx playwright test --config playwright.local.config.ts`,指向預裝 Chromium)、cargo 331 全綠(容器已裝 GTK/WebKit dev 套件)、`npm run build` 乾淨。
+- 驗證基線:Playwright 266 passed(沙箱跑法:`npx playwright test --config playwright.local.config.ts`,指向預裝 Chromium)、cargo 334 全綠(容器已裝 GTK/WebKit dev 套件)、`npm run build` 乾淨。
 - 慣例備忘:i18n 是雙語 typed catalog,兩語相同的字串要進 `i18n.spec.ts` 的 SHARED 豁免;每個新 Tauri 指令都要在 `tests/mock-tauri.ts` 補 handler;凡動 agent 看得到的 git 狀態(index、worktree、分支)一律禁止。
 
 ## 第八批:收尾(狀態:**完成**)
@@ -44,7 +44,7 @@
 
 ### 3. 其後各項:先決策文件、拍板、再實作
 
-- **Parked 暫停態**:決策文件已寫(`parked.md`,提案待決)。核心判定:`parked_at` 欄位而非第五個 outcome;未 commit 工作走 park 前自動 checkpoint(否決 WIP commit 與拒絕髒地);resume = `Worktrees::attach`(新零件,在原路徑長回既有分支)+ checkpoint restore + 既有 `reopen_attempt` 原路直走(`--continue` 憑 cwd 找對話,路徑不可換);parked 終局的凍結 diff 用 checkpoint-對-base(免 worktree)。
+- **Parked 暫停態**:✅ **已實作**(`parked.md` 定案)。`parked_at`(migration V5)而非第五個 outcome;park = 拒絕 mid-turn → shelf checkpoint → doomed sessions(含 shell)→ 收地 → drain_queue,分支名進剪貼簿;resume = `attach`(原路徑長回既有分支,佔用即拒)→ shelf restore(失敗上浮 toast 不回滾)→ 既有 `reopen_attempt`;parked 的 diff 與終局凍結 diff 都走 checkpoint-對-base(`diff_range`,免 worktree);mock session id 改單調計數(park 移除列後不可重發)。
 - **內嵌 dev-server 預覽 + inspect mode**(VK):M6 已有 port 配發;iframe/webview 面板;inspect 抽 component/file/line 經 bracketed paste 入 TUI。
 - **可編輯 diff**(Crystal):working-tree 側可編輯,凍結 diff 唯讀;用 CodeMirror 6 merge view,不用 Monaco。
 - **Cost/context 顯示**:唯一誠實來源是 `~/.claude/projects/` transcript JSONL(hooks 無 token 資料,已驗證);不做即時 ticker;不內建價目表。

@@ -55,6 +55,9 @@ export interface Attempt {
   /** The diff, captured before the worktree was removed. */
   frozen_diff: string | null;
   created_at: number;
+  /** Set while parked: worktree and slot given back, branch and
+      conversation kept, resumable. Never set alongside an outcome. */
+  parked_at: number | null;
   /** `null` once the attempt's session has been archived out from under it. */
   session_id: string | null;
 }

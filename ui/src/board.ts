@@ -41,6 +41,9 @@ export type Live =
   | { kind: 'session'; status: Status; session: SessionMeta; attempt: Attempt }
   /** An attempt exists but nothing is running it. Resumable. */
   | { kind: 'stopped'; attempt: Attempt }
+  /** Parked: worktree and slot given back, branch and conversation kept.
+      Quieter than stopped — it is asleep on purpose. */
+  | { kind: 'parked'; attempt: Attempt }
   /** Its outcome is set, so its worktree is gone. Read-only from here. */
   | { kind: 'finished'; attempt: Attempt };
 
@@ -69,6 +72,9 @@ export function liveStateOf(task: Task, sessions: readonly SessionMeta[]): Live 
   }
   if (!attempt) return { kind: 'none' };
   if (attempt.outcome !== null) return { kind: 'finished', attempt };
+  // Tested for a number, like queued_at above: a payload that omits the
+  // field reads as "not parked", never as parked-at-undefined.
+  if (typeof attempt.parked_at === 'number') return { kind: 'parked', attempt };
 
   const session = attempt.session_id
     ? sessions.find((s) => s.id === attempt.session_id)
@@ -89,6 +95,8 @@ export function liveLabel(live: Live, t: TFn): string {
       return t('live.queued', { position: live.position });
     case 'stopped':
       return t('live.stopped');
+    case 'parked':
+      return t('live.parked');
     case 'finished': {
       const key = OUTCOME_KEY[live.attempt.outcome ?? ''];
       return key ? t(key) : t('live.ended');

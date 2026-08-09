@@ -520,6 +520,34 @@ fn run_script(
         .map_err(|e| format!("{e:#}"))
 }
 
+/* ---------------------------- parked ------------------------------- */
+
+/// Park an attempt: keep the branch, the checkpoints and the conversation,
+/// give back the worktree and the concurrency slot. Returns the branch
+/// name — the UI puts it on the clipboard.
+#[tauri::command]
+fn park_attempt(state: State<'_, AppState>, attempt_id: String) -> StdResult<String, String> {
+    state
+        .core()?
+        .park_attempt(&attempt_id)
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// Resume a parked attempt: worktree back at its old path on its branch,
+/// shelf checkpoint restored, terminal reopened with the old conversation.
+#[tauri::command]
+fn resume_attempt(
+    state: State<'_, AppState>,
+    attempt_id: String,
+    cols: u16,
+    rows: u16,
+) -> StdResult<core::Resumed, String> {
+    state
+        .core()?
+        .resume_attempt(&attempt_id, cols, rows)
+        .map_err(|e| format!("{e:#}"))
+}
+
 /* -------------------------- checkpoints ---------------------------- */
 
 #[tauri::command]
@@ -713,6 +741,8 @@ fn main() {
             checkpoint_now,
             list_checkpoints,
             restore_checkpoint,
+            park_attempt,
+            resume_attempt,
             cancel_queued,
             concurrency,
             set_concurrency,

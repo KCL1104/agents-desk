@@ -46,6 +46,8 @@ interface Props {
   onRunScript: (name: string) => void;
   /** A shell of your own in this attempt's worktree. */
   onOpenShell: () => void;
+  /** Park this attempt: ground given back, work and conversation kept. */
+  onPark: () => void;
 }
 
 type Pane = 'diff' | 'timeline';
@@ -96,6 +98,7 @@ export function AttemptInspector({
   onMerged,
   onRunScript,
   onOpenShell,
+  onPark,
 }: Props) {
   const t = useT();
   const [width, setWidth] = useState(storedWidth);
@@ -229,15 +232,18 @@ export function AttemptInspector({
     setCompareTo(0);
   }, [attempt.id]);
 
-  /** A turn in flight blocks restoring: the agent would keep believing in
-      work that is no longer there. The buttons stay, disabled, wearing the
-      reason — the merge-refusal pattern, ahead of the click. */
-  const restoreBlocked =
+  const parked = typeof attempt.parked_at === 'number';
+  /** A turn in flight blocks restoring — the agent would keep believing in
+      work that is no longer there — and so does parked: there is no ground
+      to restore onto. The buttons stay, disabled, wearing the right reason
+      — the merge-refusal pattern, ahead of the click. */
+  const midTurn =
     session !== null &&
     session.live &&
     session.status !== 'idle' &&
     session.status !== 'saved' &&
     session.status !== 'exited';
+  const restoreBlocked = parked ? t('park.restoreParked') : midTurn ? t('ckpt.blocked') : null;
 
   const doRestore = (n: number) => {
     void api
@@ -340,7 +346,7 @@ export function AttemptInspector({
       {/* The worktree's own terminals: a shell of yours, always — reviewing
           keeps demanding ad-hoc commands in *its* worktree, not yours — and
           the repo's ▶ scripts when it declares any. */}
-      {attempt.outcome === null && (
+      {attempt.outcome === null && !parked && (
         <div className="inspector-run" data-testid="run-scripts">
           <button
             className="chip mono"
@@ -387,6 +393,18 @@ export function AttemptInspector({
               </>
             )}
           </button>
+          {/* Park, offered exactly when restore is: a settled worktree.
+              Single click — the reversible act needs no arming. */}
+          {!midTurn && (
+            <button
+              className="chip mono"
+              data-testid="park-attempt"
+              title={t('board.parkHint')}
+              onClick={onPark}
+            >
+              ⏸ {t('board.park')}
+            </button>
+          )}
         </div>
       )}
 
@@ -1149,8 +1167,9 @@ function Timeline({
   checkpoints: Checkpoint[];
   /** Null when the attempt is finished — nothing left to restore into. */
   onRestore: ((n: number) => void) | null;
-  /** A turn is in flight: the buttons stay, disabled, wearing the reason. */
-  blocked: boolean;
+  /** Why restoring is off the table right now (mid-turn, parked), or
+      null when it is open. The buttons stay, disabled, wearing the reason. */
+  blocked: string | null;
 }) {
   const t = useT();
   const rows = useMemo(() => rollup(events), [events]);
@@ -1236,8 +1255,8 @@ function Timeline({
                 <button
                   className={`tl-restore${armed === i ? ' armed' : ''}`}
                   data-testid={`restore-${i}`}
-                  disabled={blocked}
-                  title={blocked ? t('ckpt.blocked') : t('ckpt.restoreHint')}
+                  disabled={blocked !== null}
+                  title={blocked ?? t('ckpt.restoreHint')}
                   onClick={() => {
                     if (armed === i) {
                       setArmed(null);

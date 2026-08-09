@@ -230,6 +230,38 @@ impl Worktrees {
         })
     }
 
+    /// Grow a worktree back onto an attempt's *existing* branch, at the
+    /// exact path it had before — the resume half of parking. The path is
+    /// not negotiable: `claude --continue` finds its conversation by cwd,
+    /// so a different directory is a lost conversation. A path something
+    /// else now occupies is refused plainly, never adopted.
+    pub fn attach(&self, hr: &HostRef, repo: &str, path: &str, branch: &str) -> Result<()> {
+        if hr.exists(path) {
+            return Err(anyhow!(
+                "{path} already exists — the resume needs its old path back, and \
+                 whatever is there now is not this attempt's worktree"
+            ));
+        }
+        if !branch_exists(hr, repo, branch) {
+            return Err(anyhow!("{repo} no longer has the branch `{branch}`"));
+        }
+        // A parked worktree was removed cleanly, but a crash can leave the
+        // administrative entry behind; prune so `add` does not refuse over
+        // a ghost.
+        git(hr, repo, &["worktree", "prune"])?;
+        git(hr, repo, &["worktree", "add", path, branch])
+            .with_context(|| format!("reattaching a worktree for `{branch}`"))?;
+        Ok(())
+    }
+
+    /// The diff between two committed states, straight from the object
+    /// store — no worktree required. This is how a parked attempt gets its
+    /// frozen diff: base against its last checkpoint, which holds tracked
+    /// and untracked work alike.
+    pub fn diff_range(&self, hr: &HostRef, git_cwd: &str, from: &str, to: &str) -> Result<String> {
+        git(hr, git_cwd, &["diff", from, to])
+    }
+
     /// Give the worktree back.
     ///
     /// The branch is deliberately left alone: it is what a merged attempt was

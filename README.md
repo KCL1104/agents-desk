@@ -201,6 +201,11 @@ The pieces that carry the triage loop, in roughly the order you meet them:
   touched, a pre-restore snapshot is kept first, and a turn in flight
   refuses with its reason. The diff can compare against any checkpoint.
   Refs die with the attempt; the frozen diff remains the record.
+- **Parking** — "not now" without "never": park a settled attempt to give
+  its worktree and concurrency slot back while the branch, checkpoints and
+  conversation all stay (the branch name lands on your clipboard). Resume
+  grows the worktree back at its old path, restores the parked work, and
+  `--continue` picks the conversation up where it left off.
 - **Branch picker** — the new-card dialog suggests the repo's branches
   sorted by recency instead of asking you to type one from memory.
 - **Worlds** — repos over WSL or SSH carry a host badge on their cards, and

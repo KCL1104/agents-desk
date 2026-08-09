@@ -1,6 +1,6 @@
 # 決策文件:Parked(暫停態——凍結 session、留分支、還地)
 
-> 狀態:**提案,待決** · 2026-08 · 來源:前端研究報告 Tier 3(CS pause / Conductor archive)
+> 狀態:**已定案,v1 已實作**(三片全落地;未決三項依建議拍板)· 2026-08 · 來源:前端研究報告 Tier 3(CS pause / Conductor archive)
 > 參照:Claude Squad pause(checkout 後釋放 worktree、留分支;機制為研究報告轉述)、Conductor archive(第三方轉述,未驗證)
 
 ## 問題
@@ -67,8 +67,8 @@ Park 後每個 attempt 的持有成本:一個分支 + checkpoint refs(objects �
 
 **驗收**:park 後槽被排隊者接走、分支與 refs 都在、worktree 目錄消失;resume 後路徑相同、`--continue` 接上原對話、暫停當下未 commit 的內容一字不差回來;回合進行中 park 被拒且理由完整;parked 卡片直接 discard 後凍結 diff 完整、refs 清空;路徑被佔時 resume 明確拒絕。
 
-## 未決(拍板後開工)
+## 未決 → 已拍板(v1 依建議採納)
 
-1. **park 時要不要順手殺掉 attempt shell?** worktree 要收走,shell 的 cwd 即將消失——建議:與終局同規則,一併關閉(現有 close_attempt 已有這段邏輯可搬)。
-2. **resume 失敗的中間態**(attach 成功、restore 失敗):建議 attach 成功即算 resume 成功,restore 失敗以 toast 報錯並留在可重試狀態——半途而廢要可見,不要回滾到假乾淨。
-3. **Conductor archive 的機制標註**:與 checkpoints 文件同規則——引用保持第三方轉述標註,不影響本設計。
+1. **attempt shell 隨 park 關閉**:與終局同規則——park 的 doomed 清單涵蓋 attempt session、shell 與所有 cwd 在 worktree 下的 session,shells 快取一併清。
+2. **resume 中間態**:attach 成功即算 resume 成功;restore 失敗經 `Resumed.restore_error` 上浮為 toast,worktree 誠實停在分支上,時間軸可重試——不回滾裝乾淨。
+3. **Conductor archive**:維持第三方轉述標註,未再驗證。

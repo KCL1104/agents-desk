@@ -200,6 +200,10 @@ pub struct StoredAttempt {
     /// survives for review.
     pub frozen_diff: Option<String>,
     pub created_at: u64,
+    /// Set while the attempt is parked: worktree and slot given back,
+    /// branch and checkpoints kept, resumable. Never set on a finished
+    /// attempt — parked is a pause, not a fifth outcome.
+    pub parked_at: Option<i64>,
 }
 
 /// One entry on an attempt's timeline: the prompt that started it, a tool the
@@ -270,7 +274,7 @@ impl Store {
     }
 
     /// The schema this build expects. Bump it and add a `V<n>` step below.
-    const SCHEMA_VERSION: i64 = 4;
+    const SCHEMA_VERSION: i64 = 5;
 
     /// Sessions and tabs: everything that existed before the schema was
     /// versioned.
@@ -367,6 +371,14 @@ impl Store {
         ALTER TABLE queued_starts ADD COLUMN mode TEXT NOT NULL DEFAULT '';
     "#;
 
+    /// Parked: the attempt gave its worktree and slot back but is not
+    /// finished — branch, checkpoints and conversation all stay. `NULL`
+    /// (every row written before this column) means not parked, which is
+    /// what every existing attempt is.
+    const V5: &'static str = r#"
+        ALTER TABLE attempts ADD COLUMN parked_at INTEGER;
+    "#;
+
     /// Bring the database up to `SCHEMA_VERSION`, one step at a time.
     ///
     /// The schema will keep moving from here, and the old best-effort
@@ -406,6 +418,7 @@ impl Store {
                 2 => Self::V2,
                 3 => Self::V3,
                 4 => Self::V4,
+                5 => Self::V5,
                 n => return Err(anyhow::anyhow!("no migration defined for version {n}")),
             };
             let tx = conn.transaction()?;
@@ -630,8 +643,8 @@ impl Store {
     pub fn insert_attempt(&self, a: &StoredAttempt) -> Result<()> {
         self.conn.lock().unwrap().execute(
             r#"INSERT INTO attempts
-                 (id, task_id, seq, agent, worktree_path, branch, base_sha, mode, outcome, frozen_diff, created_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"#,
+                 (id, task_id, seq, agent, worktree_path, branch, base_sha, mode, outcome, frozen_diff, created_at, parked_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"#,
             params![
                 a.id,
                 a.task_id,
@@ -644,6 +657,7 @@ impl Store {
                 a.outcome.map(|o| o.as_str()),
                 a.frozen_diff,
                 a.created_at as i64,
+                a.parked_at,
             ],
         )?;
         Ok(())
@@ -651,7 +665,7 @@ impl Store {
 
     pub fn list_attempts(&self, task_id: &str) -> Result<Vec<StoredAttempt>> {
         self.query_attempts(
-            r#"SELECT id, task_id, seq, agent, worktree_path, branch, base_sha, mode, outcome, frozen_diff, created_at
+            r#"SELECT id, task_id, seq, agent, worktree_path, branch, base_sha, mode, outcome, frozen_diff, created_at, parked_at
                FROM attempts WHERE task_id = ?1 ORDER BY seq"#,
             params![task_id],
         )
@@ -660,7 +674,7 @@ impl Store {
     pub fn get_attempt(&self, id: &str) -> Result<Option<StoredAttempt>> {
         Ok(self
             .query_attempts(
-                r#"SELECT id, task_id, seq, agent, worktree_path, branch, base_sha, mode, outcome, frozen_diff, created_at
+                r#"SELECT id, task_id, seq, agent, worktree_path, branch, base_sha, mode, outcome, frozen_diff, created_at, parked_at
                    FROM attempts WHERE id = ?1"#,
                 params![id],
             )?
@@ -670,7 +684,7 @@ impl Store {
     /// Attempts with no outcome yet — the ones still holding a worktree.
     pub fn open_attempts(&self) -> Result<Vec<StoredAttempt>> {
         self.query_attempts(
-            r#"SELECT id, task_id, seq, agent, worktree_path, branch, base_sha, mode, outcome, frozen_diff, created_at
+            r#"SELECT id, task_id, seq, agent, worktree_path, branch, base_sha, mode, outcome, frozen_diff, created_at, parked_at
                FROM attempts WHERE outcome IS NULL ORDER BY created_at"#,
             params![],
         )
@@ -699,6 +713,7 @@ impl Store {
                     outcome: outcome.as_deref().and_then(Outcome::parse),
                     frozen_diff: r.get(9)?,
                     created_at: r.get::<_, i64>(10)? as u64,
+                    parked_at: r.get(11)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -710,8 +725,23 @@ impl Store {
     /// its evidence lost.
     pub fn finish_attempt(&self, id: &str, outcome: Outcome, diff: Option<&str>) -> Result<()> {
         let n = self.conn.lock().unwrap().execute(
-            "UPDATE attempts SET outcome = ?2, frozen_diff = ?3 WHERE id = ?1",
+            // Finishing also un-parks: an outcome is terminal, and a row
+            // that read as both would make either flag a liar.
+            "UPDATE attempts SET outcome = ?2, frozen_diff = ?3, parked_at = NULL WHERE id = ?1",
             params![id, outcome.as_str(), diff],
+        )?;
+        if n == 0 {
+            return Err(anyhow::anyhow!("no such attempt: {id}"));
+        }
+        Ok(())
+    }
+
+    /// Park or resume: `Some(now)` gives the worktree and slot back,
+    /// `None` takes the attempt off the shelf.
+    pub fn set_parked(&self, id: &str, parked_at: Option<i64>) -> Result<()> {
+        let n = self.conn.lock().unwrap().execute(
+            "UPDATE attempts SET parked_at = ?2 WHERE id = ?1",
+            params![id, parked_at],
         )?;
         if n == 0 {
             return Err(anyhow::anyhow!("no such attempt: {id}"));
@@ -1238,6 +1268,7 @@ mod tests {
             outcome: None,
             frozen_diff: None,
             created_at: 1000 + seq as u64,
+            parked_at: None,
         }
     }
 

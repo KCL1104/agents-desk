@@ -511,3 +511,99 @@ fn restore_returns_the_worktree_to_the_snapshot_and_only_the_worktree() {
     assert_eq!(std::fs::read_to_string(wt.join("app.txt")).unwrap(), "one\n");
     assert!(!wt.join("keeper.txt").exists());
 }
+
+/* ----------------------------- parked ------------------------------ */
+
+/// The resume half of parking: the worktree grows back onto the existing
+/// branch at its exact old path, and the shelf checkpoint brings back the
+/// uncommitted work the removal could not keep.
+#[test]
+fn a_parked_worktree_reattaches_at_its_old_path_and_the_shelf_comes_down() {
+    let env = env();
+    let f = Fixture::new("parked");
+    let a = f
+        .trees
+        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
+        .unwrap();
+    let wt = Path::new(&a.path);
+
+    // Mid-flight work: an edit and a brand-new file, neither committed.
+    std::fs::write(wt.join("app.txt"), "half done\n").unwrap();
+    std::fs::write(wt.join("notes.txt"), "todo\n").unwrap();
+    let shelf = f
+        .trees
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .unwrap()
+        .unwrap();
+
+    // Park: the ground goes back, the branch and the refs stay.
+    f.trees.remove(&hr(&env), &f.repo_s(), &a.path).unwrap();
+    assert!(!wt.exists());
+    let refs = git(f.repo.as_path(), &["for-each-ref", "refs/agentdesk/checkpoints"]);
+    assert!(refs.contains("attempt-1"), "the shelf must survive the removal");
+
+    // Resume: same path, same branch, then the shelf restores the content.
+    f.trees.attach(&hr(&env), &f.repo_s(), &a.path, &a.branch).unwrap();
+    assert_eq!(git(wt, &["rev-parse", "--abbrev-ref", "HEAD"]), a.branch);
+    // Before the restore the new file is missing — the branch tip never had it.
+    assert!(!wt.join("notes.txt").exists());
+    f.trees.restore_checkpoint(&hr(&env), &a.path, &shelf.sha).unwrap();
+    assert_eq!(std::fs::read_to_string(wt.join("app.txt")).unwrap(), "half done\n");
+    assert_eq!(std::fs::read_to_string(wt.join("notes.txt")).unwrap(), "todo\n");
+}
+
+/// The path is not negotiable, and neither is honesty about it: a path
+/// something else occupies is refused, never adopted.
+#[test]
+fn attach_refuses_an_occupied_path_and_a_missing_branch() {
+    let env = env();
+    let f = Fixture::new("attach-refuse");
+    let a = f
+        .trees
+        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
+        .unwrap();
+    f.trees.remove(&hr(&env), &f.repo_s(), &a.path).unwrap();
+
+    std::fs::create_dir_all(&a.path).unwrap();
+    let err = f
+        .trees
+        .attach(&hr(&env), &f.repo_s(), &a.path, &a.branch)
+        .expect_err("an occupied path must be refused");
+    assert!(err.to_string().contains("already exists"), "unhelpful error: {err}");
+    std::fs::remove_dir_all(&a.path).unwrap();
+
+    let err = f
+        .trees
+        .attach(&hr(&env), &f.repo_s(), &a.path, "agentdesk/never-was")
+        .expect_err("a missing branch must be refused");
+    assert!(err.to_string().contains("no longer has the branch"), "unhelpful error: {err}");
+}
+
+/// A parked attempt's frozen diff: base against the shelf, straight from
+/// the object store — tracked and untracked work alike, no worktree needed.
+#[test]
+fn the_range_diff_reads_a_parked_attempts_work_without_a_worktree() {
+    let env = env();
+    let f = Fixture::new("range-diff");
+    let a = f
+        .trees
+        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
+        .unwrap();
+    let wt = Path::new(&a.path);
+    std::fs::write(wt.join("app.txt"), "changed\n").unwrap();
+    std::fs::write(wt.join("fresh.txt"), "new file\n").unwrap();
+    let shelf = f
+        .trees
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .unwrap()
+        .unwrap();
+    f.trees.remove(&hr(&env), &f.repo_s(), &a.path).unwrap();
+
+    let diff = f
+        .trees
+        .diff_range(&hr(&env), &f.repo_s(), &a.base_sha, &shelf.sha)
+        .unwrap();
+    assert!(diff.contains("+changed"));
+    assert!(diff.contains("fresh.txt"));
+    assert!(diff.contains("+new file"));
+}

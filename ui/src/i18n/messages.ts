@@ -219,6 +219,7 @@ export const en = {
   'live.notStarted': 'Not started',
   'live.queued': 'Queued · #{position}',
   'live.stopped': 'Not running',
+  'live.parked': 'Parked',
   'live.ended': 'Ended',
 
   /* ----------------------------- status ------------------------------- */
@@ -371,6 +372,13 @@ export const en = {
   'ckpt.tell': 'Tell the agent',
   'ckpt.note':
     'Note: this worktree was restored to an earlier checkpoint. Files may not match what you last wrote — re-read anything before editing it.',
+  'board.park': 'Park',
+  'board.parkHint':
+    'Give the worktree and the slot back — branch, checkpoints and conversation all stay',
+  'park.done': 'Parked. Branch {branch} is on the clipboard — the work and the conversation are keeping.',
+  'park.restoreFailed':
+    'Resumed, but the parked work did not come down cleanly: {err}. The worktree is on its branch — restore from the timeline.',
+  'park.restoreParked': 'Parked — resume first, then restore',
   'ckpt.compare': 'Against',
   'ckpt.compareBase': 'Base — the whole attempt',
   'ckpt.compareN': 'Checkpoint #{n} · {time}',
@@ -609,6 +617,7 @@ export const zhTW: Record<MessageKey, string> = {
   'live.notStarted': '尚未開始',
   'live.queued': '排隊中 · 第 {position} 個',
   'live.stopped': '未執行',
+  'live.parked': '已暫停',
   'live.ended': '已結束',
 
   /* ----------------------------- status ------------------------------- */
@@ -756,6 +765,12 @@ export const zhTW: Record<MessageKey, string> = {
   'ckpt.tell': '告訴 agent',
   'ckpt.note':
     '提醒：這個 worktree 已被還原到較早的檢查點。檔案內容可能與你上次寫入的不同 —— 編輯前請先重新讀取。',
+  'board.park': '暫停',
+  'board.parkHint': '把 worktree 與併發槽還回去 —— 分支、檢查點、對話都留著',
+  'park.done': '已暫停。分支 {branch} 已在剪貼簿 —— 工作與對話都留著。',
+  'park.restoreFailed':
+    '已繼續,但暫停時的工作沒有完整回來:{err}。worktree 已在分支上 —— 可從時間軸還原。',
+  'park.restoreParked': '已暫停 —— 先繼續,再還原',
   'ckpt.compare': '比較對象',
   'ckpt.compareBase': 'Base —— 整個 attempt',
   'ckpt.compareN': '檢查點 #{n} · {time}',

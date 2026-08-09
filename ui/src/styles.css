@@ -701,6 +701,14 @@ button.board-cta:hover {
 
 .board-card[data-live='session'] { border-left-color: var(--accent); }
 .board-card[data-live='stopped'] { border-left-color: color-mix(in srgb, var(--fg) 26%, var(--bg)); }
+/* Parked is asleep on purpose: quieter than stopped — a fainter edge and
+   a receded fill — but warmer than finished, because it is still alive.
+   No container opacity, ever: its 繼續 button is a full-strength action. */
+.board-card[data-live='parked'] {
+  background: var(--bg-2);
+  border-left-color: color-mix(in srgb, var(--fg) 14%, var(--bg));
+}
+.board-card[data-live='parked'] .board-card-state { color: var(--fg-faint); }
 /* Finished cards recede the same way closed overview cards do: by fill and
    edge. Their 再試一次 button is still a live action, so no container
    opacity — it would fade the button and the text below AA together. */
