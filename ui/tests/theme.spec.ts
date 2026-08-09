@@ -30,7 +30,8 @@ test.describe('themes', () => {
     // And back: the default preset is today's exact palette.
     await openTheming(page);
     await page.getByTestId('theme-ink').click();
-    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(19, 19, 22)');
+    // The ultramarine desk's warm near-black — #161214.
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(22, 18, 20)');
   });
 
   test('custom colors apply live, with the contrast floor shown', async ({ page }) => {

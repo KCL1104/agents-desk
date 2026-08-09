@@ -1,18 +1,22 @@
 :root {
-  --bg: #131316;
-  --bg-2: #17171b;
-  --bg-3: #1d1d22;
-  --line: #2a2a31;
-  --fg: #e7e7ea;
-  --fg-dim: #9a9aa4;
+  /* The ultramarine desk. A warm near-black ground — ink with blood in
+     it, not server-room gray — and one committed jewel: electric
+     ultramarine at full saturation, where the old periwinkle was any
+     editor theme's polite blue. Mirrored in theme.ts's ink preset. */
+  --bg: #161214;
+  --bg-2: #1b1719;
+  --bg-3: #221c1f;
+  --line: #322a2e;
+  --fg: #ebe6e3;
+  --fg-dim: #a69ba0;
   /* The quietest text that still clears 4.5:1 on every surface tier. For
      de-emphasis, use this — never opacity on a container, which drags the
      buttons and data inside it below AA with it. */
-  --fg-faint: #85858f;
-  --accent: #7aa2f7;
-  --ok: #79c08a;
+  --fg-faint: #90858b;
+  --accent: #6f7dff;
+  --ok: #7dc48d;
   --warn: #e0af68;
-  --err: #e06c75;
+  --err: #e26d72;
   --on-accent: #0d1017;
   /* The seventh meaning: merged — landed, kept, the loop's peak. Derived
      from the theme's own primaries rather than pinned to a hex, so every
@@ -50,7 +54,12 @@
      timeline, diff summary all breathe against the same left edge. */
   --gutter-x: 11px;
 
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  /* The machined edge: a one-pixel light catching the top of anything
+     that sits on the desk — cards, panes, dialogs. Material, not
+     decoration: every surface lifts the same way, from the same token. */
+  --bevel: inset 0 1px 0 color-mix(in srgb, var(--fg) 7%, transparent);
 }
 
 * { box-sizing: border-box; }
@@ -66,7 +75,10 @@
 html, body, #root { height: 100%; margin: 0; }
 
 body {
-  background: var(--bg);
+  /* Not a flat fill: the desk catches light at the top and falls away —
+     a two-percent ramp, felt more than seen, that keeps the ground from
+     reading as a dead void behind the surfaces. */
+  background: linear-gradient(180deg, color-mix(in srgb, var(--fg) 2.5%, var(--bg)), var(--bg) 42%) fixed var(--bg);
   color: var(--fg);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC",
     "Noto Sans TC", sans-serif;
@@ -214,7 +226,11 @@ textarea { resize: vertical; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; }
 /* Taller than the window, a modal scrolls itself — clipping the Close
    button off-screen is a trap, not a layout. */
-.modal { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-l); padding: 18px 20px; width: 520px; max-width: 92vw; max-height: 90vh; overflow-y: auto; }
+.modal {
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-l);
+  padding: 18px 20px; width: 520px; max-width: 92vw; max-height: 90vh; overflow-y: auto;
+  box-shadow: var(--bevel), 0 18px 50px rgba(0, 0, 0, 0.5);
+}
 .modal h2 { margin: 0 0 14px; font-size: var(--fs-heading); }
 /* Section heads inside a modal that holds more than one concern: the env
    panel is settings on top, diagnostics below, and the seam should show. */
@@ -348,7 +364,7 @@ textarea { resize: vertical; }
   display: flex; align-items: center; gap: 12px; max-width: 70vw;
   padding: 9px 12px; border-radius: var(--radius); font-size: var(--fs-data);
   background: var(--bg-3); border: 1px solid var(--line);
-  box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+  box-shadow: var(--bevel), 0 6px 24px rgba(0, 0, 0, 0.45);
 }
 .toast.error { border-color: color-mix(in srgb, var(--err) 35%, var(--bg-3)); color: var(--err); }
 .toast.ok { border-color: color-mix(in srgb, var(--ok) 30%, var(--bg-3)); color: var(--ok); }
@@ -449,6 +465,7 @@ textarea { resize: vertical; }
   position: relative;
   display: flex; flex-direction: column; gap: 7px;
   background: var(--bg-2); border: 1px solid var(--line);
+  box-shadow: var(--bevel);
   /* The status edge: the second axis of the board. Quiet at rest — color
      on the edge means something is HAPPENING (a turn, a blocked agent),
      never merely "a session exists". A resting color is a stripe, and a
@@ -539,6 +556,7 @@ textarea { resize: vertical; }
   min-width: 0; min-height: 0; overflow: hidden;
   border: 1px solid var(--line); border-radius: var(--radius-s);
   background: var(--bg);
+  box-shadow: var(--bevel);
 }
 .pane.focused { border-color: color-mix(in srgb, var(--accent) 25%, var(--line)); }
 .pane.drop-over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--bg)); }
@@ -670,6 +688,7 @@ button.board-cta:hover {
   position: relative;
   display: flex; flex-direction: column; gap: 6px;
   background: var(--bg-3); border: 1px solid var(--line);
+  box-shadow: var(--bevel);
   /* The status edge again — same signature as .ov-card, same rule:
      quiet at rest, color only while something happens. */
   /* impeccable-disable-next-line side-tab -- the 3px status edge is the product's state language */
@@ -683,7 +702,7 @@ button.board-cta:hover {
 .board-card.enterable:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
 .board-card.dragging { opacity: 0.4; }
 /* The card the drop would land in front of. */
-.board-card.insert-before { box-shadow: 0 -2px 0 var(--accent); }
+.board-card.insert-before { box-shadow: var(--bevel), 0 -2px 0 var(--accent); }
 
 /* ---------- motion vocabulary ----------
    The product's whole motion language, in one place. Two words:
@@ -706,9 +725,11 @@ button.board-cta:hover {
   background: color-mix(in srgb, var(--warn) 5%, var(--bg-2));
   animation: breathe 2.4s ease-in-out infinite;
 }
+/* box-shadow is not additive: the ring frames carry the bevel layer,
+   or the breath would strip the card's machined edge on every cycle. */
 @keyframes breathe {
-  0%, 100% { box-shadow: 0 0 0 0 transparent; }
-  50% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 28%, transparent); }
+  0%, 100% { box-shadow: var(--bevel), 0 0 0 0 transparent; }
+  50% { box-shadow: var(--bevel), 0 0 0 2px color-mix(in srgb, var(--warn) 28%, transparent); }
 }
 /* The shimmer rides the status edge only — the one stripe that already
    means "live" — so it costs no layout and shouts at nobody. */
@@ -721,7 +742,7 @@ button.board-cta:hover {
   .board-card.needs-you,
   .adhoc-chip.needs-you {
     animation: none;
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 28%, transparent);
+    box-shadow: var(--bevel), 0 0 0 2px color-mix(in srgb, var(--warn) 28%, transparent);
   }
   /* The honest static equivalent: mid-turn keeps its accent edge, it
      just stops glowing. */

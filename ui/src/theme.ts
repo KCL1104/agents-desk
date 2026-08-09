@@ -126,14 +126,18 @@ export function derive(p: Primaries): ThemeColors {
 
 export const PRESETS: Theme[] = [
   {
-    // The incumbent: every value exactly as the stylesheet has always
-    // shipped it. Choosing this theme is choosing today's app.
+    // The default: the ultramarine desk. A warm near-black ground — ink
+    // with blood in it, not server-room gray — and one committed jewel of
+    // an accent: electric ultramarine at full saturation, where the old
+    // periwinkle was any editor theme's polite blue. The semantic trio
+    // keeps its hues (they are load-bearing); --merged derives into a
+    // deeper violet-crimson on its own. Values mirror styles.css :root.
     id: 'ink',
     light: false,
     colors: {
-      bg: '#131316', bg2: '#17171b', bg3: '#1d1d22', line: '#2a2a31',
-      fg: '#e7e7ea', fgDim: '#9a9aa4', fgFaint: '#85858f',
-      accent: '#7aa2f7', ok: '#79c08a', warn: '#e0af68', err: '#e06c75',
+      bg: '#161214', bg2: '#1b1719', bg3: '#221c1f', line: '#322a2e',
+      fg: '#ebe6e3', fgDim: '#a69ba0', fgFaint: '#90858b',
+      accent: '#6f7dff', ok: '#7dc48d', warn: '#e0af68', err: '#e26d72',
     },
   },
   {
@@ -176,8 +180,8 @@ export const PRESETS: Theme[] = [
 ];
 
 export const DEFAULT_PRIMARIES: Primaries = {
-  bg: '#131316', fg: '#e7e7ea', accent: '#7aa2f7',
-  ok: '#79c08a', warn: '#e0af68', err: '#e06c75',
+  bg: '#161214', fg: '#ebe6e3', accent: '#6f7dff',
+  ok: '#7dc48d', warn: '#e0af68', err: '#e26d72',
 };
 
 /* ------------------------------------------------------------------ */
@@ -242,14 +246,16 @@ export function applyTheme(stored: StoredTheme): Theme {
 /* ------------------------------------------------------------------ */
 
 const ANSI_DARK = {
-  black: '#1d1d22', brightBlack: '#5a5a66',
-  red: '#e06c75', brightRed: '#ff7b86',
-  green: '#79c08a', brightGreen: '#8fd6a0',
+  // Warmed to sit on the ultramarine desk's ground; blue is the accent's
+  // own family so a TUI's links and headers speak the app's blue.
+  black: '#221c1f', brightBlack: '#5f5760',
+  red: '#e26d72', brightRed: '#ff7d84',
+  green: '#7dc48d', brightGreen: '#93daa3',
   yellow: '#e0af68', brightYellow: '#f0c584',
-  blue: '#7aa2f7', brightBlue: '#93b6ff',
+  blue: '#8a96ff', brightBlue: '#a4adff',
   magenta: '#bb9af7', brightMagenta: '#d0b4ff',
   cyan: '#56b6c2', brightCyan: '#6fd3e0',
-  white: '#c8c8d0', brightWhite: '#ffffff',
+  white: '#cdc6c8', brightWhite: '#ffffff',
 };
 
 /** On paper the classic ANSI brights wash out; every slot darkens. */

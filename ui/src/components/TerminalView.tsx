@@ -57,8 +57,10 @@ export function TerminalView({
     let disposed = false;
 
     const term = new Terminal({
+      // The product's own mono. main.tsx holds the mount until this face
+      // is loaded, so the cell grid is measured against the real metrics.
       fontFamily:
-        'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, "Courier New", monospace',
+        '"IBM Plex Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, "Courier New", monospace',
       fontSize: 13,
       // Exactly 1. Anything larger leaves a gap between rows, and a TUI drawn
       // from box characters visibly comes apart at every horizontal rule.
