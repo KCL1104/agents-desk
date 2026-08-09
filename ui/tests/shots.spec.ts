@@ -315,7 +315,7 @@ test.describe('README media', () => {
     test(`inspector with the editable diff (${locale})`, async ({ browser }) => {
       // Wide enough that the pane beside a 600px drawer stays over the
       // frame's ~88-col wrap threshold.
-      const page = await shotPage(browser, locale, { width: 1760, height: 1000 }, 1);
+      const page = await shotPage(browser, locale, { width: 1760, height: 780 }, 1);
       await seedWorld(page, locale, 'idle');
       await stageInspector(page, locale);
       await page.screenshot({ path: join(MEDIA, `inspector.${tag}.png`) });
@@ -324,7 +324,7 @@ test.describe('README media', () => {
 
     test(`terminal wall (${locale})`, async ({ browser }) => {
       // Two panes at ~88 cols each — the measured no-wrap floor.
-      const page = await shotPage(browser, locale, { width: 1500, height: 860 }, 1);
+      const page = await shotPage(browser, locale, { width: 1500, height: 640 }, 1);
       // Two ad-hoc sessions through the real dialog — selectors are
       // locale-free (classes, not names).
       for (const cwd of ['/Users/dev/agents-desk', '/Users/dev/webapp']) {
@@ -362,9 +362,9 @@ test.describe('README media', () => {
   test('demo recording (en)', async ({ browser }) => {
     mkdirSync(join(MEDIA, '.rec'), { recursive: true });
     const context = await browser.newContext({
-      viewport: { width: 1600, height: 900 },
+      viewport: { width: 1600, height: 820 },
       deviceScaleFactor: 1,
-      recordVideo: { dir: join(MEDIA, '.rec'), size: { width: 1600, height: 900 } },
+      recordVideo: { dir: join(MEDIA, '.rec'), size: { width: 1600, height: 820 } },
     });
     // 520px drawer keeps the pane beside it over the no-wrap floor.
     await context.addInitScript(localeScript('en', 520));
