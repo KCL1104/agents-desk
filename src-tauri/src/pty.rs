@@ -161,7 +161,28 @@ impl PtyRegistry {
             })
             .map_err(|e| anyhow!("openpty failed: {e}"))?;
 
-        let mut cmd = CommandBuilder::new(&exe);
+        // CreateProcessW runs the resolved path as the process image, and a
+        // batch file is not an image — only cmd.exe can host one. npm
+        // installs `claude` on Windows as exactly such a shim (claude.cmd),
+        // so the shim rides as cmd's argument instead.
+        let batch = exe
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
+        let mut cmd = if batch {
+            let comspec = env
+                .vars
+                .get("COMSPEC")
+                .or_else(|| env.vars.get("ComSpec"))
+                .map(String::as_str)
+                .unwrap_or("cmd.exe");
+            let mut c = CommandBuilder::new(comspec);
+            c.arg("/c");
+            c.arg(&exe);
+            c
+        } else {
+            CommandBuilder::new(&exe)
+        };
         for a in args {
             cmd.arg(a);
         }

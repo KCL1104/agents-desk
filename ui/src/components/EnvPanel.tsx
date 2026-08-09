@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { LOCALE_NAME, LOCALES, useI18n, type Locale } from '../i18n';
 import { api } from '../api';
 import { joinArgs, splitArgs } from '../profiles';
-import type { BootStatus, NotifyPrefs } from '../types';
+import { ENV_SOURCE_KEY, envSource, type BootStatus, type NotifyPrefs } from '../types';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 import {
@@ -62,10 +62,7 @@ export function EnvPanel({ boot, onClose }: { boot: BootStatus; onClose: () => v
         {/* The doctor half: what the agents actually inherit. */}
         <h3 className="modal-section">{t('env.diagnostics')}</h3>
         <Stat label={t('env.shell')} value={boot.shell ?? '—'} />
-        <Stat
-          label={t('env.source')}
-          value={boot.envResolved ? t('env.sourceLogin') : t('env.sourceProcess')}
-        />
+        <Stat label={t('env.source')} value={t(ENV_SOURCE_KEY[envSource(boot)])} />
         <Stat label={t('env.varCount')} value={String(boot.envVarCount ?? 0)} />
         <Stat label={t('env.claude')} value={boot.claude ?? t('env.claudeMissing')} />
         {/* Whether cards' agents can message each other. The feature is the
@@ -85,9 +82,7 @@ export function EnvPanel({ boot, onClose }: { boot: BootStatus; onClose: () => v
 
         <label>PATH</label>
         <div className="chips">
-          {(boot.path ?? '')
-            .split(':')
-            .filter(Boolean)
+          {splitPath(boot.path ?? '')
             .map((p, i) => (
               <span className="chip mono" key={`${p}-${i}`}>
                 {p}
@@ -468,6 +463,14 @@ function Theming() {
       )}
     </div>
   );
+}
+
+/** Windows' PATH separates with `;` and every entry carries a drive-letter
+ *  colon, so splitting on `:` would shred `C:\…` into confetti. The drive
+ *  pattern guards the one-entry case a `;` check alone would miss. */
+function splitPath(path: string): string[] {
+  const sep = path.includes(';') || /^[A-Za-z]:[\\/]/.test(path) ? ';' : ':';
+  return path.split(sep).filter(Boolean);
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

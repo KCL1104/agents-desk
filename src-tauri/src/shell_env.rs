@@ -65,12 +65,32 @@ impl ShellEnv {
     }
 
     /// Resolve an executable against the shell PATH rather than ours.
+    ///
+    /// `split_paths` speaks each platform's separator — a bare `':'` split
+    /// would shred every `C:\…` entry on Windows into drive-letter confetti,
+    /// which is exactly the bug that made a real machine's `claude`
+    /// undetectable. Windows also never stores a bare `claude`: the native
+    /// installer writes `claude.exe`, npm writes `claude.cmd`, so the name
+    /// is expanded through PATHEXT there.
     pub fn which(&self, exe: &str) -> Option<PathBuf> {
         let path = self.path()?;
-        for dir in path.split(':').filter(|d| !d.is_empty()) {
-            let candidate = PathBuf::from(dir).join(exe);
-            if is_executable(&candidate) {
-                return Some(candidate);
+        let pathext = if cfg!(windows) {
+            Some(
+                self.vars
+                    .get("PATHEXT")
+                    .map(String::as_str)
+                    .unwrap_or(".COM;.EXE;.BAT;.CMD"),
+            )
+        } else {
+            None
+        };
+        let names = candidate_names(exe, pathext);
+        for dir in std::env::split_paths(path).filter(|d| !d.as_os_str().is_empty()) {
+            for name in &names {
+                let candidate = dir.join(name);
+                if is_executable(&candidate) {
+                    return Some(candidate);
+                }
             }
         }
         None
@@ -86,6 +106,29 @@ impl ShellEnv {
             resolved: false,
         }
     }
+}
+
+/// The file names `exe` may resolve to on disk.
+///
+/// Without PATHEXT (Unix) the name is exactly itself. With it (Windows) the
+/// name is tried as given only when it already carries an extension
+/// (`wsl.exe`), then with each PATHEXT extension appended. The bare name is
+/// deliberately *not* a candidate there: CreateProcess cannot run an
+/// extensionless file, and npm drops exactly such a `claude` — a POSIX-shell
+/// shim for git-bash — next to `claude.cmd`; matching it first would resolve
+/// to a file only bash can execute.
+fn candidate_names(exe: &str, pathext: Option<&str>) -> Vec<String> {
+    let Some(exts) = pathext else {
+        return vec![exe.to_string()];
+    };
+    let mut names = Vec::new();
+    if std::path::Path::new(exe).extension().is_some() {
+        names.push(exe.to_string());
+    }
+    for ext in exts.split(';').filter(|e| !e.is_empty()) {
+        names.push(format!("{exe}{}", ext.to_ascii_lowercase()));
+    }
+    names
 }
 
 #[cfg(unix)]
@@ -107,6 +150,17 @@ fn is_executable(p: &std::path::Path) -> bool {
 /// `.zshrc`/`.bashrc` and `.zprofile`/`.bash_profile` are sourced — version
 /// managers commonly install into one or the other.
 pub async fn resolve() -> ShellEnv {
+    // Windows has no login-shell gap to bridge: a GUI process inherits the
+    // user's full environment (registry PATH included), and there is no
+    // rc-file shell to ask. The process env is the real answer there, not
+    // a degraded fallback — so it reads as resolved.
+    if cfg!(windows) {
+        let shell = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
+        let mut env = ShellEnv::from_process(shell);
+        env.resolved = true;
+        return env;
+    }
+
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
 
     match probe(&shell).await {
@@ -198,6 +252,58 @@ mod tests {
         let vars = parse_env0("GOOD=1\0nokv\0=novalue\0");
         assert_eq!(vars.len(), 1);
         assert!(vars.contains_key("GOOD"));
+    }
+
+    /// Unix knows exactly one spelling of a program's name.
+    #[test]
+    fn without_pathext_the_name_is_itself() {
+        assert_eq!(candidate_names("claude", None), vec!["claude"]);
+    }
+
+    /// Windows never stores a bare `claude` — the native installer writes
+    /// `claude.exe`, npm writes `claude.cmd` — and npm *also* drops an
+    /// extensionless `claude` (a POSIX-shell shim) in the same directory.
+    /// The bare name must not be a candidate, or that shim wins and the
+    /// probe resolves to a file only bash can run.
+    #[test]
+    fn pathext_expands_a_bare_name_and_skips_the_sh_shim() {
+        let names = candidate_names("claude", Some(".COM;.EXE;.BAT;.CMD"));
+        assert_eq!(names, vec!["claude.com", "claude.exe", "claude.bat", "claude.cmd"]);
+    }
+
+    /// A name that already carries its extension (`wsl.exe`) is complete,
+    /// and the exact spelling is tried first.
+    #[test]
+    fn a_name_with_an_extension_is_tried_as_given_first() {
+        let names = candidate_names("wsl.exe", Some(".COM;.EXE"));
+        assert_eq!(names[0], "wsl.exe");
+    }
+
+    /// The which() seam itself, on a real directory: the resolver must keep
+    /// finding Unix executables now that the PATH walk goes through
+    /// `split_paths` instead of a hand-rolled `':'` split.
+    #[cfg(unix)]
+    #[test]
+    fn which_still_resolves_against_a_real_unix_path() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("agentdesk-which-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("claude");
+        std::fs::write(&exe, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let mut env = ShellEnv {
+            vars: HashMap::new(),
+            shell: "test".into(),
+            resolved: true,
+        };
+        env.vars.insert(
+            "PATH".into(),
+            format!("/nonexistent:{}", dir.display()),
+        );
+        assert_eq!(env.which("claude"), Some(exe));
+        assert_eq!(env.which("missing"), None);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// Measured: launching AgentDesk from a terminal inside a Claude Code

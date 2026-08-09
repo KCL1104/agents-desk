@@ -6,7 +6,7 @@
 ## 現況
 
 - main 與工作分支 `claude/research-popular-tool-frontend-fax4cb` 同步至世界選擇器(worlds v1);此前已併:可編輯 diff、cost/context、終端規模化、README 視覺素材、群青墨桌識別、status edge 靜化。
-- 驗證基線:Playwright 287 passed + 8 skipped(沙箱跑法:`npx playwright test --config playwright.local.config.ts`,指向預裝 Chromium;skipped = SHOTS 素材 7 + legacy 1)、cargo 350 全綠(容器已裝 GTK/WebKit dev 套件)、`npm run build` 乾淨。
+- 驗證基線:Playwright 287 passed + 8 skipped(沙箱跑法:`npx playwright test --config playwright.local.config.ts`,指向預裝 Chromium;skipped = SHOTS 素材 7 + legacy 1)、cargo 374 全綠(容器已裝 GTK/WebKit dev 套件)、`npm run build` 乾淨。
 - 慣例備忘:i18n 是雙語 typed catalog,兩語相同的字串要進 `i18n.spec.ts` 的 SHARED 豁免;每個新 Tauri 指令都要在 `tests/mock-tauri.ts` 補 handler;凡動 agent 看得到的 git 狀態(index、worktree、分支)一律禁止。
 
 ## 第八批:收尾(狀態:**完成**)

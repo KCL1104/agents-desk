@@ -1,5 +1,5 @@
 import { useT } from '../i18n';
-import type { BootStatus } from '../types';
+import { ENV_SOURCE_KEY, envSource, type BootStatus } from '../types';
 import { Modal } from './Modal';
 
 interface Props {
@@ -36,9 +36,7 @@ export function WelcomeDialog({ boot, onNewTask, onNewSession, onClose }: Props)
       </div>
       <div className="stat">
         <span className="stat-label">{t('env.source')}</span>
-        <span className="stat-value mono">
-          {boot.envResolved ? t('env.sourceLogin') : t('env.sourceProcess')}
-        </span>
+        <span className="stat-value mono">{t(ENV_SOURCE_KEY[envSource(boot)])}</span>
       </div>
       {agents.map((a) => (
         <div className="stat" key={a.name} data-testid={`welcome-${a.name}`}>

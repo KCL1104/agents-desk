@@ -380,6 +380,7 @@ export function installMock(): void {
       ready: true,
       shell: '/bin/zsh',
       envResolved: true,
+      envSource: 'login',
       envVarCount: 42,
       path: '/usr/local/bin:/usr/bin:/bin',
       claude: '/usr/local/bin/claude',

@@ -336,6 +336,9 @@ export const en = {
   'env.shell': 'shell',
   'env.source': 'environment source',
   'env.sourceLogin': 'login shell ✓',
+  // Windows: the process env *is* the user's real environment — no shell
+  // probe happens and nothing is degraded.
+  'env.sourceSystem': 'system environment ✓',
   'env.sourceProcess': 'process env (degraded)',
   'env.varCount': 'variables',
   'env.claude': 'claude',
@@ -788,6 +791,7 @@ export const zhTW: Record<MessageKey, string> = {
   'env.shell': 'shell',
   'env.source': '環境來源',
   'env.sourceLogin': 'login shell ✓',
+  'env.sourceSystem': '系統環境 ✓',
   'env.sourceProcess': 'process env（降級）',
   'env.varCount': '變數數量',
   'env.claude': 'claude',

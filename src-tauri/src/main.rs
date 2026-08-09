@@ -108,6 +108,12 @@ fn boot_status(state: State<'_, AppState>) -> serde_json::Value {
             "ready": true,
             "shell": c.env.shell,
             "envResolved": c.env.resolved,
+            // Where the environment came from, for the diagnostics label:
+            // a probed login shell, Windows' own process environment (the
+            // real thing there, not a fallback), or the degraded fallback.
+            "envSource": if !c.env.resolved { "process" }
+                else if cfg!(windows) { "system" }
+                else { "login" },
             "envVarCount": c.env.vars.len(),
             "path": c.env.path(),
             "claude": c.env.which("claude").map(|p| p.to_string_lossy().to_string()),

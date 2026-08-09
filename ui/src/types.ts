@@ -1,5 +1,7 @@
 /** Mirrors src-tauri/src/core.rs. */
 
+import type { MessageKey } from './i18n/messages';
+
 export type Status =
   | 'saved'
   | 'starting'
@@ -22,6 +24,18 @@ export const NEEDS_YOU: readonly Status[] = [
   'waiting_input',
   'awaiting_trust',
 ];
+
+/** Where the agents' environment came from — the field first, with the
+    boolean kept as the fallback for cores that predate it. */
+export function envSource(boot: BootStatus): 'login' | 'system' | 'process' {
+  return boot.envSource ?? (boot.envResolved ? 'login' : 'process');
+}
+
+export const ENV_SOURCE_KEY: Record<'login' | 'system' | 'process', MessageKey> = {
+  login: 'env.sourceLogin',
+  system: 'env.sourceSystem',
+  process: 'env.sourceProcess',
+};
 
 export function needsYou(s: Status): boolean {
   return NEEDS_YOU.includes(s);
@@ -165,6 +179,9 @@ export interface BootStatus {
   error?: string | null;
   shell?: string;
   envResolved?: boolean;
+  /** Where the environment came from: a probed login shell, Windows' own
+      process environment (the real thing there), or the degraded fallback. */
+  envSource?: 'login' | 'system' | 'process';
   envVarCount?: number;
   path?: string | null;
   claude?: string | null;
