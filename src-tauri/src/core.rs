@@ -281,6 +281,23 @@ struct SetupWrap {
     root_path: String,
 }
 
+/// A file path the editable diff may touch: relative, and inside the
+/// worktree. The paths normally come from the diff itself, but they arrive
+/// through an invoke boundary — an absolute path or a `..` step would turn
+/// "edit this attempt's file" into "write anywhere on the host".
+fn ensure_worktree_relative(path: &str) -> Result<()> {
+    let escapes = path.is_empty()
+        || path.starts_with('/')
+        || path.starts_with('\\')
+        || path.split(['/', '\\']).any(|c| c == "..")
+        // `C:...` — a Windows drive-absolute path has no leading slash.
+        || path.as_bytes().get(1) == Some(&b':');
+    if escapes {
+        return Err(anyhow!("`{path}` is not a path inside the worktree"));
+    }
+    Ok(())
+}
+
 /// A port nothing is listening on right now, for `AGENTDESK_PORT`.
 ///
 /// Asked of the kernel rather than counted up from a base, so two attempts'
@@ -710,6 +727,16 @@ pub struct Core {
 pub struct Resumed {
     pub session_id: String,
     pub restore_error: Option<String>,
+}
+
+/// Both sides of one file in an attempt's diff, as full text — the data
+/// model an editable diff needs, where a patch string cannot be edited.
+/// `base` is `None` for a file the attempt created; `work` is `None` for
+/// one it deleted.
+#[derive(Debug, Clone, Serialize)]
+pub struct AttemptFile {
+    pub base: Option<String>,
+    pub work: Option<String>,
 }
 
 /// What a restore did: where the worktree now stands, and the automatic
@@ -2144,6 +2171,73 @@ impl Core {
         self.worktrees.diff(&hr, &wt_loc.path, &base)
     }
 
+    /// Both sides of one file in the diff, as full text — what the editable
+    /// diff edits. The base side comes from the attempt's recorded base
+    /// commit, the work side from the worktree as it stands. A finished or
+    /// parked attempt has no ground to read: its diff is a record.
+    pub fn attempt_file(&self, attempt_id: &str, path: &str) -> Result<AttemptFile> {
+        ensure_worktree_relative(path)?;
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        if attempt.outcome.is_some() {
+            return Err(anyhow!(
+                "this attempt is finished — its frozen diff is a record, not a document"
+            ));
+        }
+        if attempt.parked_at.is_some() {
+            return Err(anyhow!("this attempt is parked — there is no worktree to read"));
+        }
+        let (wt_loc, he) = self.located(&attempt.worktree_path)?;
+        let hr = he.hr(&self.env);
+        let base = self
+            .worktrees
+            .file_at_rev(&hr, &wt_loc.path, &attempt.base_sha, path)?;
+        let work = hr.read_to_string(&hr.join(&wt_loc.path, path))?;
+        Ok(AttemptFile { base, work })
+    }
+
+    /// Write one file in the attempt's worktree — a human's own edit, made
+    /// where the eye already is. This is not the app touching agent state:
+    /// a person can change any file in their repository with any editor,
+    /// and this only removes the navigation. Restore's two rules carry
+    /// over whole: settled only — re-verified here, because UI gating goes
+    /// stale — and the "tell the agent" note stays a human act, upstairs.
+    pub fn write_attempt_file(&self, attempt_id: &str, path: &str, contents: &str) -> Result<()> {
+        ensure_worktree_relative(path)?;
+        let attempt = self
+            .store
+            .get_attempt(attempt_id)?
+            .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
+        if attempt.outcome.is_some() {
+            return Err(anyhow!(
+                "this attempt is finished — its frozen diff is a record, not a document"
+            ));
+        }
+        if attempt.parked_at.is_some() {
+            return Err(anyhow!(
+                "this attempt is parked — resume it first, then edit"
+            ));
+        }
+        let busy = self.sessions.lock().unwrap().values().any(|s| {
+            s.attempt_id.as_deref() == Some(attempt_id)
+                && s.live
+                && !matches!(s.status, Status::Idle | Status::Saved | Status::Exited)
+        });
+        if busy {
+            return Err(anyhow!(
+                "the agent is mid-turn in this worktree. Saving now would change files under \
+                 its feet while it is still writing its own. Wait for the turn to end — or \
+                 close the session — and save then"
+            ));
+        }
+        let (wt_loc, he) = self.located(&attempt.worktree_path)?;
+        let hr = he.hr(&self.env);
+        hr.write_file(&hr.join(&wt_loc.path, path), contents)?;
+        Ok(())
+    }
+
     /// The first message for this card.
     ///
     /// With a worktree in hand it names the branch and base that were really
@@ -3188,6 +3282,27 @@ impl Core {
 mod tests {
     use super::*;
     use crate::store::StoredTab;
+
+    /// The invoke boundary check for the editable diff: everything a diff
+    /// legitimately names passes; everything that would leave the worktree
+    /// does not.
+    #[test]
+    fn worktree_relative_paths_are_told_from_escapes() {
+        for ok in ["src/app.ts", "README.md", "a/b/c.rs", "weird..name.txt", "深/中文.md"] {
+            assert!(ensure_worktree_relative(ok).is_ok(), "{ok} should pass");
+        }
+        for bad in [
+            "",
+            "/etc/passwd",
+            "\\server\\share",
+            "../outside.txt",
+            "src/../../outside.txt",
+            "src\\..\\..\\outside.txt",
+            "C:/Windows/system32",
+        ] {
+            assert!(ensure_worktree_relative(bad).is_err(), "{bad} should be refused");
+        }
+    }
 
     fn tab(id: &str, slots: Vec<&str>) -> StoredTab {
         StoredTab {

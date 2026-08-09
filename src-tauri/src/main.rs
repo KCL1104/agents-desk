@@ -531,6 +531,37 @@ fn probe_port(port: u16) -> bool {
     std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(400)).is_ok()
 }
 
+/* ------------------------- editable diff --------------------------- */
+
+/// Both sides of one file in an attempt's diff, as full text: the base
+/// commit's copy and the worktree's. What the in-place editor edits.
+#[tauri::command]
+fn attempt_file(
+    state: State<'_, AppState>,
+    attempt_id: String,
+    path: String,
+) -> StdResult<core::AttemptFile, String> {
+    state
+        .core()?
+        .attempt_file(&attempt_id, &path)
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// Write one file in the attempt's worktree — a human's own edit. Refused
+/// mid-turn in the core, not just hidden in the UI.
+#[tauri::command]
+fn write_attempt_file(
+    state: State<'_, AppState>,
+    attempt_id: String,
+    path: String,
+    contents: String,
+) -> StdResult<(), String> {
+    state
+        .core()?
+        .write_attempt_file(&attempt_id, &path, &contents)
+        .map_err(|e| format!("{e:#}"))
+}
+
 /* ---------------------------- parked ------------------------------- */
 
 /// Park an attempt: keep the branch, the checkpoints and the conversation,
@@ -755,6 +786,8 @@ fn main() {
             park_attempt,
             resume_attempt,
             probe_port,
+            attempt_file,
+            write_attempt_file,
             cancel_queued,
             concurrency,
             set_concurrency,

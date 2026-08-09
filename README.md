@@ -212,6 +212,14 @@ The pieces that carry the triage loop, in roughly the order you meet them:
   Opt into inspect (`docs/examples/agentdesk-inspect.js`) and Alt+click
   turns any element into "{component} — {file}:{line}", one click away
   from the agent's terminal.
+- **Editable diff** — the review loop's commonest ending is a one-line fix,
+  so the diff makes it: a ✎ on each file header opens the file in place
+  (CodeMirror unified merge view — base copy inline and read-only, the
+  worktree side editable). Saving is explicit (button or ⌘S), refreshes
+  the diff, expires the file's viewed mark, and offers a "tell the agent"
+  note naming the file. Mid-turn the entry hides *and* the core refuses —
+  the same two-layer guard restore has. Frozen and parked diffs are
+  records, never documents.
 - **Branch picker** — the new-card dialog suggests the repo's branches
   sorted by recency instead of asking you to type one from memory.
 - **Worlds** — repos over WSL or SSH carry a host badge on their cards, and

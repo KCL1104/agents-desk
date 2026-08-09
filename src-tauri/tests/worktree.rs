@@ -292,6 +292,55 @@ fn the_diff_covers_committed_and_uncommitted_work_together() {
     assert!(diff.contains("still in progress"), "uncommitted work missing:\n{diff}");
 }
 
+/* --------------------------- file at rev ---------------------------- */
+
+/// The base side of the editable diff: the file as the base commit holds
+/// it, byte for byte — the trailing newline included, because the merge
+/// view diffs this text against the worktree's and a shaved newline would
+/// invent a change on every file.
+#[test]
+fn a_files_text_at_the_base_comes_back_exactly() {
+    let env = env();
+    let f = Fixture::new("file-at-rev");
+    let a = f
+        .trees
+        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
+        .unwrap();
+    std::fs::write(Path::new(&a.path).join("app.txt"), "changed since\n").unwrap();
+
+    let base = f
+        .trees
+        .file_at_rev(&hr(&env), &a.path, &a.base_sha, "app.txt")
+        .unwrap();
+    assert_eq!(base.as_deref(), Some("one\n"), "must be the base copy, untrimmed");
+}
+
+/// A file the attempt created has no base side — that is `None`, not an
+/// error, because "new file" is the commonest thing an agent does.
+#[test]
+fn a_file_the_attempt_created_has_no_base_side() {
+    let env = env();
+    let f = Fixture::new("file-new");
+    let a = f
+        .trees
+        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
+        .unwrap();
+    std::fs::write(Path::new(&a.path).join("fresh.rs"), "fn main() {}\n").unwrap();
+
+    let base = f
+        .trees
+        .file_at_rev(&hr(&env), &a.path, &a.base_sha, "fresh.rs")
+        .unwrap();
+    assert!(base.is_none());
+
+    // A rev git has never heard of is a real failure, not a quiet None —
+    // that would dress corrupt state up as "new file".
+    assert!(f
+        .trees
+        .file_at_rev(&hr(&env), &a.path, "0000000000000000000000000000000000000000", "app.txt")
+        .is_err());
+}
+
 /* ---------------------------- preconditions ---------------------------- */
 
 #[test]

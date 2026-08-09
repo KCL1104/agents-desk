@@ -401,6 +401,21 @@ export const en = {
   'ckpt.compare': 'Against',
   'ckpt.compareBase': 'Base — the whole attempt',
   'ckpt.compareN': 'Checkpoint #{n} · {time}',
+  /* -------------------------- editable diff --------------------------- */
+  'edit.chip': 'edit',
+  'edit.hint': 'Edit this file in place — saving writes into the attempt’s worktree',
+  'edit.oneAtATime': 'One file at a time — save or close the open editor first',
+  'edit.save': 'Save',
+  'edit.saveHint': 'Write this text into {file} (⌘S)',
+  'edit.saved': 'Saved ✓',
+  'edit.close': 'Close',
+  'edit.note': 'I hand-edited {file} — re-read it before continuing.',
+  'edit.failed': 'Could not read {file}: {err}',
+  'edit.discardTitle': 'Unsaved changes',
+  'edit.discardBody': 'Close the editor and lose the edits to {file}?',
+  'edit.discard': 'Discard the edits',
+  'edit.keep': 'Keep editing',
+  'edit.compareLocked': 'Close the editor to switch the baseline',
 
   /* ----------------------------- profiles ------------------------------ */
   'profile.namePlaceholder': 'opus, quiet claude, …',
@@ -813,6 +828,21 @@ export const zhTW: Record<MessageKey, string> = {
   'ckpt.compare': '比較對象',
   'ckpt.compareBase': 'Base —— 整個 attempt',
   'ckpt.compareN': '檢查點 #{n} · {time}',
+  /* -------------------------- editable diff --------------------------- */
+  'edit.chip': '編輯',
+  'edit.hint': '就地編輯這個檔 —— 存檔會寫進 attempt 的 worktree',
+  'edit.oneAtATime': '一次編輯一個檔 —— 先存檔或關掉開著的編輯器',
+  'edit.save': '存檔',
+  'edit.saveHint': '把這份內容寫進 {file}（⌘S）',
+  'edit.saved': '已存檔 ✓',
+  'edit.close': '收合',
+  'edit.note': '我手動改了 {file}，重讀後再繼續。',
+  'edit.failed': '讀不到 {file}：{err}',
+  'edit.discardTitle': '有未存的變更',
+  'edit.discardBody': '關掉編輯器，放棄對 {file} 的修改？',
+  'edit.discard': '放棄修改',
+  'edit.keep': '繼續編輯',
+  'edit.compareLocked': '關掉編輯器才能切換比較基準',
 
   /* ----------------------------- profiles ------------------------------ */
   'profile.namePlaceholder': 'opus、安靜的 claude、…',

@@ -956,6 +956,60 @@ button.board-cta:hover {
 }
 .diff-viewed.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
 
+/* The in-place edit, offered file by file. Same quiet face as viewed;
+   on, it wears the accent — a file that is a draft right now. */
+.diff-edit {
+  padding: 0 6px; font-size: var(--fs-label); line-height: 1.5;
+  background: transparent; color: var(--fg-faint);
+  display: inline-flex; align-items: center;
+}
+.diff-edit.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.diff-edit:disabled { opacity: 0.4; cursor: default; }
+
+/* One diff file, opened for writing where it was being read. The block
+   lives inside the diff <pre>; everything here re-declares what pre
+   would otherwise impose. */
+.file-editor {
+  display: block; white-space: normal;
+  margin: 4px 0 10px; border: 1px solid var(--line);
+  border-radius: var(--radius-s); overflow: hidden;
+}
+.file-editor-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; background: var(--bg-2);
+  border-bottom: 1px solid var(--line);
+}
+.file-editor-bar .chip { padding: 2px 9px; font-size: var(--fs-data); cursor: pointer; }
+.file-editor .dialog-error { margin: 6px; white-space: normal; }
+/* The editor is a guest with its own scroll; the drawer must not grow a
+   second conscience about height. */
+.file-editor-cm { display: block; }
+.file-editor .cm-editor { max-height: 44vh; font-size: var(--fs-data); }
+.file-editor .cm-editor.cm-focused { outline: none; }
+.file-editor .cm-scroller {
+  overflow: auto;
+  font-family: var(--mono);
+  line-height: 1.5;
+}
+.file-editor .cm-gutters {
+  background: var(--bg-2); color: var(--fg-faint);
+  border-right: 1px solid var(--line);
+}
+.file-editor .cm-activeLine { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.file-editor .cm-selectionBackground,
+.file-editor .cm-editor ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.file-editor .cm-cursor { border-left-color: var(--fg); }
+/* The merge view's own vocabulary, recolored to the diff's: the base
+   copy inline in del red, the changed lines in add green — the same two
+   truths the diff has always worn. */
+.file-editor .cm-deletedChunk { background: color-mix(in srgb, var(--err) 12%, transparent); }
+.file-editor .cm-deletedChunk del { background: color-mix(in srgb, var(--err) 30%, transparent); text-decoration: none; }
+.file-editor .cm-changedLine { background: color-mix(in srgb, var(--ok) 9%, transparent); }
+.file-editor .cm-changedText { background: color-mix(in srgb, var(--ok) 26%, transparent); }
+.file-editor .cm-changeGutter { width: 3px; }
+.file-editor .cm-changedLineGutter { background: var(--ok); }
+.file-editor .cm-deletedLineGutter { background: var(--err); }
+
 /* The repo's run scripts: one chip per script, under the branch line. */
 .inspector-run {
   display: flex; flex-wrap: wrap; gap: 6px;

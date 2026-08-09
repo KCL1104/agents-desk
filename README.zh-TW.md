@@ -171,6 +171,12 @@ export PATH="$HOME/.cargo/bin:$PATH"
   repo 自掛 inspect script（`docs/examples/agentdesk-inspect.js`）後，
   Alt+click 任何元件就變成「{component} —— {file}:{line}」，一鍵送進 agent
   的終端機。
+- **可編輯 diff** —— review 迴圈最常見的收尾是一行小修，所以 diff 直接讓
+  你修：每個檔頭一顆 ✎，檔案就地展開成編輯器（CodeMirror unified merge
+  view —— base 那份唯讀嵌在行間，worktree 那側可改）。存檔是明確的動作
+  （按鈕或 ⌘S），存後 diff 重讀、該檔的「已看」失效，並遞上一則寫明檔名
+  的「告訴 agent」訊息。回合進行中入口會藏起來、core 也會拒絕 —— 與還原
+  同一套雙層守門。凍結與暫停的 diff 是紀錄，永遠不是文件。
 - **分支挑選** —— 開卡對話框直接建議 repo 的分支、按最近使用排序，而不是
   要你憑記憶打字。
 - **世界** —— 走 WSL 或 SSH 的 repo 會在卡片上戴 host 徽章；總覽在超過一個

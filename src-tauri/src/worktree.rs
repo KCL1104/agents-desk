@@ -433,6 +433,40 @@ impl Worktrees {
         Ok(out)
     }
 
+    /// One file's full text at a committed state — the read-only side of
+    /// the editable diff. `None` when the rev does not hold the path: that
+    /// is a file the attempt created, not a failure.
+    ///
+    /// Existence is asked with `ls-tree` (exit status stays clean, output
+    /// empty) rather than by matching `git show`'s error prose, which
+    /// changes with locale. The content read takes `hr.run` raw — never
+    /// the trimming `git()` helper — because file text is content and its
+    /// trailing newline is part of it, the same reason `read_to_string`
+    /// bypasses `run_ok`.
+    pub fn file_at_rev(
+        &self,
+        hr: &HostRef,
+        git_cwd: &str,
+        rev: &str,
+        path: &str,
+    ) -> Result<Option<String>> {
+        let listed = git(hr, git_cwd, &["ls-tree", rev, "--", path])?;
+        if listed.is_empty() {
+            return Ok(None);
+        }
+        let spec = format!("{rev}:{path}");
+        let out = hr
+            .run("git", &["show", &spec], Some(git_cwd))
+            .with_context(|| format!("running git show {spec}"))?;
+        if !out.status.success() {
+            return Err(anyhow!(
+                "git show {spec} failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+        Ok(Some(String::from_utf8_lossy(&out.stdout).into_owned()))
+    }
+
     /// The repository's branches, most recently committed first — the
     /// order a person thinks in ("the one I touched yesterday").
     /// Remote-tracking branches count too, stripped of their remote and

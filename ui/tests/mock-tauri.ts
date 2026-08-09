@@ -85,6 +85,9 @@ declare global {
       repos: Record<string, string[]>;
       /** What each attempt's worktree currently shows as changed. */
       diffs: Map<string, string>;
+      /** Per-file full text, both sides, keyed `<attemptId>:<path>` —
+          what attempt_file answers and write_attempt_file mutates. */
+      files: Map<string, { base: string | null; work: string | null }>;
       /** Each open attempt's numstat footprint, as the core measures it. */
       stats: Map<
         string,
@@ -184,6 +187,7 @@ export function installMock(): void {
     tasks: JSON.parse(sessionStorage.getItem('__mockTasks') ?? '[]') as MockTask[],
     repos: { '/Users/test/picked-repo': ['main', 'develop'] } as Record<string, string[]>,
     diffs: new Map<string, string>(),
+    files: new Map<string, { base: string | null; work: string | null }>(),
     stats: new Map<
       string,
       { files: number; adds: number; dels: number; ahead: number; behind: number; dirty: boolean }
@@ -881,6 +885,70 @@ export function installMock(): void {
       list.push(saved);
       mock.checkpoints.set(id, list);
       return { to_n: n, to_sha: target.sha, saved };
+    },
+
+    attempt_file: (args) => {
+      const attempt = mock.tasks
+        .flatMap((t) => t.attempts)
+        .find((a) => a.id === args.attemptId);
+      if (!attempt) throw new Error(`no such attempt: ${String(args.attemptId)}`);
+      // The core's refusals, mirrored: a record is not a document.
+      if (attempt.outcome !== null) {
+        throw new Error('this attempt is finished — its frozen diff is a record, not a document');
+      }
+      if (attempt.parked_at !== null) {
+        throw new Error('this attempt is parked — there is no worktree to read');
+      }
+      return (
+        mock.files.get(`${String(args.attemptId)}:${String(args.path)}`) ?? {
+          base: null,
+          work: null,
+        }
+      );
+    },
+
+    write_attempt_file: (args) => {
+      const attemptId = String(args.attemptId);
+      const path = String(args.path);
+      const contents = String(args.contents);
+      const attempt = mock.tasks
+        .flatMap((t) => t.attempts)
+        .find((a) => a.id === attemptId);
+      if (!attempt) throw new Error(`no such attempt: ${attemptId}`);
+      if (attempt.outcome !== null) {
+        throw new Error('this attempt is finished — its frozen diff is a record, not a document');
+      }
+      if (attempt.parked_at !== null) {
+        throw new Error('this attempt is parked — resume it first, then edit');
+      }
+      // The settled guard, verbatim in spirit: the UI hiding its button is
+      // not the guard, this refusal is.
+      const session = mock.sessions.find((s) => s.attempt_id === attemptId);
+      if (session && session.live && !['idle', 'saved', 'exited'].includes(session.status)) {
+        throw new Error(
+          'the agent is mid-turn in this worktree. Saving now would change files under ' +
+            'its feet while it is still writing its own. Wait for the turn to end — or ' +
+            'close the session — and save then',
+        );
+      }
+      const key = `${attemptId}:${path}`;
+      const entry = mock.files.get(key) ?? { base: null, work: null };
+      entry.work = contents;
+      mock.files.set(key, entry);
+      // The worktree changed, so the next diff read must say so: this
+      // file's section is re-rendered from its two sides, the rest of the
+      // seeded diff stays.
+      const section =
+        `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n` +
+        (entry.base ?? '').split('\n').filter((l) => l !== '').map((l) => `-${l}\n`).join('') +
+        contents.split('\n').filter((l) => l !== '').map((l) => `+${l}\n`).join('');
+      const current = mock.diffs.get(attemptId) ?? '';
+      const parts = current.split(/^(?=diff --git )/m).filter((p) => p !== '');
+      const at = parts.findIndex((p) => p.startsWith(`diff --git a/${path} `));
+      if (at >= 0) parts[at] = section;
+      else parts.push(section);
+      mock.diffs.set(attemptId, parts.join(''));
+      return null;
     },
 
     list_run_scripts: () => mock.runScripts,

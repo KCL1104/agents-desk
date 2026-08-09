@@ -1994,6 +1994,66 @@ fn deleting_a_card_gives_back_the_worktrees_its_attempts_were_holding() {
     );
 }
 
+/* --------------------------- editable diff ------------------------------ */
+
+/// The editable diff's two commands through the core: the mid-turn refusal
+/// happens here and not just in the UI, the settled write lands on disk
+/// exactly, and both sides of the file read back — base as committed, work
+/// as written.
+#[test]
+fn a_hand_edit_is_refused_mid_turn_and_lands_once_the_attempt_settles() {
+    let h = Harness::new("editfile");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.start(&task, "claude");
+
+    // Fresh from launch the session is live and unsettled: the core must
+    // refuse, whatever buttons the UI happens to be hiding.
+    let err = h
+        .core
+        .write_attempt_file(&a.attempt_id, "app.txt", "hand edit\n")
+        .expect_err("a mid-turn write must be refused");
+    assert!(err.to_string().contains("mid-turn"), "unhelpful: {err}");
+
+    // The turn ends; the same write is now a person editing their own repo.
+    h.hook(&a.session_id, "idle", serde_json::Value::Null);
+    assert!(
+        wait_for(Duration::from_secs(5), || h
+            .core
+            .write_attempt_file(&a.attempt_id, "app.txt", "hand edit\n")
+            .is_ok()),
+        "a settled write must go through"
+    );
+    assert_eq!(
+        std::fs::read_to_string(Path::new(&a.worktree_path).join("app.txt")).unwrap(),
+        "hand edit\n"
+    );
+
+    let file = h.core.attempt_file(&a.attempt_id, "app.txt").unwrap();
+    assert_eq!(file.base.as_deref(), Some("one\n"));
+    assert_eq!(file.work.as_deref(), Some("hand edit\n"));
+
+    // A file the attempt never touched at base, deleted in the worktree:
+    // work side None, not an error.
+    std::fs::remove_file(Path::new(&a.worktree_path).join("app.txt")).unwrap();
+    let gone = h.core.attempt_file(&a.attempt_id, "app.txt").unwrap();
+    assert!(gone.work.is_none());
+
+    // Paths that would leave the worktree stop at the invoke boundary.
+    assert!(h
+        .core
+        .write_attempt_file(&a.attempt_id, "../escape.txt", "x")
+        .is_err());
+
+    // Parked there is no ground to read or write; both commands say so.
+    h.core.park_attempt(&a.attempt_id).unwrap();
+    assert!(h.core.attempt_file(&a.attempt_id, "app.txt").is_err());
+    assert!(h
+        .core
+        .write_attempt_file(&a.attempt_id, "app.txt", "y")
+        .is_err());
+}
+
 /// The badge counts what is blocking a person, across the board and the
 /// ad-hoc sessions alike, because they are the same list underneath.
 #[test]

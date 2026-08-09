@@ -1,6 +1,6 @@
 # 決策文件:可編輯 diff(working-tree 側就地改)
 
-> 狀態:**提案,待決** · 2026-08 · 來源:前端研究報告 Tier 3(Crystal 的可編輯 diff)
+> 狀態:**已定案,v1 已實作** · 2026-08 · 來源:前端研究報告 Tier 3(Crystal 的可編輯 diff)
 > 參照:Crystal(機制為研究報告轉述:working-tree 側可編輯、歷史唯讀)
 
 ## 問題
@@ -71,8 +71,17 @@ review 迴圈最常見的收尾是一個小修:typo、多餘的 log、一行命�
 
 **驗收**:在 diff 裡把一行改掉、按存,worktree 檔案內容改變、diff 重新整理呈現新狀態、該檔 viewed 重置;agent 回合中存檔被拒(UI 藏鈕 + core 拒絕雙層);凍結與 parked 的 diff 沒有編輯入口;未存變更誤點取消有 dirty 確認;「告訴 agent」送出的訊息含檔名。
 
-## 未決(拍板後開工)
+## 未決 → 已拍板(v1 實作採用)
 
-1. **Merge view 版式**:unified(B 側可編輯)或 side-by-side?建議 **unified**——460px 抽屜放不下誠實的雙欄;抽屜可拉寬,但預設要能用。
-2. **@codemirror 依賴**:UI 第一個大依賴,需要明確點頭(否決 Monaco 與手刻的理由在上)。
+1. **Merge view 版式**:**unified**(B 側可編輯)——460px 抽屜放不下誠實的雙欄;抽屜可拉寬,但預設要能用。
+2. **@codemirror 依賴**:**點頭**。實際落地四包:`state`、`view`、`merge`,外加 **`commands`**——undo/history 是「否決手刻」理由的另一半(undo 堆疊是編輯器的本業),不裝它等於手刻了一半。bundle 實測 +290KB(gzip 後全 app 309KB),與預估相符。
 3. **Crystal 機制標註**:維持轉述標註。
+
+### 實作時的小修正(語義不變,記下以免下次重推)
+
+- **寫入後 core 不發事件**:存檔的回應本身就回到 UI 手上,diff 由 UI 當場重讀;卡片 stats 走既有輪詢,下一輪自己追上。多發一個沒人聽的事件是假勤勞。
+- **二進位檔的排除是免費的**:binary diff 沒有 `+++` 檔頭,section 本來就沒有檔名,編輯鈕的「要有檔名」條件自然涵蓋——不需要另外認 `Binary files`。
+- **比較基準 select 在編輯中鎖住**:切基準會 remount DiffPane,開著的編輯器(和未存的字)會被無聲拆掉——鎖住並在 title 說明,而不是安靜地毀掉。
+- **dirty 守門管每一扇門**:收合鈕、檔頭的 fold、編輯 chip 的再點,全部路由到同一個確認——所以 dirty 狀態住在抽屜層,不住在編輯器裡。
+- **路徑守門**:`attempt_file`/`write_attempt_file` 在 invoke 邊界拒絕絕對路徑與 `..`——路徑平常來自 diff 本身,但邊界不能假設呼叫者永遠是 diff。
+- **診斷編輯器內打字**:diff 的 j/k 鍵盤導航掛在外層 `<pre>`,編輯器的按鍵會冒泡上去——導航 handler 看到目標在 `.file-editor` 內就放行,否則第一個沒有母音的單字就會把編輯器打斷。

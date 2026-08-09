@@ -4,7 +4,9 @@ import type { Attempt, AttemptEvent, SessionMeta } from '../types';
 import { useT } from '../i18n';
 import { useArmed } from './armed';
 import { Icon } from './Icon';
+import { FileEditor } from './FileEditor';
 import { FriendlyError } from './FriendlyError';
+import { Modal } from './Modal';
 import { elapsed, STATUS_KEY } from '../sections';
 import { rollup } from '../timeline';
 import {
@@ -171,6 +173,14 @@ export function AttemptInspector({
   /** What the diff is measured against: 0 for the attempt's base — the
       whole story — or a checkpoint's n for "what happened since". */
   const [compareTo, setCompareTo] = useState(0);
+  /** The file open for editing in place — one at a time; a drawer with
+      three editors open is not an editor, it is an accident. */
+  const [editing, setEditing] = useState<string | null>(null);
+  /** Whether that editor holds unsaved text. Held here, not in the
+      editor, because closing arrives from more than one door — the Close
+      chip, the file's fold button — and every door must hit the guard. */
+  const [editorDirty, setEditorDirty] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
 
   // The repo's run scripts, for the ▶ buttons. Read once per attempt: the
   // config is a file in the repository, and it does not move underneath an
@@ -236,6 +246,9 @@ export function AttemptInspector({
     setPicked(null);
     setRestored(null);
     setCompareTo(0);
+    setEditing(null);
+    setEditorDirty(false);
+    setConfirmClose(false);
   }, [attempt.id]);
 
   const parked = typeof attempt.parked_at === 'number';
@@ -259,6 +272,25 @@ export function AttemptInspector({
         refresh();
       })
       .catch((e) => setRestored(String(e)));
+  };
+
+  /** Edit chips appear exactly where the park button does — an open,
+      settled, present worktree. The core re-verifies on save; this gate
+      only decides what is offered. */
+  const canEdit = attempt.outcome === null && !parked && !midTurn;
+
+  /** Every door out of the editor comes through here, so unsaved text is
+      never lost to a click that meant something milder. */
+  const closeEditor = () => {
+    if (editorDirty) setConfirmClose(true);
+    else setEditing(null);
+  };
+
+  /** The save landed: the diff on screen is stale, and so is the file's
+      viewed mark — it changed, "seen" has expired. */
+  const onEditSaved = (file: string) => {
+    refresh();
+    onViewed(viewed.filter((f) => f !== file));
   };
 
   return (
@@ -468,6 +500,10 @@ export function AttemptInspector({
                 id="ckpt-compare"
                 data-testid="ckpt-compare"
                 value={compareTo}
+                // Swapping the baseline remounts the pane, and the open
+                // editor with it — locked rather than quietly destructive.
+                disabled={editing !== null}
+                title={editing !== null ? t('edit.compareLocked') : undefined}
                 onChange={(e) => setCompareTo(Number(e.target.value) || 0)}
               >
                 <option value={0}>{t('ckpt.compareBase')}</option>
@@ -483,13 +519,54 @@ export function AttemptInspector({
               diff's files, and a different comparison is a different diff. */}
           <DiffPane
             key={`${attempt.id}@${compareTo}`}
+            attemptId={attempt.id}
             diff={diff}
             fetchedAt={fetchedAt}
             comments={comments}
             viewed={viewed}
             onViewed={onViewed}
             onPick={setPicked}
+            canEdit={canEdit}
+            editing={editing}
+            onEditOpen={setEditing}
+            onEditClose={closeEditor}
+            onEditDirty={setEditorDirty}
+            onEditSaved={onEditSaved}
+            // The pre-composed note, sent by a human hand — the same
+            // contract restore's banner keeps, and only where sending is
+            // measured.
+            editTell={
+              session?.live === true && session.agent === 'claude'
+                ? (file) => {
+                    void api.sendFollowup(session.id, t('edit.note', { file })).catch(() => {
+                      /* the terminal shows what actually arrived */
+                    });
+                  }
+                : null
+            }
           />
+          {confirmClose && editing !== null && (
+            <Modal onCancel={() => setConfirmClose(false)}>
+              <h2>{t('edit.discardTitle')}</h2>
+              <p className="small muted">{t('edit.discardBody', { file: editing })}</p>
+              <div className="row">
+                <button
+                  className="danger"
+                  data-testid="editor-discard"
+                  onClick={() => {
+                    setConfirmClose(false);
+                    setEditorDirty(false);
+                    setEditing(null);
+                  }}
+                >
+                  {t('edit.discard')}
+                </button>
+                <button data-testid="editor-keep" onClick={() => setConfirmClose(false)}>
+                  {t('edit.keep')}
+                </button>
+              </div>
+            </Modal>
+          )}
         </>
       ) : (
         <>
@@ -899,19 +976,42 @@ function groupByFile(lines: DiffLine[]): FileSection[] {
 const WRAP_KEY = 'agentdesk.diffWrap';
 
 function DiffPane({
+  attemptId,
   diff,
   fetchedAt,
   comments,
   viewed,
   onViewed,
   onPick,
+  canEdit,
+  editing,
+  onEditOpen,
+  onEditClose,
+  onEditDirty,
+  onEditSaved,
+  editTell,
 }: {
+  attemptId: string;
   diff: string | null;
   fetchedAt: number | null;
   comments: readonly ReviewComment[];
   viewed: string[];
   onViewed: (files: string[]) => void;
   onPick: (p: Picked) => void;
+  /** Whether edit chips are offered at all — the park button's family:
+      open, settled, not parked. Binary files never qualify: their diff
+      carries no `+++` header, so their section has no file name. */
+  canEdit: boolean;
+  /** The file whose section is an editor right now, or null. */
+  editing: string | null;
+  onEditOpen: (file: string) => void;
+  /** A request, not an act — the parent holds the dirty guard. */
+  onEditClose: () => void;
+  onEditDirty: (dirty: boolean) => void;
+  onEditSaved: (file: string) => void;
+  /** Send the tell-agent note for a file, or null when this session
+      cannot be told. */
+  editTell: ((file: string) => void) | null;
 }) {
   const t = useT();
   const lines = useMemo(() => (diff === null ? [] : parseDiff(diff)), [diff]);
@@ -970,6 +1070,10 @@ function DiffPane({
    * review textarea lives outside this element, so typing never collides.
    */
   const onDiffKeys = (e: React.KeyboardEvent<HTMLPreElement>) => {
+    // Keystrokes inside the in-place editor are text, not navigation —
+    // they bubble up here, and stealing j/k from someone typing would
+    // break the editor at its first vowelless word.
+    if ((e.target as HTMLElement).closest('.file-editor') !== null) return;
     const walk = (selector: string, forward: boolean) => {
       const stops = [...e.currentTarget.querySelectorAll<HTMLElement>(selector)];
       if (stops.length === 0) return;
@@ -1074,8 +1178,12 @@ function DiffPane({
               aria-expanded={opened}
               title={s.meta.join('\n') || undefined}
               data-testid={`diff-fold-${si}`}
+              // Folding the file that is being edited is a close in
+              // disguise — routed through the same dirty guard.
               onClick={() =>
-                setOpen((o) => ({ ...o, [fileKey(s, si)]: !opened }))
+                editing !== null && editing === s.file
+                  ? onEditClose()
+                  : setOpen((o) => ({ ...o, [fileKey(s, si)]: !opened }))
               }
             >
               <span className="diff-caret" aria-hidden="true">
@@ -1086,6 +1194,26 @@ function DiffPane({
             {s.adds > 0 && <span className="diff-count add">+{s.adds}</span>}
             {s.dels > 0 && <span className="diff-count del">−{s.dels}</span>}
             <span className="spacer" />
+            {canEdit && s.file !== null && (
+              <button
+                className={`diff-edit${editing === s.file ? ' on' : ''}`}
+                tabIndex={-1}
+                aria-pressed={editing === s.file}
+                data-testid={`diff-edit-${si}`}
+                disabled={editing !== null && editing !== s.file}
+                title={
+                  editing !== null && editing !== s.file
+                    ? t('edit.oneAtATime')
+                    : t('edit.hint')
+                }
+                aria-label={t('edit.hint')}
+                onClick={() =>
+                  editing === s.file ? onEditClose() : onEditOpen(s.file as string)
+                }
+              >
+                <Icon name="pencil" />
+              </button>
+            )}
             {s.file !== null && (
               <button
                 className={`diff-viewed${isViewed ? ' on' : ''}`}
@@ -1099,7 +1227,18 @@ function DiffPane({
               </button>
             )}
           </span>
-          {opened && s.lines.map(({ l, i }) => (
+          {editing !== null && editing === s.file ? (
+            <FileEditor
+              attemptId={attemptId}
+              file={s.file as string}
+              onTell={
+                editTell === null ? null : () => editTell(s.file as string)
+              }
+              onSaved={() => onEditSaved(s.file as string)}
+              onRequestClose={onEditClose}
+              onDirtyChange={onEditDirty}
+            />
+          ) : opened && s.lines.map(({ l, i }) => (
             <span
               key={i}
               className={[

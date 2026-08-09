@@ -65,6 +65,14 @@ export interface Restored {
   saved: Checkpoint | null;
 }
 
+/** Both sides of one file in an attempt's diff, as full text. Mirrors
+    core.rs AttemptFile: `base` null for a file the attempt created, `work`
+    null for one it deleted. */
+export interface AttemptFile {
+  base: string | null;
+  work: string | null;
+}
+
 /** What opening an attempt produced. Mirrors core.rs OpenedAttempt. */
 export interface OpenedAttempt {
   attempt_id: string;
@@ -208,6 +216,15 @@ export const api = {
   /** Whether anything answers on localhost at this port — the difference
       between "the dev server is up" and a blank iframe. */
   probePort: (port: number) => invoke<boolean>('probe_port', { port }),
+
+  /** One diff file as full text, both sides — what the in-place editor
+      edits, where a patch string could only be read. */
+  attemptFile: (attemptId: string, path: string) =>
+    invoke<AttemptFile>('attempt_file', { attemptId, path }),
+  /** Write one worktree file — a human's own edit. The core re-verifies
+      settled; the UI hiding the button is not the guard. */
+  writeAttemptFile: (attemptId: string, path: string, contents: string) =>
+    invoke<void>('write_attempt_file', { attemptId, path, contents }),
 
   /** Open a URL in the system browser. Through the opener plugin, because a
       plain anchor inside the webview would navigate the app itself. */
