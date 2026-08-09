@@ -45,7 +45,7 @@
 ### 3. 其後各項:先決策文件、拍板、再實作
 
 - **Parked 暫停態**:✅ **已實作**(`parked.md` 定案)。`parked_at`(migration V5)而非第五個 outcome;park = 拒絕 mid-turn → shelf checkpoint → doomed sessions(含 shell)→ 收地 → drain_queue,分支名進剪貼簿;resume = `attach`(原路徑長回既有分支,佔用即拒)→ shelf restore(失敗上浮 toast 不回滾)→ 既有 `reopen_attempt`;parked 的 diff 與終局凍結 diff 都走 checkpoint-對-base(`diff_range`,免 worktree);mock session id 改單調計數(park 移除列後不可重發)。
-- **內嵌 dev-server 預覽 + inspect mode**(VK):M6 已有 port 配發;iframe/webview 面板;inspect 抽 component/file/line 經 bracketed paste 入 TUI。
+- **內嵌 dev-server 預覽 + inspect mode**:決策文件已寫(`dev-preview.md`,提案待決)。關鍵查證:CSP 為 null(iframe 可行)、埠配發後**沒有記錄**(v1 第一片補 in-memory `preview_port`)、SSH 埠不可達(v1 拒絕,forward 留第二片)。核心判定:**否決注入式 inspect**(修改受測頁 bytes 違反不重繪哲學),採 repo opt-in 的 dev-only script + postMessage 契約,組句走既有 bracketed paste。
 - **可編輯 diff**(Crystal):working-tree 側可編輯,凍結 diff 唯讀;用 CodeMirror 6 merge view,不用 Monaco。
 - **Cost/context 顯示**:唯一誠實來源是 `~/.claude/projects/` transcript JSONL(hooks 無 token 資料,已驗證);不做即時 ticker;不內建價目表。
 - **終端規模化(先量測再決策)**:WebGL context 上限(每 pane 一個 `WebglAddon`,WebView 約 8–16 個)、SearchAddon、WebLinksAddon、scrollback 落盤。
