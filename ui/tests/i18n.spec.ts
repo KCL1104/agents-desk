@@ -111,6 +111,9 @@ test.describe('language', () => {
       // "shell" is the same kind of loanword: the chip says what the
       // terminal it opens will run, in the word both languages use.
       'inspector.shell',
+      // "worktree" is the catalogue's standing loanword (every zh sentence
+      // already says it in English); the chip-row label is the bare word.
+      'inspector.worktreeGroup',
     ]);
     const untranslated = (Object.keys(en) as Array<keyof typeof en>).filter(
       (k) => zhTW[k] === en[k] && !SHARED.has(k),

@@ -89,6 +89,8 @@ export function TabStrip({
               <input
                 className="tab-rename"
                 autoFocus
+                // 改名輸入框沒有旁邊的 label 可以指，借分頁自己的那句話。
+                aria-label={tr('tabs.rename', { name: t.name })}
                 defaultValue={t.name}
                 onBlur={(e) => {
                   onRename(t.id, e.target.value.trim() || t.name);
@@ -128,6 +130,7 @@ export function TabStrip({
                 {tabs.length > 1 && (
                   <button
                     className="tab-close"
+                    aria-label={tr('tabs.close')}
                     title={tr('tabs.close')}
                     onClick={(e) => {
                       e.stopPropagation();

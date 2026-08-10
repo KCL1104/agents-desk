@@ -102,14 +102,21 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
     if (typeof picked === 'string') setRepo(picked);
   };
 
-  const ready = title.trim() !== '' && prompt.trim() !== '' && repo.trim() !== '';
+  // 標題是選填:一張卡真正非有不可的是 repo 和「要做什麼」——
+  // prompt 的第一行本來就是多數人會打的標題。
+  const ready = prompt.trim() !== '' && repo.trim() !== '';
   const dirty = title.trim() !== '' || prompt.trim() !== '';
 
   const submit = () => {
     if (!ready || busy) return;
     setBusy(true);
+    // 標題留白的規則(確定性,同一份 prompt 永遠得到同一個標題):
+    // trim 後取第一個換行前的內容,再 trim、截到前 80 個字元。
+    // 打了字的標題永遠優先 —— 這裡只補空白,不改寫任何人寫的字。
+    const fallback = prompt.trim().split('\n')[0].trim().slice(0, 80);
+    const finalTitle = title.trim() !== '' ? title.trim() : fallback;
     void Promise.resolve(
-      onCreate(title.trim(), prompt.trim(), composePath(world, repo), branch.trim()),
+      onCreate(finalTitle, prompt.trim(), composePath(world, repo), branch.trim()),
     ).finally(() => setBusy(false));
   };
 
@@ -132,6 +139,7 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={submitOnEnter}
         />
+        <p className="muted small">{t('newTask.titleHint')}</p>
 
         <label>{t('newTask.promptLabel')}</label>
         <textarea
@@ -140,6 +148,13 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
           data-testid="task-prompt"
           placeholder={t('newTask.promptPlaceholder')}
           onChange={(e) => setPrompt(e.target.value)}
+          // 多行欄位裡 Enter 是換行,送出走 ⌘/Ctrl+Enter —— 與 review
+          // 撰寫框同一個慣例;一樣避開 IME 組字確認的那顆 Enter。
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
+              submit();
+            }
+          }}
         />
         <p className="muted small">{t('newTask.promptHint')}</p>
 
@@ -151,7 +166,8 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
             className="mono"
             value={repo}
             data-testid="task-repo"
-            placeholder={world === '' ? '/Users/you/code/your-repo' : '/home/you/project'}
+            // 平台中立的示例:app 在三個平台出貨,/Users 只對 macOS 誠實。
+            placeholder={world === '' ? '~/code/your-repo' : '/home/you/project'}
             onChange={(e) => setRepo(e.target.value)}
             onKeyDown={submitOnEnter}
           />

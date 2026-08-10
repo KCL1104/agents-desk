@@ -185,8 +185,10 @@ function Row({
           <span className="unseen-dot" data-testid={`unseen-${s.id}`} title={t('unseen.label')} />
         )}
         <span className="row-actions">
+          {/* aria-label 與 title 同一句：字形（✓ ↩ ✕）不是可朗讀的名字。 */}
           <button
             className="row-action"
+            aria-label={s.completed ? t('sidebar.unmarkDone') : t('sidebar.markDone')}
             title={s.completed ? t('sidebar.unmarkDone') : t('sidebar.markDone')}
             onClick={(e) => {
               e.stopPropagation();
@@ -197,6 +199,7 @@ function Row({
           </button>
           <button
             className="row-action"
+            aria-label={s.live ? t('sidebar.closeTerminal') : t('sidebar.removeFromList')}
             title={s.live ? t('sidebar.closeTerminal') : t('sidebar.removeFromList')}
             onClick={(e) => {
               e.stopPropagation();

@@ -78,6 +78,14 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
   // in rather than each language carrying markup.
   const [warnBefore, warnAfter] = t('attempt.unmeasuredHint').split('{agent}');
 
+  /** 對話框的主要動作,按鈕與 ⌘/Ctrl+Enter 共用同一份 —— 空 prompt 與
+   *  busy 的守門也只寫一次。 */
+  const start = () => {
+    if (prompt.trim() === '' || busy) return;
+    setBusy(true);
+    void Promise.resolve(onStart(agent, prompt, mode)).finally(() => setBusy(false));
+  };
+
   return (
     <Modal onCancel={onCancel} dirty={edited} wide>
         <h2>{t('attempt.startTitle', { title: task.title })}</h2>
@@ -147,6 +155,13 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
             setEdited(true);
             setPrompt(e.target.value);
           }}
+          // ⌘/Ctrl+Enter 送出 —— 與 review 撰寫框同一個慣例;避開 IME
+          // 組字確認的那顆 Enter。
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
+              start();
+            }
+          }}
         />
 
         {willSend ? (
@@ -179,10 +194,7 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
             className="primary"
             disabled={prompt.trim() === '' || busy}
             data-testid="attempt-start"
-            onClick={() => {
-              setBusy(true);
-              void Promise.resolve(onStart(agent, prompt, mode)).finally(() => setBusy(false));
-            }}
+            onClick={start}
           >
             {busy
               ? t('inspector.working')

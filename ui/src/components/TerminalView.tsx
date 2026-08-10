@@ -6,6 +6,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { api } from '../api';
 import { useT } from '../i18n';
+import { TERM_SR_EVENT, termSrEnabled } from '../termSr';
 import { xtermTheme } from '../theme';
 
 /** base64 -> bytes. The PTY sends bytes so xterm's own UTF-8 decoder can
@@ -50,6 +51,10 @@ export function TerminalView({
   const [finding, setFinding] = useState(false);
   const [noMatch, setNoMatch] = useState(false);
   const findInputRef = useRef<HTMLInputElement>(null);
+  /** 螢幕閱讀器模式（環境面板的開關）。放在 state 是因為它決定 WebGL
+   *  effect 的去留：開啟時 effect 重跑、丟掉 canvas、回到可朗讀的 DOM
+   *  繪製層 —— 事件到達的當下就切換，不等重新掛載。 */
+  const [srMode, setSrMode] = useState(termSrEnabled);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -68,6 +73,9 @@ export function TerminalView({
       cursorBlink: focused,
       allowProposedApi: true,
       scrollback: 10_000,
+      // 螢幕閱讀器模式：xterm 在 DOM 裡多維護一層可朗讀的文字。掛載
+      // 之後的切換走下面的 effect —— 這裡只是開機當下的值。
+      screenReaderMode: termSrEnabled(),
       // The terminal wears the app's theme: same background, same accent
       // for the cursor, an ANSI ramp picked for the theme's polarity.
       theme: xtermTheme(),
@@ -176,6 +184,19 @@ export function TerminalView({
     };
   }, [id]);
 
+  // 環境面板切了螢幕閱讀器模式：每個活著的終端機都聽這個廣播（主題
+  // 事件的先例），即時套用 —— xterm 支援執行中改 options。
+  useEffect(() => {
+    const onSr = () => setSrMode(termSrEnabled());
+    window.addEventListener(TERM_SR_EVENT, onSr);
+    return () => window.removeEventListener(TERM_SR_EVENT, onSr);
+  }, []);
+
+  useEffect(() => {
+    const term = termRef.current;
+    if (term) term.options.screenReaderMode = srMode;
+  }, [srMode]);
+
   // WebGL rides visibility. Measured (Chromium): creating a context never
   // fails — the browser silently kills the *oldest* once more than 16 are
   // alive. Every live session keeps its terminal mounted, so contexts held
@@ -183,9 +204,11 @@ export function TerminalView({
   // are bounded by the layout; hidden ones render nothing and need nothing.
   // A context lost anyway (WKWebView sheds them under memory pressure)
   // falls back to the DOM renderer and heals on the next reveal.
+  // 螢幕閱讀器模式下不載 WebGL：canvas 對朗讀器完全沉默，DOM 繪製器
+  // 才是可及性的那條路 —— srMode 進了依賴，切換當下就丟掉 context。
   useEffect(() => {
     const term = termRef.current;
-    if (!visible || !term) return;
+    if (!visible || srMode || !term) return;
     let webgl: WebglAddon | null = null;
     try {
       webgl = new WebglAddon();
@@ -207,7 +230,7 @@ export function TerminalView({
         /* already gone with the terminal */
       }
     };
-  }, [visible, id]);
+  }, [visible, id, srMode]);
 
   // Refit on reveal: xterm cannot measure a display:none element. Only the
   // focused pane takes the caret, so keystrokes cannot land in the wrong

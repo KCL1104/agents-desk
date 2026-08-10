@@ -45,6 +45,11 @@ interface Props {
   onDeleteTask: (id: string) => void;
   /** Say something through the app's aria-live channel. */
   onAnnounce: (text: string) => void;
+  /** App 請看板聚焦這張卡 —— 面板選了沒有終端機的卡、或剛建立的新卡。
+   *  聚焦落在卡片的門上(沒有門就落在卡片本身),完成後以 onFocusedTask
+   *  回報,讓 App 清掉請求。 */
+  focusTaskId?: string | null;
+  onFocusedTask?: () => void;
 }
 
 /**
@@ -75,23 +80,40 @@ export function Board({
   onNewTask,
   onDeleteTask,
   onAnnounce,
+  focusTaskId,
+  onFocusedTask,
 }: Props) {
   const t = useT();
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<{ col: Lifecycle; taskId: string | null } | null>(null);
   /** The card to refocus once a keyboard move re-renders it in its new
    *  column — reparenting unmounts the node, and focus must follow the
-   *  card, not fall on the floor. */
-  const refocus = useRef<string | null>(null);
+   *  card, not fall on the floor.
+   *  `door` 記的是落點:鍵盤搬移聚焦卡片本身(⌘←→ 要繼續落在群組上),
+   *  App 的請求則落在門上 —— Enter 進門、Tab 就到旁邊的按鈕。 */
+  const refocus = useRef<{ id: string; door: boolean } | null>(null);
+
+  // App 的聚焦請求與鍵盤搬移共用同一套 refocus 機制:剛建立的卡片是
+  // 廣播送達的,effect 掛在 tasks 上,卡片一進列表就會被接住。
+  useEffect(() => {
+    if (focusTaskId) refocus.current = { id: focusTaskId, door: true };
+  }, [focusTaskId]);
 
   useEffect(() => {
     if (!refocus.current) return;
-    const el = document.querySelector<HTMLElement>(`[data-testid="task-${refocus.current}"]`);
+    const el = document.querySelector<HTMLElement>(
+      `[data-testid="task-${refocus.current.id}"]`,
+    );
     if (el) {
-      el.focus();
+      const door = refocus.current.door
+        ? el.querySelector<HTMLElement>('.card-door')
+        : null;
+      (door ?? el).focus();
+      const wasRequest = refocus.current.door;
       refocus.current = null;
+      if (wasRequest) onFocusedTask?.();
     }
-  }, [tasks]);
+  }, [tasks, focusTaskId, onFocusedTask]);
 
   /**
    * The keyboard's way across the board. Dragging is the gesture; this is
@@ -103,7 +125,7 @@ export function Board({
     const next = COLUMNS[i + step];
     if (!next) return;
     onMove(task.id, next, columnOf(tasks, next).length);
-    refocus.current = task.id;
+    refocus.current = { id: task.id, door: false };
     onAnnounce(t('board.movedTo', { title: task.title, col: t(COLUMN_KEY[next]) }));
   };
 
@@ -115,7 +137,7 @@ export function Board({
     const to = at + step;
     if (at < 0 || to < 0 || to >= column.length) return;
     onMove(task.id, task.lifecycle, to);
-    refocus.current = task.id;
+    refocus.current = { id: task.id, door: false };
     onAnnounce(t('board.reordered', { title: task.title, n: to + 1 }));
   };
 
@@ -277,12 +299,14 @@ export function Board({
                   (col === 'backlog' ? (
                     // The empty backlog is a door, not a caption: the words
                     // already say "add a card", so the words are the button.
+                    // 整張桌子一張卡都沒有時(第一分鐘),說完整的一句 ——
+                    // 卡片是什麼、由什麼組成;桌子用過之後短標籤就夠了。
                     <button
                       className="board-empty board-cta muted small"
                       data-testid="board-cta"
                       onClick={onNewTask}
                     >
-                      {t('board.emptyBacklog')}
+                      {t(tasks.length === 0 ? 'board.emptyBacklogFirst' : 'board.emptyBacklog')}
                     </button>
                   ) : (
                     <p className="board-empty muted small">{t('board.emptyDrop')}</p>
@@ -484,7 +508,11 @@ function Card({
       // rest stay focusable themselves so ⌘←/→ still has somewhere to land.
       role="group"
       tabIndex={enter ? -1 : 0}
-      aria-label={`${task.title}${t('common.sep')}${waiting ? '⚠ ' : ''}${liveLabel(live, t)}${
+      // 「⚠」換成型錄裡的詞：朗讀器對圖形字元的處理不可靠，一個真的
+      // 詞才保證被唸到。權限模式也跟著唸（withMode）—— 徽章是啞的。
+      aria-label={`${task.title}${t('common.sep')}${
+        waiting ? `${t('board.needsYou')}${t('common.sep')}` : ''
+      }${liveLabel(live, t, true)}${
         unread ? `${t('common.sep')}${t('unseen.label')}` : ''
       }`}
       onKeyDown={(e) => {
@@ -675,6 +703,10 @@ function Card({
           (live.kind === 'session' &&
             (live.status === 'idle' || live.status === 'saved' || live.status === 'exited'))) && (
           <button
+            // 停止卡的五鍵降噪:九成的答案是 Resume。Park 退到瞄準才現身
+            //(hover 或鍵盤 focus 進卡)—— sidebar 列動作立下的同一條規矩,
+            // CSS 只在 data-live='stopped' 時生效,其他狀態照舊全現。
+            className="quiet"
             data-testid={`park-${task.id}`}
             title={t('board.parkHint')}
             onClick={stop(() => onPark(live.attempt.id))}
@@ -699,7 +731,13 @@ function Card({
             deliberate act, not a side effect of starting the second. */}
         {hasAttempt && (
           <button
-            className={live.kind === 'finished' ? 'primary' : ''}
+            // 勝利的卡片不邀請重做:merged 之後「再試一次」退成一般按鈕,
+            // primary 留給 discarded / superseded —— 還欠一次嘗試的結局。
+            // 'quiet' 只在停止卡上生效(見 styles.css):換 agent 不是
+            // 重啟後那一刻的答案,和 Park 一起退到瞄準才現身。
+            className={
+              live.kind === 'finished' && live.attempt.outcome !== 'merged' ? 'primary' : 'quiet'
+            }
             data-testid={`retry-${task.id}`}
             onClick={stop(onStart)}
             title={t('board.retryHint')}

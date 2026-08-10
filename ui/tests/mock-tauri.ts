@@ -181,7 +181,7 @@ export function installMock(): void {
     if (localStorage.getItem('agentdesk.coach') === null) {
       localStorage.setItem(
         'agentdesk.coach',
-        JSON.stringify({ attempt: true, mode: true, finish: true, terminal: true }),
+        JSON.stringify({ attempt: true, mode: true, finish: true, terminal: true, waiting: true }),
       );
     }
   } catch {
@@ -386,8 +386,12 @@ export function installMock(): void {
       claude: '/usr/local/bin/claude',
       claudeVersion: '2.1.226',
       // The detection report the first-run panel renders: claude found,
-      // the rest absent — the commonest real machine.
-      agents: [
+      // the rest absent — the commonest real machine. Seedable per test
+      // (__mockAgents),讀在呼叫當下 —— 「重新偵測」按下去重跑的就是
+      // 這一份,測試改了種子,重跑就看得到新發現。
+      agents: (JSON.parse(
+        sessionStorage.getItem('__mockAgents') ?? 'null',
+      ) as Array<{ name: string; path: string | null }> | null) ?? [
         { name: 'claude', path: '/usr/local/bin/claude' },
         { name: 'codex', path: null },
         { name: 'gemini', path: null },

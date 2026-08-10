@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import type * as React from 'react';
 import { useT } from '../i18n';
+import { chord } from '../platform';
 import { Icon } from './Icon';
 import { TerminalView } from './TerminalView';
 import {
@@ -141,9 +142,13 @@ export function Pane({
         </span>
         <span className="pane-agent mono">{session.agent}</span>
         {mode !== null && mode !== 'normal' && (
+          // role="img" + aria-label：pane 沒有整體的 aria-label 可以搭載
+          // 模式，徽章自己開口 —— 裡面的 Icon 是 aria-hidden 的圖形。
           <span
             className={`mode-badge ${mode}`}
             data-testid={`pane-mode-${session.id}`}
+            role="img"
+            aria-label={t(mode === 'yolo' ? 'mode.yolo' : 'mode.accept_edits')}
             title={t(mode === 'yolo' ? 'mode.yolo' : 'mode.accept_edits')}
           >
             <Icon name={mode === 'yolo' ? 'bolt' : 'pencil'} />
@@ -151,6 +156,7 @@ export function Pane({
         )}
         <button
           className="pane-zoom"
+          aria-label={zoomed ? t('pane.restore') : t('pane.zoom')}
           title={zoomed ? t('pane.restore') : t('pane.zoom')}
           data-testid={`zoom-${session.id}`}
           onClick={(e) => {
@@ -162,6 +168,7 @@ export function Pane({
         </button>
         <button
           className="pane-eject"
+          aria-label={t('pane.remove')}
           title={t('pane.remove')}
           data-testid={`eject-${session.id}`}
           onClick={(e) => {
@@ -234,6 +241,25 @@ export function EmptyGrid({
       {...handlers}
     >
       <p className="muted small">{t(anySessions ? 'pane.empty' : 'pane.emptyFirstRun')}</p>
+      {/* 認鍵卡:只在一個 session 都還沒開過時出現(同一個 anySessions
+          條件),之後永遠讓位給終端機 —— 不追蹤、不打勾。三行教「認得
+          出」的三顆鍵;和弦由 chord() 依平台組出,不說鍵盤上沒有的鍵。 */}
+      {!anySessions && (
+        <div className="term-keymap" data-testid="term-keymap">
+          <div className="term-keymap-row">
+            <kbd>{chord('1·2·3')}</kbd>
+            <span>{t('pane.keymap1')}</span>
+          </div>
+          <div className="term-keymap-row">
+            <kbd>{chord('K')}</kbd>
+            <span>{t('pane.keymap2')}</span>
+          </div>
+          <div className="term-keymap-row">
+            <kbd>{chord('/')}</kbd>
+            <span>{t('pane.keymap3')}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

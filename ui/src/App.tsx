@@ -112,6 +112,10 @@ export default function App() {
   const [showNewTask, setShowNewTask] = useState(false);
   /** The card whose start dialog is open. */
   const [starting, setStarting] = useState<Task | null>(null);
+  /** 請看板聚焦這張卡：面板選了一張沒有終端機的卡、或剛建立一張新卡
+   *  時,單純切到看板會把焦點留在 <body> 上 —— 鍵盤流就此斷掉。看板
+   *  聚焦完成後回報,這裡清掉請求。 */
+  const [boardFocusId, setBoardFocusId] = useState<string | null>(null);
   /** Kept beside the dialog rather than in the toast: a rejected repository
    *  is something to correct in the form, not to be told about elsewhere. */
   const [dialogError, setDialogError] = useState<string | null>(null);
@@ -446,6 +450,12 @@ export default function App() {
       const prev = lastStatus.current.get(s.id);
       lastStatus.current.set(s.id, s.status);
       if (prev === undefined || prev === s.status) continue;
+      // 第五個 coach:第一次有 session 從「在做」轉進「等你」,教琥珀
+      // 色呼吸是什麼、⌘/Ctrl+E 怎麼跳。只看「轉進」,不看「生下來就在
+      // 等」—— attempt 一開就停在信任門上,那一刻 attempt coach 正在說
+      // 同一件事,而且開始當下已有一張 coach 在場,一次一張的規則會讓
+      // 這張留到下一次真正的等待。
+      if (needsYou(s.status) && !needsYou(prev)) teach('waiting');
       if (ended(s.status) && !ended(prev) && prev !== 'saved') {
         // Read live only if that pane was on screen with the caret and the
         // window itself had the user's attention.
@@ -467,6 +477,17 @@ export default function App() {
       }
     }
     if (mark.length === 0 && clear.length === 0) return;
+    // 趁你不在時做完的那一刻，也讓朗讀器聽到：視覺鏈有 unseen 小點，
+    // 朗讀鏈在這裡補上。mark 本身已是「僅轉變」過濾後的結果 —— 重播
+    // 的 idle 清單進不了這裡，所以一個 session 變成未讀只說一次。
+    if (mark.length > 0) {
+      const titles = mark
+        .map((id) => sessions.find((s) => s.id === id)?.title)
+        .filter((title): title is string => title !== undefined);
+      if (titles.length > 0) {
+        say(t('announce.finished', { title: titles.join(t('common.listSep')) }));
+      }
+    }
     setUnseen((prev) => {
       const marks = mark.filter((id) => !prev.has(id));
       const clears = clear.filter((id) => prev.has(id));
@@ -476,7 +497,7 @@ export default function App() {
       for (const id of marks) next.add(id);
       return next;
     });
-  }, [sessions, view, focusedId, zoomed]);
+  }, [sessions, view, focusedId, zoomed, say, t, teach]);
 
   // The first-run panel, decided once at readiness. A desk already in use
   // has nothing to introduce — it gets the flag set silently instead, so
@@ -488,6 +509,10 @@ export default function App() {
       localStorage.setItem(WELCOME_KEY, '1');
       return;
     }
+    // 真正的第一次落在看板:第一件要做的事是開第一張卡,而卡片的門
+    // 在看板上。歡迎面板浮在它上面,所以每一條出口(關閉/建卡/臨時
+    // session)關上門時,腳下都已經是看板 —— 不是一面空的終端牆。
+    setView('board');
     setShowWelcome(true);
     // Deliberately not re-run on sessions/tasks: the question is what the
     // desk held at the moment it became ready, not after the first card.
@@ -688,6 +713,14 @@ export default function App() {
       } else if (!e.shiftKey && (e.key === '1' || e.key === '2' || e.key === '3')) {
         e.preventDefault();
         setView((['terminal', 'board', 'overview'] as const)[Number(e.key) - 1]);
+      } else if (e.shiftKey && (e.key === 'n' || e.key === 'N')) {
+        // 新卡片(⌘/Ctrl+Shift+N)。Shift 生在和弦裡,所以終端機內外同一
+        // 顆,不必像其他字母鍵那樣「在終端機裡再加 Shift」—— shellsOwn
+        // 判的正是無 Shift 的 Ctrl+字母。做的事與面板的 new-card 同一份。
+        e.preventDefault();
+        setDialogError(null);
+        setView('board');
+        setShowNewTask(true);
       } else if ((e.key === 'e' || e.key === 'E') && !shellsOwn) {
         // Cycles, not jumps: with three blocked agents, each press lands on
         // the next one, so answering them all is E, answer, E, answer, E.
@@ -757,16 +790,23 @@ export default function App() {
     async (title: string, prompt: string, repoPath: string, baseBranch: string) => {
       setDialogError(null);
       try {
-        await api.createTask(title, prompt, repoPath, baseBranch);
+        const id = await api.createTask(title, prompt, repoPath, baseBranch);
         rememberRepo(repoPath);
         setShowNewTask(false);
+        // 建立成功不是流程的終點,是下一步(開 attempt)的起點:切到看板、
+        // 焦點落在新卡片上 —— Enter 進門、Tab 就是 Start。對話框關掉時
+        // Modal 會把焦點還回原處,看板的聚焦在其後執行,所以會贏。
+        setView('board');
+        setBoardFocusId(id);
+        // 朗讀鏈的那一份確認:對焦點的跳動,AT 只聽得到落點,聽不到原因。
+        say(t('newTask.created', { title }));
       } catch (e) {
         // The core refuses a repository that is not one, or a base branch
         // that does not exist. Both are things to fix in this form.
         setDialogError(String(e));
       }
     },
-    [],
+    [say, t],
   );
 
   /**
@@ -912,6 +952,20 @@ export default function App() {
     void api.deleteTask(id).catch((e) => setError(t('error.deleteCard', { err: String(e) })));
   }, []);
 
+  /** 重跑一次開機偵測。歡迎面板的「重新偵測」與重開歡迎的兩條路共用
+   *  這一份 —— 偵測是真的:同一個 boot_status,回來什麼就畫什麼,
+   *  沒有假的轉圈。 */
+  const reprobe = useCallback(async () => {
+    setBoot(await api.bootStatus());
+  }, []);
+
+  /** 再看一次歡迎面板:偵測先重跑,welcomed 旗標與 coach 記錄一概
+   *  不動 —— 重看不是重來。 */
+  const reopenWelcome = useCallback(() => {
+    void reprobe();
+    setShowWelcome(true);
+  }, [reprobe]);
+
   /* ----------------------------- palette ---------------------------- */
 
   const paletteCtx: ActionCtx = useMemo(
@@ -975,9 +1029,12 @@ export default function App() {
         case 'open-keys':
           setShowKeys(true);
           break;
+        case 'show-welcome':
+          reopenWelcome();
+          break;
       }
     },
-    [sessions, focusedId, onOpen, inspectId, activeAttemptId],
+    [sessions, focusedId, onOpen, inspectId, activeAttemptId, reopenWelcome],
   );
 
   const paletteCancel = useCallback(() => {
@@ -1057,7 +1114,10 @@ export default function App() {
                   </span>
                 );
               })()}
-              <span className="muted mono">{active.cwd}</span>
+              {/* 會截斷的路徑就要有 title —— 與其他截斷路徑同一條規矩。 */}
+              <span className="muted mono" title={active.cwd}>
+                {active.cwd}
+              </span>
             </>
           ) : (
             <strong>
@@ -1156,6 +1216,8 @@ export default function App() {
             }}
             onDeleteTask={onDeleteTask}
             onAnnounce={say}
+            focusTaskId={boardFocusId}
+            onFocusedTask={() => setBoardFocusId(null)}
           />
         )}
 
@@ -1402,7 +1464,18 @@ export default function App() {
           onStart={(agent, prompt, mode) => void onStartAttempt(starting, agent, prompt, mode)}
         />
       )}
-      {showEnv && <EnvPanel boot={boot} onClose={() => setShowEnv(false)} />}
+      {showEnv && (
+        <EnvPanel
+          boot={boot}
+          onClose={() => setShowEnv(false)}
+          // 從環境面板走去歡迎面板:先關這扇門再開那扇 —— 兩層 modal
+          // 疊著,Esc 與焦點圈就說不清楚誰的了。
+          onShowWelcome={() => {
+            setShowEnv(false);
+            reopenWelcome();
+          }}
+        />
+      )}
       {showKeys && <ShortcutsDialog onClose={() => setShowKeys(false)} />}
       {showPalette && (
         <CommandPalette
@@ -1411,9 +1484,12 @@ export default function App() {
           unseen={unseen}
           ctx={paletteCtx}
           onOpenSession={paletteOpenSession}
-          onOpenBoard={() => {
+          onOpenBoard={(taskId) => {
             setShowPalette(false);
             setView('board');
+            // 只切視圖會把焦點留在 <body>:跳去 session 的路把焦點交給
+            // 終端機,跳去卡片的路也要把焦點交到卡片手上。
+            setBoardFocusId(taskId);
           }}
           onRun={paletteRun}
           onCancel={paletteCancel}
@@ -1422,6 +1498,7 @@ export default function App() {
       {showWelcome && (
         <WelcomeDialog
           boot={boot}
+          onReprobe={reprobe}
           onClose={() => {
             localStorage.setItem(WELCOME_KEY, '1');
             setShowWelcome(false);

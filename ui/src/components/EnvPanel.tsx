@@ -3,6 +3,7 @@ import { LOCALE_NAME, LOCALES, useI18n, type Locale } from '../i18n';
 import { api } from '../api';
 import { joinArgs, splitArgs } from '../profiles';
 import { ENV_SOURCE_KEY, envSource, type BootStatus, type NotifyPrefs } from '../types';
+import { setTermSr, termSrEnabled } from '../termSr';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 import {
@@ -27,7 +28,17 @@ import {
  * here for the same reason: a named way of launching an agent belongs to the
  * desk, not to any one card.
  */
-export function EnvPanel({ boot, onClose }: { boot: BootStatus; onClose: () => void }) {
+export function EnvPanel({
+  boot,
+  onClose,
+  onShowWelcome,
+}: {
+  boot: BootStatus;
+  onClose: () => void;
+  /** 重開歡迎面板(偵測重跑、旗標不動)。App 會先關掉這個面板 ——
+      兩層 modal 疊著,Esc 與焦點圈就說不清楚誰的了。 */
+  onShowWelcome: () => void;
+}) {
   const { t, locale, setLocale } = useI18n();
   /** Unsaved profile edits guard the backdrop, exactly as a typed prompt
    *  does — the panel mixes settings and diagnostics, and losing the one
@@ -57,6 +68,8 @@ export function EnvPanel({ boot, onClose }: { boot: BootStatus; onClose: () => v
 
         <Checkpoints />
 
+        <TermSr />
+
         <Profiles onDirty={setDirty} />
 
         {/* The doctor half: what the agents actually inherit. */}
@@ -79,6 +92,14 @@ export function EnvPanel({ boot, onClose }: { boot: BootStatus; onClose: () => v
         <Stat label={t('env.db')} value={boot.db ?? '—'} />
 
         {!boot.envResolved && <p className="muted small">{t('env.degraded')}</p>}
+
+        {/* 診斷的鄰居:歡迎面板本來就是這份偵測的第一次亮相 ——
+            這裡給一條回去重看的路,順便重跑偵測。 */}
+        <div className="row welcome-reopen-row">
+          <button data-testid="show-welcome" onClick={onShowWelcome}>
+            {t('welcome.reopen')}
+          </button>
+        </div>
 
         <label>PATH</label>
         <div className="chips">
@@ -203,6 +224,36 @@ function Checkpoints() {
           }}
         />
         {t('ckpt.onStop')}
+      </label>
+    </div>
+  );
+}
+
+/**
+ * 終端機的螢幕閱讀器模式：一個開關，點下即生效（偏好不是表單），
+ * 廣播給每個活著的終端機。提示文字直說代價 —— 換掉 GPU 繪製，換來
+ * 一個朗讀器讀得到的終端機（包含每一則授權提示）。預設關閉。
+ */
+function TermSr() {
+  const { t } = useI18n();
+  const [on, setOn] = useState(termSrEnabled);
+
+  return (
+    <div data-testid="term-sr">
+      <h3 className="modal-section">{t('env.termSr')}</h3>
+      <p className="muted small">{t('termSr.hint')}</p>
+      <label className="notify-row">
+        <input
+          type="checkbox"
+          checked={on}
+          data-testid="term-sr-toggle"
+          onChange={() => {
+            const next = !on;
+            setOn(next);
+            setTermSr(next);
+          }}
+        />
+        {t('termSr.toggle')}
       </label>
     </div>
   );

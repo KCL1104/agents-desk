@@ -1,5 +1,6 @@
 import { useT } from '../i18n';
 import { COACH_KEY, type CoachId } from '../coach';
+import { chord } from '../platform';
 
 /**
  * The card a coaching moment appears on.
@@ -15,7 +16,9 @@ export function CoachMark({ id, onDismiss }: { id: CoachId; onDismiss: () => voi
   return (
     <div className="coach" role="status" data-testid={`coach-${id}`}>
       <strong className="coach-title">{t(COACH_KEY[id].title)}</strong>
-      <p className="coach-body">{t(COACH_KEY[id].body)}</p>
+      {/* {jump} 依平台代入(⌘E / Ctrl+E)—— 沒有這個佔位符的內文
+          不受影響:t() 只替換模板裡真的存在的名字。 */}
+      <p className="coach-body">{t(COACH_KEY[id].body, { jump: chord('E') })}</p>
       <button data-testid="coach-dismiss" onClick={onDismiss}>
         {t('coach.gotIt')}
       </button>

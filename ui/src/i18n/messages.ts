@@ -42,8 +42,9 @@ export const en = {
 
   /* ---------------------------- new card ------------------------------ */
   'newTask.title': 'New card',
-  'newTask.titleLabel': 'Title',
+  'newTask.titleLabel': 'Title (optional)',
   'newTask.titlePlaceholder': 'Fix the blank login page on Safari',
+  'newTask.titleHint': 'Leave blank to use the prompt’s first line.',
   'newTask.promptLabel': 'What the agent should do',
   'newTask.promptPlaceholder':
     'The screen goes white after signing in, with no console errors. Reproduce it first, then fix it.',
@@ -55,6 +56,9 @@ export const en = {
   'newTask.base': 'Base branch',
   'newTask.baseHint':
     'Every attempt opens a worktree and a branch from here, and diffs against it.',
+  // 建卡成功後由 say() 唸出：對話框關掉、焦點跳到新卡片,這一刻只有
+  // 視覺鏈知道發生了什麼 —— 朗讀鏈在這裡補上確認。
+  'newTask.created': 'Card created: {title}',
 
   /* -------------------------- start attempt --------------------------- */
   'attempt.startTitle': 'Start attempt — {title}',
@@ -98,6 +102,11 @@ export const en = {
   'pane.remove': 'Remove from layout (the session keeps running)',
   'pane.empty': 'Drag a session in from the left, or just click one',
   'pane.emptyFirstRun': 'Press ＋ at the top left to open a session, or create a card on the board',
+  // 第一次的空終端牆:三行認鍵卡的說明文字。和弦本身由 chord() 依平台
+  // 組出來,所以型錄裡只放「這顆鍵做什麼」。
+  'pane.keymap1': 'terminal wall · board · overview',
+  'pane.keymap2': 'sessions, cards, and what waits on you',
+  'pane.keymap3': 'every shortcut',
 
   /* --------------------------- shortcuts ------------------------------ */
   'keys.title': 'Keyboard shortcuts',
@@ -107,7 +116,8 @@ export const en = {
   'keys.moveCard': 'Move the focused board card — a column sideways, a slot up or down',
   'keys.cycleTabs': 'Next / previous tab',
   'keys.inspector': 'Open or close the inspector',
-  'keys.diff': 'J/K walk the diff lines, N/P the files; Enter acts on the focused one',
+  'keys.diff':
+    'J/K walk the diff lines, N/P the files; on a file header E edits, V toggles viewed; Enter acts on the focused one',
   'keys.escape': 'Close the open dialog',
   'keys.sheet': 'This list',
   'keys.shellNote':
@@ -156,6 +166,9 @@ export const en = {
   /* ------------------------------ board ------------------------------- */
   'board.newCard': 'New card',
   'board.emptyBacklog': 'Press ＋ to add a card',
+  // 整張桌子還沒有任何卡片時,CTA 說完整的一句 —— 第一分鐘值得一個
+  // 完整的句子;桌子用過之後,短標籤就夠了。
+  'board.emptyBacklogFirst': 'Add the first card — a repo, a branch, something to do',
   'board.emptyDrop': 'Drag a card here',
   'board.adHoc': 'Ad-hoc sessions',
   'board.adHocEmpty': 'No ad-hoc sessions.',
@@ -175,7 +188,11 @@ export const en = {
   'board.deleteBusy': 'The agent is mid-turn — deleting would take its session and worktree. Wait for it to settle, or park first.',
   'board.movedTo': '{title} moved to {col}',
   'board.reordered': '{title} moved to position {n}',
+  // 螢幕閱讀器聽的「⚠」:卡片的 aria-label 用這個詞,不用圖形字元 ——
+  // 朗讀器對 ⚠ 的處理不可靠,一個真正的詞才保證被唸出來。
+  'board.needsYou': 'needs you',
   'announce.multi': '{count} sessions waiting on you: {titles}',
+  'announce.finished': '{title} finished a turn',
   'err.notDir': 'This path does not exist (or is not a folder). Check it, or pick the repository with Choose.',
   'err.notGitRepo': 'That folder is not a git repository. Point the card at the repo root — the folder holding .git.',
   'err.noBranch': 'The repository has no branch named "{branch}". Check the base branch name — it is often main or master.',
@@ -258,6 +275,12 @@ export const en = {
     'Finishing merges the branch back, opens a PR, or discards it. Either way the diff is frozen and kept.',
   'welcome.newCard': 'Create the first card',
   'welcome.newSession': 'Open an ad-hoc session',
+  'welcome.reopen': 'Show the welcome panel',
+  // 一台沒有任何 agent CLI 的機器:卡片照開,attempt 需要 CLI ——
+  // 界線照實說,不假裝一切就緒,也不擋人建卡。
+  'welcome.noAgents':
+    'No agent CLI found on this shell’s PATH. Cards can be made now; starting an attempt needs claude, codex, gemini or aider installed and signed in.',
+  'welcome.probeAgain': 'Probe again',
 
   /* ------------------------------ coach ------------------------------- */
   'coach.gotIt': 'Got it',
@@ -273,6 +296,11 @@ export const en = {
   'coach.terminal.title': 'This is a real terminal',
   'coach.terminal.body':
     'Ctrl+letter belongs to the shell in here — the app’s shortcuts take Shift (Ctrl+Shift+E), the way Ctrl+Shift+C copies. ⌘/Ctrl+Alt+←→ moves between panes; ⌘/Ctrl+1/2/3 switches views.',
+  'coach.waiting.title': 'An agent is waiting on you',
+  // {jump} 由 CoachMark 依平台代入(⌘E / Ctrl+E)—— coach 教的是
+  // 「現在就按這顆」,不是規則表。
+  'coach.waiting.body':
+    'The amber breath means a human is needed — nothing else on the desk pulses. {jump} jumps to whoever waits; the question in the pane is the CLI’s own, so answer it there.',
 
   /* ------------------------------ stats ------------------------------- */
   'stats.ahead': '{n} commits {branch} does not have yet',
@@ -314,6 +342,7 @@ export const en = {
   'next.rebase': '{branch} has moved on by {n} — rebase before merging',
   'next.finish': 'Clean and ahead — ready to merge into {branch} or open a PR',
   'inspector.runHint': 'Run `{name}` in this attempt’s worktree, in its own terminal',
+  'inspector.worktreeGroup': 'worktree',
   'inspector.shell': 'shell',
   'inspector.shellHint':
     'A shell of your own in this attempt’s worktree — run the tests, git log, anything, without typing into the agent’s terminal',
@@ -361,6 +390,12 @@ export const en = {
   'notify.test': 'Send a test notification',
   'notify.sent': 'Sent ✓',
 
+  /* ------------------- terminal screen reader mode --------------------- */
+  'env.termSr': 'Terminal screen reader mode',
+  'termSr.hint':
+    'Every terminal — permission prompts included — becomes readable to a screen reader. The trade is real: terminals give up GPU rendering for the accessible DOM renderer, so heavy output scrolls less smoothly.',
+  'termSr.toggle': 'Expose terminal text to screen readers',
+
   /* --------------------------- checkpoints ----------------------------- */
   'env.checkpoints': 'Checkpoints',
   'ckpt.hint':
@@ -381,7 +416,7 @@ export const en = {
   'board.park': 'Park',
   'board.parkHint':
     'Give the worktree and the slot back — branch, checkpoints and conversation all stay',
-  'park.done': 'Parked. Branch {branch} is on the clipboard — the work and the conversation are keeping.',
+  'park.done': 'Parked. Branch {branch} is on the clipboard — the work and the conversation are kept.',
   'park.restoreFailed':
     'Resumed, but the parked work did not come down cleanly: {err}. The worktree is on its branch — restore from the timeline.',
   'park.restoreParked': 'Parked — resume first, then restore',
@@ -505,8 +540,9 @@ export const zhTW: Record<MessageKey, string> = {
 
   /* ---------------------------- new card ------------------------------ */
   'newTask.title': '新卡片',
-  'newTask.titleLabel': '標題',
+  'newTask.titleLabel': '標題（選填）',
   'newTask.titlePlaceholder': '修好登入頁在 Safari 的白畫面',
+  'newTask.titleHint': '留白就用 prompt 的第一行。',
   'newTask.promptLabel': '要 agent 做什麼',
   'newTask.promptPlaceholder': '登入後畫面全白，console 沒有錯誤。先重現再修。',
   'newTask.promptHint':
@@ -516,6 +552,7 @@ export const zhTW: Record<MessageKey, string> = {
     '本機路徑；或 wsl://<distro>/<路徑> 指向 WSL 裡的 repo；或 ssh://<host>/<路徑> 指向 ~/.ssh/config 裡那台機器上的 repo。agent、git、worktree 全部在 repo 所在的地方執行。',
   'newTask.base': 'Base 分支',
   'newTask.baseHint': '每個 attempt 從這裡開一個 worktree 與分支，diff 也以這裡為基準。',
+  'newTask.created': '已建立卡片：「{title}」',
 
   /* -------------------------- start attempt --------------------------- */
   'attempt.startTitle': '開始 attempt — {title}',
@@ -559,6 +596,9 @@ export const zhTW: Record<MessageKey, string> = {
   'pane.remove': '從佈局移除（session 繼續執行）',
   'pane.empty': '把 session 從左側拖進來，或直接點選',
   'pane.emptyFirstRun': '按左上角的＋開新 session，或到看板開一張卡片',
+  'pane.keymap1': '終端牆 · 看板 · 總覽',
+  'pane.keymap2': 'session、卡片、和在等你的',
+  'pane.keymap3': '全部快捷鍵',
 
   /* --------------------------- shortcuts ------------------------------ */
   'keys.title': '鍵盤快捷鍵',
@@ -568,7 +608,7 @@ export const zhTW: Record<MessageKey, string> = {
   'keys.moveCard': '搬動聚焦的卡片 —— 左右換欄、上下換位',
   'keys.cycleTabs': '下一個 / 上一個分頁',
   'keys.inspector': '開關檢視器',
-  'keys.diff': 'J/K 逐行、N/P 逐檔；Enter 對聚焦處動作',
+  'keys.diff': 'J/K 逐行、N/P 逐檔；檔頭上 E 編輯、V 切換已看；Enter 對聚焦處動作',
   'keys.escape': '關閉打開的對話框',
   'keys.sheet': '這份清單',
   'keys.shellNote':
@@ -615,6 +655,7 @@ export const zhTW: Record<MessageKey, string> = {
   /* ------------------------------ board ------------------------------- */
   'board.newCard': '新增卡片',
   'board.emptyBacklog': '按 ＋ 新增卡片',
+  'board.emptyBacklogFirst': '開第一張卡 —— 一個 repo、一個分支、一件要做的事',
   'board.emptyDrop': '把卡片拖到這裡',
   'board.adHoc': '臨時 session',
   'board.adHocEmpty': '沒有臨時 session。',
@@ -634,7 +675,9 @@ export const zhTW: Record<MessageKey, string> = {
   'board.deleteBusy': 'agent 回合進行中 —— 刪除會連 session 和 worktree 一起帶走。等它安靜下來，或先暫停。',
   'board.movedTo': '{title} 移到 {col}',
   'board.reordered': '{title} 移到第 {n} 位',
+  'board.needsYou': '需要你',
   'announce.multi': '{count} 個 session 等你：{titles}',
+  'announce.finished': '「{title}」回合結束',
   'err.notDir': '這個路徑不存在（或不是資料夾）。檢查一下，或用「選擇」挑選 repository。',
   'err.notGitRepo': '這個資料夾不是 git repository。請指向 repo 根目錄 —— 也就是有 .git 的那層。',
   'err.noBranch': 'Repository 裡沒有叫「{branch}」的分支。確認 base 分支名稱 —— 通常是 main 或 master。',
@@ -715,6 +758,10 @@ export const zhTW: Record<MessageKey, string> = {
   'welcome.model3': '結束時把分支合回去、開 PR、或丟棄。無論哪種，diff 都會先凍結保留。',
   'welcome.newCard': '開第一張卡',
   'welcome.newSession': '先開個臨時 session',
+  'welcome.reopen': '顯示歡迎面板',
+  'welcome.noAgents':
+    '這個 shell 的 PATH 上找不到任何 agent CLI。卡片現在就能開；要開始 attempt，需要先安裝並登入 claude、codex、gemini 或 aider。',
+  'welcome.probeAgain': '重新偵測',
 
   /* ------------------------------ coach ------------------------------- */
   'coach.gotIt': '知道了',
@@ -730,6 +777,9 @@ export const zhTW: Record<MessageKey, string> = {
   'coach.terminal.title': '這是一個真終端',
   'coach.terminal.body':
     '在這裡 Ctrl+字母屬於 shell —— app 的快捷鍵要加 Shift（Ctrl+Shift+E），就像 Ctrl+Shift+C 是複製。⌘/Ctrl+Alt+←→ 在 pane 之間移動；⌘/Ctrl+1/2/3 切換視圖。',
+  'coach.waiting.title': '有 agent 在等你',
+  'coach.waiting.body':
+    '琥珀色的呼吸代表需要人 —— 桌上不會有別的東西這樣跳動。{jump} 跳到在等的那個；pane 裡的問題是 CLI 自己問的，就在裡面回答。',
 
   /* ------------------------------ stats ------------------------------- */
   'stats.ahead': '有 {n} 個 {branch} 還沒有的 commit',
@@ -769,6 +819,7 @@ export const zhTW: Record<MessageKey, string> = {
   'next.rebase': '{branch} 已前進 {n} 個 commit —— 合併前先 rebase',
   'next.finish': '乾淨且領先 —— 可以合併回 {branch} 或開 PR',
   'inspector.runHint': '在這個 attempt 的 worktree 裡執行 `{name}`，開自己的終端機',
+  'inspector.worktreeGroup': 'worktree',
   'inspector.shell': 'shell',
   'inspector.shellHint':
     '在這個 attempt 的 worktree 開一個你自己的 shell —— 跑測試、git log 都行，不用打進 agent 的終端機',
@@ -812,6 +863,12 @@ export const zhTW: Record<MessageKey, string> = {
   'notify.done': '完成一輪',
   'notify.test': '送一則測試通知',
   'notify.sent': '已送出 ✓',
+
+  /* ------------------- terminal screen reader mode --------------------- */
+  'env.termSr': '終端機螢幕閱讀器模式',
+  'termSr.hint':
+    '每個終端機 —— 包含授權提示 —— 都變得能被螢幕閱讀器讀到。代價照實說：終端機放棄 GPU 繪製、改用可存取的 DOM 繪製器，大量輸出時捲動會比較不順。',
+  'termSr.toggle': '把終端機文字提供給螢幕閱讀器',
 
   /* --------------------------- checkpoints ----------------------------- */
   'env.checkpoints': '檢查點',

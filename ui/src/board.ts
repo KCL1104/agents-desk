@@ -86,8 +86,12 @@ export function liveStateOf(task: Task, sessions: readonly SessionMeta[]): Live 
   return { kind: 'session', status: session.status, session, attempt };
 }
 
-/** What the card's light says. */
-export function liveLabel(live: Live, t: TFn): string {
+/** What the card's light says.
+ *
+ *  `withMode` 讓卡片的 aria-label 把權限模式一起唸出來：⚡ 徽章只是
+ *  圖示，對螢幕閱讀器是沉默的，而「這個 session 少問你」正是最不該
+ *  無聲的狀態。畫面上的狀態行不帶它 —— 徽章已經站在那裡了。 */
+export function liveLabel(live: Live, t: TFn, withMode = false): string {
   switch (live.kind) {
     case 'none':
       return t('live.notStarted');
@@ -101,8 +105,16 @@ export function liveLabel(live: Live, t: TFn): string {
       const key = OUTCOME_KEY[live.attempt.outcome ?? ''];
       return key ? t(key) : t('live.ended');
     }
-    case 'session':
-      return t(STATUS_KEY[live.status]);
+    case 'session': {
+      const label = t(STATUS_KEY[live.status]);
+      const mode = live.attempt.mode;
+      // 逐字比對而非 !== 'normal'：舊資料可能沒有 mode 欄位，undefined
+      // 不該被當成一種要朗讀的模式。
+      if (withMode && (mode === 'yolo' || mode === 'accept_edits')) {
+        return `${label}${t('common.sep')}${t(mode === 'yolo' ? 'mode.yolo' : 'mode.accept_edits')}`;
+      }
+      return label;
+    }
   }
 }
 

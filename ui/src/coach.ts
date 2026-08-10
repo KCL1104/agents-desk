@@ -5,12 +5,12 @@ import type { MessageKey } from './i18n';
  *
  * The app's sharpest first-touch surprises are all documented — in the
  * README. A person mid-task does not have the README open; they have the
- * screen. So each of these four moments teaches itself exactly once, at
+ * screen. So each of these five moments teaches itself exactly once, at
  * the moment it first happens, and never again: the same contract as
  * Claude Squad's `help_screens_seen` bitmask, stored as a seen-map so
  * adding a mark later never renumbers the ones already answered.
  */
-export type CoachId = 'attempt' | 'mode' | 'finish' | 'terminal';
+export type CoachId = 'attempt' | 'mode' | 'finish' | 'terminal' | 'waiting';
 
 export const COACH_KEY: Record<CoachId, { title: MessageKey; body: MessageKey }> = {
   /** The first Start: what a worktree is, and why the trust prompt comes. */
@@ -21,6 +21,9 @@ export const COACH_KEY: Record<CoachId, { title: MessageKey; body: MessageKey }>
   finish: { title: 'coach.finish.title', body: 'coach.finish.body' },
   /** The first time the caret lands in a pane: which keys leave it. */
   terminal: { title: 'coach.terminal.title', body: 'coach.terminal.body' },
+  /** 第一次有 session 從「在做」轉進「等你」:琥珀色的呼吸是什麼、
+   *  ⌘/Ctrl+E 跳過去、問題在 pane 裡回答。 */
+  waiting: { title: 'coach.waiting.title', body: 'coach.waiting.body' },
 };
 
 const KEY = 'agentdesk.coach';

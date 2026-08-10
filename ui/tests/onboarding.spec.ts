@@ -53,6 +53,92 @@ test.describe('the first-run panel', () => {
     await expect(page.locator('.modal')).toHaveCount(0);
   });
 
+  test('a true first run lands on the board, with the long first-card invitation', async ({
+    page,
+  }) => {
+    await bootFresh(page);
+    // 歡迎面板浮在看板上;關掉它,腳下已經是看板 —— 不是空的終端牆。
+    await page.locator('.modal button', { hasText: '關閉' }).click();
+    await expect(page.getByTestId('board')).toBeVisible();
+    // 整張桌子還沒有卡片:CTA 說完整的一句。
+    await expect(page.getByTestId('board-cta')).toHaveText(
+      '開第一張卡 —— 一個 repo、一個分支、一件要做的事',
+    );
+    // 有了第一張卡,短標籤就夠了(backlog 空著時才有 CTA 可看:把卡
+    // 拖去進行中就看得到)。
+  });
+
+  test('the mental model wears the board’s dot vocabulary, statically', async ({ page }) => {
+    await bootFresh(page);
+    const rail = page.locator('.welcome-rail-row');
+    await expect(rail).toHaveCount(3);
+    await expect(rail.nth(0)).toContainText('一張卡片');
+    await expect(rail.nth(2)).toContainText('合');
+  });
+
+  test('a machine with no agent CLI wears the amber banner, and probe again repaints', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem(
+        '__mockAgents',
+        JSON.stringify([
+          { name: 'claude', path: null },
+          { name: 'codex', path: null },
+          { name: 'gemini', path: null },
+          { name: 'aider', path: null },
+        ]),
+      );
+    });
+    await bootFresh(page);
+    await expect(page.getByTestId('welcome-no-agents')).toBeVisible();
+    await expect(page.getByTestId('welcome-no-agents')).toContainText(
+      '找不到任何 agent CLI',
+    );
+
+    // 裝好 CLI 之後按「重新偵測」:真的重跑 boot_status,發現就換新。
+    await page.evaluate(() =>
+      sessionStorage.setItem(
+        '__mockAgents',
+        JSON.stringify([
+          { name: 'claude', path: '/usr/local/bin/claude' },
+          { name: 'codex', path: null },
+          { name: 'gemini', path: null },
+          { name: 'aider', path: null },
+        ]),
+      ),
+    );
+    await page.getByTestId('welcome-reprobe').click();
+    await expect(page.getByTestId('welcome-claude')).toContainText('✓');
+    await expect(page.getByTestId('welcome-no-agents')).toHaveCount(0);
+  });
+
+  test('the welcome panel reopens from the environment panel, flags untouched', async ({
+    page,
+  }) => {
+    await page.addInitScript(installMock);
+    await page.goto('/');
+    await page.getByRole('button', { name: '環境' }).click();
+    await page.getByTestId('show-welcome').click();
+    await expect(page.locator('.modal')).toContainText('歡迎使用 AgentDesk');
+
+    // 重看不是重來:旗標留著,重新整理不會再被招呼。
+    await page.locator('.modal button', { hasText: '關閉' }).click();
+    const flag = await page.evaluate(() => localStorage.getItem('agentdesk.welcomed'));
+    expect(flag).toBe('1');
+    await page.reload();
+    await expect(page.locator('.modal')).toHaveCount(0);
+  });
+
+  test('the welcome panel reopens from the palette too', async ({ page }) => {
+    await page.addInitScript(installMock);
+    await page.goto('/');
+    await page.keyboard.press('ControlOrMeta+K');
+    await page.getByTestId('palette-input').fill('歡迎');
+    await page.getByTestId('pal-action-show-welcome').click();
+    await expect(page.locator('.modal')).toContainText('歡迎使用 AgentDesk');
+  });
+
   test('a desk already in use is never greeted', async ({ page }) => {
     // One surviving session marks the desk as lived-in. Seeded before the
     // mock installs, because it reads this storage as it loads.
@@ -136,6 +222,57 @@ test.describe('one-shot coaching', () => {
     await page.getByTestId('inspect-k1').click();
     await expect(page.getByTestId('coach-finish')).toBeVisible();
     await expect(page.getByTestId('coach-finish')).toContainText('最終');
+  });
+
+  test('the first turn into waiting teaches the amber breath, exactly once', async ({
+    page,
+  }) => {
+    await bootFresh(page);
+    await page.locator('.modal button', { hasText: '關閉' }).click();
+    await newCard(page, '修好登入');
+    await page.locator('[data-testid="task-k1"] button.primary').click();
+    await page.getByTestId('attempt-start').click();
+
+    // 出生就停在信任門上教的是 attempt(worktree 與信任門是同一課);
+    // 等待的課留給真正「從在做轉進等你」的那一刻。
+    await expect(page.getByTestId('coach-attempt')).toBeVisible();
+    await expect(page.getByTestId('coach-waiting')).toHaveCount(0);
+    await page.getByTestId('coach-dismiss').click();
+
+    await page.evaluate(() => window.__mock.report('s1', 'running'));
+    await page.evaluate(() => window.__mock.report('s1', 'waiting_permission'));
+    await expect(page.getByTestId('coach-waiting')).toBeVisible();
+    await expect(page.getByTestId('coach-waiting')).toContainText('琥珀');
+    await page.getByTestId('coach-dismiss').click();
+
+    // 第二次等待沒有課可教。
+    await page.evaluate(() => window.__mock.report('s1', 'running'));
+    await page.evaluate(() => window.__mock.report('s1', 'waiting_input'));
+    await expect(page.locator('.dot.waiting_input').first()).toBeVisible();
+    await expect(page.getByTestId('coach-waiting')).toHaveCount(0);
+  });
+});
+
+test.describe('the first-run terminal wall', () => {
+  test('the empty wall teaches three keys, and retires once any session exists', async ({
+    page,
+  }) => {
+    await bootFresh(page);
+    await page.locator('.modal button', { hasText: '關閉' }).click();
+    // 第一次落在看板;去看終端牆。
+    await page.keyboard.press('ControlOrMeta+1');
+    await expect(page.getByTestId('term-keymap')).toBeVisible();
+    await expect(page.getByTestId('term-keymap')).toContainText('終端牆 · 看板 · 總覽');
+    await expect(page.getByTestId('term-keymap')).toContainText('全部快捷鍵');
+
+    // 開過 session 之後讓位:退出佈局後的空網格說的是老話,不再上課。
+    await page.locator('.sidebar-head button.icon').click();
+    await page.locator('.modal input.mono').first().fill('/Users/test/repo-one');
+    await page.locator('.modal button.primary').click();
+    await expect(page.locator('.pane:visible')).toHaveCount(1);
+    await page.getByTestId('eject-s1').click();
+    await expect(page.getByTestId('empty-grid')).toBeVisible();
+    await expect(page.getByTestId('term-keymap')).toHaveCount(0);
   });
 });
 

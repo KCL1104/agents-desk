@@ -69,7 +69,8 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
           <input
             className="mono"
             value={cwd}
-            placeholder={world === '' ? '/Users/you/code/your-repo' : '/home/you/project'}
+            // 平台中立的示例:app 在三個平台出貨,/Users 只對 macOS 誠實。
+            placeholder={world === '' ? '~/code/your-repo' : '/home/you/project'}
             onChange={(e) => setCwd(e.target.value)}
             onKeyDown={submitOnEnter}
           />

@@ -20,7 +20,8 @@ export type ActionId =
   | 'view-board'
   | 'view-overview'
   | 'open-env'
-  | 'open-keys';
+  | 'open-keys'
+  | 'show-welcome';
 
 /** What an action's `when` may ask about. Kept to judgements the palette
  *  needs — this is visibility, not enablement: an action that cannot
@@ -47,7 +48,10 @@ export interface ActionDef {
  *  navigation third, the app's own surfaces last. */
 export const ACTIONS: readonly ActionDef[] = [
   { id: 'jump-waiting', title: 'keys.jump', keys: '⌘/Ctrl + E', when: (c) => c.hasWaiting },
-  { id: 'new-card', title: 'board.newCard', keys: null },
+  // Shift 生在和弦裡,所以終端機內外都是同一顆 —— shell 擁有的是
+  // 無 Shift 的 Ctrl+字母。N 沒人用過;K 不行(終端機內 Ctrl+Shift+K
+  // 已經是叫出面板的寫法),C 是複製,E/F/I 各有原主。
+  { id: 'new-card', title: 'board.newCard', keys: '⌘/Ctrl + Shift + N' },
   { id: 'new-session', title: 'sidebar.newSession', keys: null },
   { id: 'toggle-inspector', title: 'keys.inspector', keys: '⌘/Ctrl + I', when: (c) => c.canInspect },
   { id: 'view-terminal', title: 'view.terminal', keys: '⌘/Ctrl + 1' },
@@ -55,6 +59,8 @@ export const ACTIONS: readonly ActionDef[] = [
   { id: 'view-overview', title: 'view.overview', keys: '⌘/Ctrl + 3' },
   { id: 'open-env', title: 'common.env', keys: null },
   { id: 'open-keys', title: 'keys.title', keys: '⌘/Ctrl + /' },
+  // 重看歡迎面板:偵測重跑、旗標不動 —— 給剛裝好 CLI 的人一條回門口的路。
+  { id: 'show-welcome', title: 'welcome.reopen', keys: null },
 ];
 
 /** Keyboard that is not an action — movement and editing chords the sheet

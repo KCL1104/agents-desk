@@ -84,7 +84,10 @@ interface Picked {
  *  diff needs room to be code, and the terminal beside it needs room to
  *  stay a terminal. */
 const WIDTH_KEY = 'agentdesk.inspectorWidth';
-const clampWidth = (w: number) => Math.max(340, Math.min(900, w));
+/** 寬度的允許範圍 —— clamp 與把手的 aria-valuenow 共用同一對數字。 */
+const MIN_WIDTH = 340;
+const MAX_WIDTH = 900;
+const clampWidth = (w: number) => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, w));
 
 function storedWidth(): number {
   const w = Number(localStorage.getItem(WIDTH_KEY));
@@ -295,10 +298,16 @@ export function AttemptInspector({
 
   return (
     <aside className="inspector" style={{ width }} data-testid="inspector">
+      {/* 與 Splitter 同一種單位：aria-valuenow 用百分比（0–100），這裡
+          是寬度在 340–900px 允許範圍裡的位置。拖曳與 ← → 都走 width
+          state，數字跟著每次 render 更新。 */}
       <div
         className="inspector-grip"
         role="separator"
         aria-orientation="vertical"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(((width - MIN_WIDTH) / (MAX_WIDTH - MIN_WIDTH)) * 100)}
         tabIndex={0}
         data-testid="inspector-grip"
         title={t('inspector.resize')}
@@ -406,8 +415,18 @@ export function AttemptInspector({
       {/* The worktree's own terminals: a shell of yours, always — reviewing
           keeps demanding ad-hoc commands in *its* worktree, not yours — and
           the repo's ▶ scripts when it declares any. */}
+      {/* 收成一個具名的 worktree 群:五顆工具 chip 作為一組出場,靜止時
+          抽屜的帶數回到五以內,不再與 finish footer 逐顆搶話。 */}
       {attempt.outcome === null && !parked && (
-        <div className="inspector-run" data-testid="run-scripts">
+        <div
+          className="inspector-run"
+          data-testid="run-scripts"
+          role="group"
+          aria-label={t('inspector.worktreeGroup')}
+        >
+          <span className="run-label" aria-hidden="true">
+            {t('inspector.worktreeGroup')}
+          </span>
           <button
             className="chip mono"
             data-testid="open-shell"
@@ -1300,6 +1319,7 @@ function DiffPane({
                 tabIndex={-1}
                 aria-pressed={isViewed}
                 data-testid={`diff-viewed-${si}`}
+                aria-label={t(isViewed ? 'inspector.unmarkViewed' : 'inspector.markViewed')}
                 title={t(isViewed ? 'inspector.unmarkViewed' : 'inspector.markViewed')}
                 onClick={() => toggleViewed(s.file as string)}
               >

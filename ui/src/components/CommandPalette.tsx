@@ -15,8 +15,9 @@ interface Props {
    *  because the terminal is exactly where focus is meant to land. */
   onOpenSession: (id: string) => void;
   /** A card with no live session has no terminal to land in; the board is
-   *  where its buttons are. */
-  onOpenBoard: () => void;
+   *  where its buttons are — 帶著卡片 id 走,焦點才有落點,而不是把人
+   *  丟在看板上、焦點留在 <body>。 */
+  onOpenBoard: (taskId: string) => void;
   onRun: (id: ActionId) => void;
   onCancel: () => void;
 }
@@ -76,7 +77,7 @@ export function CommandPalette({
       // destination; otherwise the board is where its buttons are.
       const live = liveStateOf(item.task, sessions);
       if (live.kind === 'session') onOpenSession(live.session.id);
-      else onOpenBoard();
+      else onOpenBoard(item.task.id);
     } else {
       onRun(item.def.id);
     }

@@ -72,11 +72,21 @@ export function Splitter({
     onCommit(handle.path, dragHandle([...fr], handle.index, delta, handle.span));
   };
 
+  // aria-valuenow 用百分比（0–100）：前一格佔這對鄰居的比例。fr 是相對
+  // 值、像素隨視窗變，百分比才是拖曳與方向鍵都說得通的同一種單位 ——
+  // 兩條路都經過 App 的 state 再流回 fr prop，所以數字自己會跟上。
+  const pair = fr[handle.index] + fr[handle.index + 1];
+  const valueNow = pair > 0 ? Math.round((fr[handle.index] / pair) * 100) : 50;
+
   return (
     <div
       className={`splitter ${handle.dir}`}
       role="separator"
       aria-orientation={handle.dir === 'row' ? 'vertical' : 'horizontal'}
+      aria-label={t('splitter.hint')}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={valueNow}
       tabIndex={0}
       data-testid={`splitter-${handle.path.join('.') || 'root'}-${handle.index}`}
       title={t('splitter.hint')}
