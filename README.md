@@ -197,10 +197,19 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 The pieces that carry the triage loop, in roughly the order you meet them:
 
-- **First run** — a welcome panel reports which agent CLIs this machine
-  actually has and explains the model in three sentences; after that, four
-  one-shot coach marks point out a surface the first time it matters, then
-  never again.
+- **First run** — a true first run lands on the board, whose empty backlog
+  is the door in. The welcome panel reports which agent CLIs this machine
+  actually has and teaches card → attempt → finish as a three-dot rail
+  drawn with the board's own dot shapes; a machine with no agent CLI on
+  its PATH gets an honest amber dead-end with a "Probe again" chip, not a
+  cheerful blank. The panel reopens any time from the palette or the
+  environment panel, and reopening probes again rather than replaying a
+  stale answer. After that, five one-shot coach marks point out a surface
+  the first time it matters, then never again — the fifth teaches the
+  amber breath and `⌘/Ctrl+E` the first time a session turns from working
+  to waiting. Until the first session ever opens, the empty terminal wall
+  shows a three-row keymap card — `⌘1·2·3` / `⌘K` / `⌘/` — rather than
+  nothing.
 - **Command palette** — `⌘/Ctrl+K`. Sessions waiting on you are listed
   before you type anything: it is an attention inbox first and a search box
   second. Cards and actions follow.
@@ -233,6 +242,12 @@ The pieces that carry the triage loop, in roughly the order you meet them:
   conversation all stay (the branch name lands on your clipboard). Resume
   grows the worktree back at its old path, restores the parked work, and
   `--continue` picks the conversation up where it left off.
+- **One loud action per card** — a stopped card (every card, after a
+  restart) keeps Resume loud and reveals Park and switch-agent only when
+  aimed at; a merged card's "Try again" no longer outshouts the win it
+  sits under. The inspector's five utility chips became one labeled
+  worktree band for the same reason: five equal voices is no hierarchy
+  at all.
 - **Dev server preview** — a ▶ run script's page, on the desk: an iframe
   beside the terminals showing exactly what the server sends — never
   proxied, never injected. A dead server says so instead of going blank.
@@ -258,7 +273,9 @@ The pieces that carry the triage loop, in roughly the order you meet them:
   From inside a terminal the chord adds Shift, since Ctrl+F belongs to
   readline. URLs in output open with ⌘/Ctrl+click.
 - **Branch picker** — the new-card dialog suggests the repo's branches
-  sorted by recency instead of asking you to type one from memory.
+  sorted by recency instead of asking you to type one from memory. The
+  title is optional: left blank, the card takes the prompt's first line —
+  a rule the dialog states, not a lucky default.
 - **Worlds** — the bottom-left switch picks where new cards and sessions
   open (WSL distros and SSH hosts enumerated, never invented) and probes
   the chosen world's `claude` on demand; repos over WSL or SSH carry a
@@ -277,12 +294,15 @@ driven without the mouse. `⌘/Ctrl+/` shows this list in the app:
 |---|---|
 | `⌘/Ctrl+E` | Cycle through the sessions waiting on you |
 | `⌘/Ctrl+K` | Command palette — waiting sessions first, then cards and actions |
+| `⌘/Ctrl+Shift+N` | New card, straight to the dialog |
+| `⌘/Ctrl+Enter` | Submit the open creation dialog — an Enter that ends an IME composition never submits |
 | `⌘/Ctrl+1` / `2` / `3` | Terminal wall · board · overview |
 | `⌘/Ctrl+Alt+←` / `→` | Focus the next / previous pane |
 | `⌘/Ctrl+←` `→` / `↑` `↓` | Move the focused board card — a column sideways, a slot up or down |
 | `Ctrl+PgDn` / `PgUp` | Next / previous tab |
 | `⌘/Ctrl+I` | Open or close the inspector |
 | `J` / `K` | Walk the diff lines; `Enter` comments on one |
+| `N` / `P` | Walk the diff files; on a file's header `e` opens it in the in-place editor, `v` marks it viewed |
 | `Esc` | Close the open dialog |
 | `Tab` / `Enter` | Session rows, board cards, and diff lines are all focusable; Enter acts |
 
@@ -293,6 +313,26 @@ end-of-line); add `Shift` there — `Ctrl+Shift+E` — the same way
 A dialog holding typed text ignores backdrop clicks (Escape still closes it),
 and deleting a card takes two clicks — the second one names what it is about
 to do.
+
+Focus is handed, never dropped: the palette lands on the card it names;
+creating a card switches to the board with the new card focused and
+announced; merging from an empty terminal wall lands on the freshly-judged
+card; and sending a review batch gives the caret back to the diff.
+
+### Screen readers
+
+Terminals render on the GPU (WebGL), which draws pixels a screen reader
+cannot read. The environment panel has an opt-in terminal screen-reader
+mode that trades that renderer for the DOM one — terminal text, permission
+prompts included, becomes readable, and heavy output scrolls less smoothly.
+The setting's own hint states that trade; a mode promising accessibility
+for free would be lying to one side or the other.
+
+Around it, the parts of the app that speak: a card's label speaks its
+permission mode, so a yolo session is never mistakable for a supervised
+one; turn endings are announced through the live region; every glyph
+button carries a real name; the splitters expose real values to assistive
+tech; and the world menu walks by arrow keys.
 
 ### Notifications
 
@@ -321,7 +361,7 @@ including a light ANSI ramp on light themes. The choice persists locally.
 
 ```bash
 cd src-tauri && cargo test      # PTY, hooks, worktrees, attempts, timeline, queue, migrations, rules, storage
-npm --prefix ui run test:e2e    # Playwright: frontend + board + inspector + queue + xterm rendering
+npm --prefix ui run test:e2e    # Playwright: frontend + board + inspector + queue + xterm rendering + journeys
 ```
 
 macOS ships WKWebView with no WebDriver, so Playwright runs the same React tree
@@ -375,6 +415,12 @@ merely that something was output:
   been chosen, a stored choice beats the system, switching re-renders live and
   survives a reload, and the choice reaches the backend so native notifications
   match
+- `ui/tests/journeys/` — five real usage lines walked end to end rather than
+  screens poked in isolation: a first run from cold start to merge; a
+  zero-mouse triage day, whose spec contains no `.click` at all, so the
+  keyboard claim is enforced by construction; restart recovery; the
+  accessibility contract under reduced motion; and the whole first line again
+  in 繁體中文. Six visual baselines beside them pin the key screens
 
 The two tests that drive a real `claude` (`tests/hooks.rs` and
 `tests/prompt_injection.rs`) skip themselves when there is no signed-in CLI to
@@ -512,6 +558,15 @@ not be tied to wiring up CI.
 
 `npm run smoke` is not in CI: it opens a real Claude Code session and needs
 credentials.
+
+`.github/workflows/claude-detect.yml` guards the one claim the rest of CI
+cannot: that the app finds a real Claude Code on a real machine. Four legs —
+Linux, macOS, native Windows, Ubuntu under WSL — install the real CLI on a
+real runner, then drive the app's **own** resolution path (the login-shell
+probe, the platform's PATH walk, the WSL doorway) until it finds the binary
+and gets an answer out of `claude --version`. It runs on every push to `main`
+touching `src-tauri` and every Monday, because the upstream installer can change shape
+without any commit here — a Monday failure with a green tree points at them.
 
 ---
 
@@ -669,6 +724,12 @@ even be found.
 session from your own shell's environment. The "Environment" panel at the bottom
 left shows what was resolved, and says so plainly when it had to degrade.
 
+The same resolution used to fail on native Windows for a different reason:
+environment keys there are case-insensitive and the registry writes `Path`,
+not `PATH`, so an exact-name lookup found nothing and the machine could not
+see `claude` — or anything else — at all. Since v0.3.1 the keys are read the
+way Windows means them.
+
 ### Terminal output is bytes, not strings
 
 Read boundaries from the PTY land wherever the kernel decides. Decoding each
@@ -731,3 +792,9 @@ usable starting point.
 - Closing the app kills every PTY. After a restart, cards in the `running`
   column show "not running" on the second axis and need resume pressed to come
   back (via `--continue`, without resending the prompt)
+
+---
+
+## License
+
+Apache-2.0. The full text is in [LICENSE](LICENSE).

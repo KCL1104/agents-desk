@@ -165,9 +165,16 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 撐起 triage 迴圈的各個部件，大致依你遇到它們的順序：
 
-- **首次啟動** —— 歡迎面板回報這台機器實際裝了哪些 agent CLI，用三句話講完
-  運作模型；之後四個一次性的 coach mark 會在某個介面第一次派上用場時指出
-  它，然後永遠閉嘴。
+- **首次啟動** —— 真正的第一次會落在看板上，空的 backlog 欄就是入口。
+  歡迎面板回報這台機器實際裝了哪些 agent CLI，並用看板自己的點形畫成
+  三點軌，講完卡片 → attempt → 收尾這條模型；PATH 上一個 agent CLI 都
+  沒有的機器，拿到的是誠實的琥珀色死路加一顆「重新偵測」chip，不是一片
+  開朗的空白。面板隨時能從命令面板或環境面板重開，重開就重新探測，
+  不重播舊答案。之後五個一次性的 coach mark 會在某個介面第一次派上
+  用場時指出它，然後永遠閉嘴 —— 第五個教的是琥珀色呼吸與 `⌘/Ctrl+E`，
+  出現在第一次有 session 從「在做」轉成「等你」的時候。第一個 session
+  開起來之前，空的終端機牆顯示一張三列的按鍵卡 —— `⌘1·2·3` / `⌘K` /
+  `⌘/` —— 不留白。
 - **命令面板** —— `⌘/Ctrl+K`。還沒打字就先列出等你的 session：它首先是
   待辦收件匣，其次才是搜尋框。接著是卡片與動作。
 - **未讀層** —— session 在終端機不在你眼前時完成一輪，側邊欄、分頁徽章、
@@ -191,6 +198,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
   worktree 與併發槽還回去，分支、檢查點、對話全部留著（分支名同時進剪貼
   簿）。繼續時 worktree 在原路徑長回來、暫停時的工作原樣還原，`--continue`
   接上原本的對話。
+- **一張卡一個大聲的動作** —— 停下來的卡片（重啟之後，就是每一張）只讓
+  Resume 大聲，暫停與換 agent 要對準了才現身；合併完的卡片上「再試一次」
+  不再壓過它底下那場勝利。檢視器的五顆工具 chip 也因為同一個理由收成
+  一條有標籤的 worktree 帶：五個一樣大聲，等於沒有層次。
 - **Dev server 預覽** —— ▶ run script 起的頁面直接掛在桌邊：iframe 顯示的
   就是 server 送出的樣子 —— 不代理、不注入。server 死了面板會說，不留白框。
   repo 自掛 inspect script（`docs/examples/agentdesk-inspect.js`）後，
@@ -210,7 +221,8 @@ export PATH="$HOME/.cargo/bin:$PATH"
   Enter 走上下一個，找不到會直說。終端機內改用 Ctrl+Shift+F（Ctrl+F 屬於
   readline）。輸出裡的網址 ⌘/Ctrl+click 開啟。
 - **分支挑選** —— 開卡對話框直接建議 repo 的分支、按最近使用排序，而不是
-  要你憑記憶打字。
+  要你憑記憶打字。標題可以不填：留白就用 prompt 的第一行 —— 對話框明講
+  的規則，不是碰巧的預設。
 - **世界** —— 左下角的切換決定新東西開在哪（WSL distro 與 SSH host 用枚舉
   的，不發明），點選就地探那個世界的 `claude`；走 WSL 或 SSH 的 repo 會在
   卡片上戴 host 徽章；總覽在超過一個世界時按機器分組。
@@ -226,12 +238,15 @@ export PATH="$HOME/.cargo/bin:$PATH"
 |---|---|
 | `⌘/Ctrl+E` | 在等你的 session 之間循環 |
 | `⌘/Ctrl+K` | 命令面板 —— 等你的 session 最前，然後是卡片與動作 |
+| `⌘/Ctrl+Shift+N` | 直接開新卡對話框 |
+| `⌘/Ctrl+Enter` | 送出打開中的建立對話框 —— IME 選字的 Enter 絕不誤送 |
 | `⌘/Ctrl+1` / `2` / `3` | 終端機牆 · 看板 · 總覽 |
 | `⌘/Ctrl+Alt+←` / `→` | 聚焦下一個 / 上一個 pane |
 | `⌘/Ctrl+←` `→` / `↑` `↓` | 搬動聚焦的卡片 —— 左右換欄、上下換位 |
 | `Ctrl+PgDn` / `PgUp` | 下一個 / 上一個分頁 |
 | `⌘/Ctrl+I` | 開關檢視器 |
 | `J` / `K` | 在 diff 行之間移動；`Enter` 對該行留言 |
+| `N` / `P` | 在 diff 檔案之間移動；停在檔頭時 `e` 就地展開編輯器、`v` 標該檔已看 |
 | `Esc` | 關閉打開的對話框 |
 | `Tab` / `Enter` | session 列、看板卡片、diff 行都可聚焦；Enter 執行 |
 
@@ -240,6 +255,21 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 已輸入文字的對話框會忽略誤點 backdrop（Escape 仍然關得掉）；刪除卡片要按
 兩下 —— 第二下會用文字說明它要做什麼。
+
+焦點用交的，不用丟的：命令面板落在它點名的那張卡上；開新卡會切到看板、
+聚焦新卡並唸出來；從空的終端機牆合併，焦點落在剛裁決完的卡片上；送出
+review 批次之後，游標交還給 diff。
+
+### 螢幕閱讀器
+
+終端機用 GPU（WebGL）渲染，畫出來的是螢幕閱讀器讀不到的像素。環境面板
+有一個可選的終端機螢幕閱讀器模式，用 DOM 渲染器把它換掉 —— 終端機文字
+（含權限提示）變得可讀，代價是大量輸出時捲動沒那麼順。這筆交換就寫在
+設定自己的說明文字裡 —— 宣稱無代價的無障礙模式，必然對其中一邊說謊。
+
+周邊會說話的部分：卡片的標籤唸得出權限模式，全自動跑的 session 絕不會
+被聽成有人看著的那種；回合結束透過 live region 播報；每顆圖形按鈕都有
+真名字；分隔軸把真實數值交給輔助技術；世界選單可以用方向鍵走。
 
 ### 通知
 
@@ -262,8 +292,8 @@ session 開始等你（權限確認、資料夾信任）而視窗不在前景時
 ## 測試
 
 ```bash
-cd src-tauri && cargo test      # 107 個：PTY、hooks、worktree、attempt、timeline、queue、migration、規則、儲存
-npm --prefix ui run test:e2e    # 125 個：Playwright，前端 + 看板 + 檢視抽屜 + 佇列 + xterm 渲染
+cd src-tauri && cargo test      # 391 個：PTY、hooks、worktree、attempt、timeline、queue、migration、規則、儲存
+npm --prefix ui run test:e2e    # 308 個：Playwright，前端 + 看板 + 檢視抽屜 + 佇列 + xterm 渲染 + journeys
 ```
 
 macOS 的 WKWebView 沒有 WebDriver，所以 Playwright 是在 Chromium 裡跑同一份 React
@@ -303,6 +333,10 @@ session 的流程，以及 xterm 對**真實 PTY bytes** 的解碼與渲染。
   這樣「靠 React state 剛好 render 完才會過」的實作會當場失敗
 - `ui/tests/i18n.spec.ts` —— 沒選過語言時跟隨系統、選過就以選的為準、切換當下就
   重繪且重開仍在，以及語言確實有送到後端讓原生通知跟著換
+- `ui/tests/journeys/` —— 五條真實的使用動線從頭走到尾，不是逐個畫面戳一下：
+  冷啟動的第一次使用一路走到合併；零滑鼠的 triage 日 —— 那份 spec 裡一個
+  `.click` 都沒有，鍵盤的承諾是用結構保證的；重啟復原；reduced motion 下的
+  無障礙契約；以及同一條線用繁體中文再走一遍。旁邊六張視覺基準釘住關鍵畫面
 
 兩個會去驅動真的 `claude` 的測試（`tests/hooks.rs` 與 `tests/prompt_injection.rs`）
 在沒有登入好的 CLI 時會自己跳過。**只檢查 `PATH` 上有沒有是不夠的** —— 沒登入過的
@@ -417,6 +451,14 @@ npm run tauri -- icon path/to/new-icon.png
 rustfmt-clean，把整棵樹重排是另一件事，不該跟接 CI 綁在一起。
 
 `npm run smoke` 沒有進 CI：它會真的開一個 Claude Code session，需要憑證。
+
+`.github/workflows/claude-detect.yml` 守著其餘 CI 守不住的那一條承諾：app 在
+真的機器上找得到真的 Claude Code。四條腿 —— Linux、macOS、原生 Windows、
+WSL 裡的 Ubuntu —— 各自在真的 runner 上裝真的 CLI，然後驅動 app **自己**的
+解析路徑（login-shell 探測、各平台的 PATH 走法、WSL 那道門）直到找到執行檔、
+並從 `claude --version` 拿到回答。每次推上 `main`、碰到 `src-tauri` 的 push 都跑，每週一
+也跑 —— 上游安裝器改了形狀不需要這裡有任何 commit；樹是綠的而週一紅了，
+指的就是他們。
 
 ---
 
@@ -545,6 +587,11 @@ Rust 核心  ── PTY registry · session 清單 · SQLite
 `shell_env.rs` 啟動時跑一次 `$SHELL -ilc 'env -0'`，用你自己 shell 的環境去生所有
 session。左下角「環境」面板會顯示解析結果，降級時也會明講。
 
+同一套解析在原生 Windows 上曾經因為另一個理由失效：那邊的環境變數 key
+不分大小寫，而 registry 寫的是 `Path` 不是 `PATH`，照字面找就什麼都找不到 ——
+整台機器看不到 `claude`，也看不到其他任何東西。v0.3.1 起改成按 Windows
+自己的規則、不分大小寫地讀。
+
 ### 終端機輸出是 bytes，不是字串
 
 PTY 的讀取邊界落在核心決定的位置。在 Rust 端對每個 chunk 做 UTF-8 解碼，
@@ -594,3 +641,9 @@ SDK 版本的程式碼收在 `src-tauri/parked/`（Node 那半在 `sidecar/`）�
   「保留可回看」指的是唯讀回看，不是還能跳進去打字
 - app 一關，所有 PTY 都會死。重啟後 `running` 欄位裡的卡片軸二會是「未執行」，
   要按 resume 才會回來（走 `--continue`，不重送 prompt）
+
+---
+
+## 授權
+
+Apache-2.0，全文在 [LICENSE](LICENSE)。
