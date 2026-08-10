@@ -240,13 +240,19 @@ test.describe('one-shot coaching', () => {
     await page.getByTestId('coach-dismiss').click();
 
     await page.evaluate(() => window.__mock.report('s1', 'running'));
+    // 先等「在做」真的畫出來:兩個 report 若在同一幀被批次合併,app
+    // 根本沒看見 running,working→等你 的轉換就不存在 —— CI 比本機慢
+    // 一拍,恰好照出這個時序假設(這裡修的是測試,不是 app 的規則)。
+    await expect(page.locator('.dot.running').first()).toBeVisible();
     await page.evaluate(() => window.__mock.report('s1', 'waiting_permission'));
     await expect(page.getByTestId('coach-waiting')).toBeVisible();
     await expect(page.getByTestId('coach-waiting')).toContainText('琥珀');
     await page.getByTestId('coach-dismiss').click();
 
-    // 第二次等待沒有課可教。
+    // 第二次等待沒有課可教 —— 同樣先讓 running 落幀,否則轉換沒發生,
+    // 「沒有課」就是白驗的。
     await page.evaluate(() => window.__mock.report('s1', 'running'));
+    await expect(page.locator('.dot.running').first()).toBeVisible();
     await page.evaluate(() => window.__mock.report('s1', 'waiting_input'));
     await expect(page.locator('.dot.waiting_input').first()).toBeVisible();
     await expect(page.getByTestId('coach-waiting')).toHaveCount(0);
