@@ -751,14 +751,19 @@ mod tests {
         let env = host
             .probe_env(&local)
             .expect("probing the distro's login environment over wsl.exe");
-        let found = env.which("claude");
+        assert!(env.path().is_some(), "the distro's login env came back without a PATH");
+        // 問版本要穿過門去問 —— distro 裡的檔案在門的另一邊,本機的
+        // which() 摸不到(第一版測試的錯);core 的世界探測走的就是這條:
+        // HostRef::run_ok 把指令包成 wsl.exe -d <distro> -e env … claude。
+        let hr = HostRef { host: &host, local: &local, env: &env };
+        let out = hr
+            .run_ok("claude", &["--version"], None)
+            .expect("claude --version through the wsl doorway");
         assert!(
-            found.is_some(),
-            "claude is promised inside `{}` but its resolved PATH cannot see it:\n{:?}",
-            distros[0],
-            env.path()
+            out.chars().any(|c| c.is_ascii_digit()),
+            "claude answered strangely: {out:?}"
         );
-        eprintln!("claude in {} at {}", distros[0], found.unwrap().display());
+        eprintln!("claude in {} says {}", distros[0], out.trim());
     }
 
     /// The classic landmine, reproduced: wsl.exe speaks UTF-16LE with a

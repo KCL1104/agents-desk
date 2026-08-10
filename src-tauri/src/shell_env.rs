@@ -60,8 +60,26 @@ pub struct ShellEnv {
 }
 
 impl ShellEnv {
+    /// 讀一個環境變數,照平台的規矩:Windows 的鍵不分大小寫 —— 真實
+    /// 行程從登錄檔拿到的是 `Path` 而不是 `PATH`,精確比對會把整條
+    /// PATH 看成不存在,claude 就此隱形(claude-detect 的 windows 腿
+    /// 第一天就抓到)。Unix 上維持精確:大小寫是不同的變數,這是規矩。
+    fn var_ci(&self, key: &str) -> Option<&str> {
+        if let Some(v) = self.vars.get(key) {
+            return Some(v.as_str());
+        }
+        if cfg!(windows) {
+            return self
+                .vars
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(key))
+                .map(|(_, v)| v.as_str());
+        }
+        None
+    }
+
     pub fn path(&self) -> Option<&str> {
-        self.vars.get("PATH").map(String::as_str)
+        self.var_ci("PATH")
     }
 
     /// Resolve an executable against the shell PATH rather than ours.
@@ -75,12 +93,7 @@ impl ShellEnv {
     pub fn which(&self, exe: &str) -> Option<PathBuf> {
         let path = self.path()?;
         let pathext = if cfg!(windows) {
-            Some(
-                self.vars
-                    .get("PATHEXT")
-                    .map(String::as_str)
-                    .unwrap_or(".COM;.EXE;.BAT;.CMD"),
-            )
+            Some(self.var_ci("PATHEXT").unwrap_or(".COM;.EXE;.BAT;.CMD"))
         } else {
             None
         };
@@ -252,6 +265,19 @@ mod tests {
             env.path()
         );
         eprintln!("claude resolved at {}", found.unwrap().display());
+    }
+
+    /// 登錄檔寫的是 `Path`;找不找得到不該取決於誰打的大小寫。
+    #[test]
+    fn windows_reads_path_case_insensitively_unix_exactly() {
+        let mut vars = HashMap::new();
+        vars.insert("Path".to_string(), "C:\\somewhere".to_string());
+        let env = ShellEnv { vars, shell: "cmd.exe".into(), resolved: true };
+        if cfg!(windows) {
+            assert_eq!(env.path(), Some("C:\\somewhere"));
+        } else {
+            assert_eq!(env.path(), None, "unix keys stay case-sensitive");
+        }
     }
 
     #[test]
