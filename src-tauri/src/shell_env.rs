@@ -232,6 +232,28 @@ pub fn parse_env0(dump: &str) -> HashMap<String, String> {
 mod tests {
     use super::*;
 
+    /// CI 的守門測試:AGENTDESK_EXPECT_CLAUDE=1 表示這台 runner 真的裝了
+    /// Claude Code —— 那 app 自己的解析路徑(login-shell 探測 → 平台正確
+    /// 的 PATH 行走 → Windows 的 PATHEXT 展開)就必須找得到它;找不到是
+    /// 錯,不是可容忍的環境差異。沒作此承諾的機器上自跳,本機不強求。
+    #[test]
+    fn a_promised_real_claude_is_found_by_the_apps_own_resolution() {
+        if std::env::var("AGENTDESK_EXPECT_CLAUDE").as_deref() != Ok("1") {
+            eprintln!("skip: AGENTDESK_EXPECT_CLAUDE != 1");
+            return;
+        }
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let env = rt.block_on(resolve());
+        assert!(env.resolved, "the environment probe fell back to the process env");
+        let found = env.which("claude");
+        assert!(
+            found.is_some(),
+            "claude is promised on this machine but the resolved PATH cannot see it:\n{:?}",
+            env.path()
+        );
+        eprintln!("claude resolved at {}", found.unwrap().display());
+    }
+
     #[test]
     fn parses_nul_separated_pairs() {
         let vars = parse_env0("PATH=/usr/bin:/bin\0HOME=/Users/x\0");

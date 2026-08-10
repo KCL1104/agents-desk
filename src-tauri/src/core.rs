@@ -3529,6 +3529,23 @@ mod tests {
     use super::*;
     use crate::store::StoredTab;
 
+    /// CI 守門的第二半:找到的 claude 要真的答得出 `--version`,而且版本
+    /// 字串解析得出來 ——「偵測到」不是檔案存在,是問得到話。跟著
+    /// shell_env 的守門測試一起,由 AGENTDESK_EXPECT_CLAUDE=1 啟用。
+    #[test]
+    fn a_promised_real_claude_answers_the_version_probe() {
+        if std::env::var("AGENTDESK_EXPECT_CLAUDE").as_deref() != Ok("1") {
+            eprintln!("skip: AGENTDESK_EXPECT_CLAUDE != 1");
+            return;
+        }
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let env = rt.block_on(crate::shell_env::resolve());
+        let v = rt.block_on(probe_claude_version(&env));
+        assert!(v.is_some(), "claude --version did not run or did not parse");
+        let (a, b, c) = v.unwrap();
+        eprintln!("claude {a}.{b}.{c} answered the probe");
+    }
+
     /// The transcript arithmetic, against real-shaped rows: totals count
     /// everything including sidechains, context follows only the main line,
     /// and a malformed row is skipped rather than zeroing the account.

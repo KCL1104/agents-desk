@@ -1,0 +1,152 @@
+name: Claude detection
+
+# The four worlds' gatekeeper: Linux, macOS, native Windows, and WSL.
+#
+# Each leg installs the real Claude Code CLI on a real runner, then proves the
+# app's OWN resolution path finds it and can ask it questions — not the shell's
+# `which`, but the exact code a user's machine runs: the login-shell probe
+# (`$SHELL -ilc env -0`), the platform-correct PATH walk (PATHEXT expansion on
+# Windows, where npm writes `claude.cmd` and never a bare `claude`), and for
+# WSL the whole doorway — `wsl.exe -l -q` in UTF-16LE, `--shell-type login`
+# probing, and the PATH walk inside the distro.
+#
+# On Unix the login shell is the honest bar: a login shell rebuilds PATH from
+# the profile chain, so the CLI is linked into /usr/local/bin the way a real
+# install lands on a real machine — and `node` too, because claude's launcher
+# is a node shebang and "found but cannot speak" must fail here, not on a
+# user's desk.
+#
+# The weekly run exists because the upstream installer can change shape
+# without any commit here; a Monday failure with a green tree points at them.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src-tauri/**"
+      - ".github/workflows/claude-detect.yml"
+  schedule:
+    - cron: "17 3 * * 1"
+
+concurrency:
+  group: claude-detect-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Linux, macOS, native Windows: the local world on each OS.
+  # ---------------------------------------------------------------------------
+  native:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      # A login shell rebuilds PATH from the profile chain and would not see
+      # the hosted toolcache. /usr/local/bin is on every login PATH (Debian's
+      # /etc/profile, macOS's path_helper), so the link makes this leg test
+      # what a real machine has: a reachable claude AND the node it execs.
+      - name: Put claude and node where a login shell looks (unix)
+        if: runner.os != 'Windows'
+        run: |
+          sudo mkdir -p /usr/local/bin
+          sudo ln -sf "$(command -v claude)" /usr/local/bin/claude
+          sudo ln -sf "$(command -v node)" /usr/local/bin/node
+
+      - name: Sanity — the shell itself can run it
+        shell: bash
+        run: claude --version
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            xdg-utils
+
+      # The crate's default features embed the frontend at compile time;
+      # without ui/dist, tauri-build fails before a single test runs.
+      - name: Build frontend
+        run: |
+          npm --prefix ui ci
+          npm --prefix ui run build
+
+      - name: Detection through the app's own resolution
+        working-directory: src-tauri
+        env:
+          AGENTDESK_EXPECT_CLAUDE: "1"
+        run: cargo test promised_real_claude -- --nocapture
+
+  # ---------------------------------------------------------------------------
+  # WSL: a real distro under a Windows host — the wsl:// world end to end.
+  # ---------------------------------------------------------------------------
+  wsl:
+    name: wsl (Ubuntu under Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: Vampire/setup-wsl@v7
+        with:
+          distribution: Ubuntu-24.04
+
+      - name: Install node and Claude Code inside the distro
+        shell: wsl-bash {0}
+        run: |
+          set -e
+          curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+          sudo npm install -g @anthropic-ai/claude-code
+          claude --version
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Build frontend
+        run: |
+          npm --prefix ui ci
+          npm --prefix ui run build
+
+      - name: Detection through the real doorway
+        working-directory: src-tauri
+        env:
+          AGENTDESK_EXPECT_WSL_CLAUDE: "1"
+        run: cargo test promised_wsl_claude -- --nocapture

@@ -729,6 +729,38 @@ pub fn pty_env(env: &ShellEnv, extra: &[(String, String)]) -> Vec<(String, Strin
 mod tests {
     use super::*;
 
+    /// CI 守門的 WSL 半場:AGENTDESK_EXPECT_WSL_CLAUDE=1 表示某個 distro
+    /// 裡真的裝了 claude —— 那 app 的整條真實路徑(wsl.exe -l -q 的
+    /// UTF-16LE 列舉 → --shell-type login 的環境探測 → distro 內的 PATH
+    /// 行走)就必須走得通。這正是使用者機器上 wsl:// 世界的每一步。
+    #[test]
+    fn a_promised_wsl_claude_is_reached_through_the_real_doorway() {
+        if std::env::var("AGENTDESK_EXPECT_WSL_CLAUDE").as_deref() != Ok("1") {
+            eprintln!("skip: AGENTDESK_EXPECT_WSL_CLAUDE != 1");
+            return;
+        }
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let local = rt.block_on(crate::shell_env::resolve());
+        let out = std::process::Command::new(wsl_exe(&local))
+            .args(["-l", "-q"])
+            .output()
+            .expect("running wsl.exe -l -q");
+        let distros = parse_wsl_list(&out.stdout);
+        assert!(!distros.is_empty(), "wsl.exe enumerated no distro at all");
+        let host = Host::Wsl { distro: distros[0].clone() };
+        let env = host
+            .probe_env(&local)
+            .expect("probing the distro's login environment over wsl.exe");
+        let found = env.which("claude");
+        assert!(
+            found.is_some(),
+            "claude is promised inside `{}` but its resolved PATH cannot see it:\n{:?}",
+            distros[0],
+            env.path()
+        );
+        eprintln!("claude in {} at {}", distros[0], found.unwrap().display());
+    }
+
     /// The classic landmine, reproduced: wsl.exe speaks UTF-16LE with a
     /// BOM and CRLF line ends — and Docker's plumbing distros are noise.
     #[test]
