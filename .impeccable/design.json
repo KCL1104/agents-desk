@@ -1,0 +1,490 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-09T15:00:25.511Z",
+  "title": "Design System: AgentDesk",
+  "extensions": {
+    "colorMeta": {
+      "blooded-ink": {
+        "role": "neutral",
+        "displayName": "Blooded Ink",
+        "canonical": "#161214",
+        "tonalRamp": [
+          "#131112",
+          "#2e2a2c",
+          "#4b4648",
+          "#6a6467",
+          "#8a8487",
+          "#aba6a8",
+          "#cdc9cb",
+          "#f0edef"
+        ]
+      },
+      "desk-shadow": {
+        "role": "neutral",
+        "displayName": "Desk Shadow",
+        "canonical": "#1b1719",
+        "tonalRamp": [
+          "#131112",
+          "#2e2a2c",
+          "#4b4648",
+          "#696467",
+          "#8a8487",
+          "#aba6a8",
+          "#cdc9cb",
+          "#f0eeef"
+        ]
+      },
+      "desk-surface": {
+        "role": "neutral",
+        "displayName": "Desk Surface",
+        "canonical": "#221c1f",
+        "tonalRamp": [
+          "#141012",
+          "#2f292c",
+          "#4c4549",
+          "#6b6467",
+          "#8b8487",
+          "#aca5a9",
+          "#cec9cb",
+          "#f1edef"
+        ]
+      },
+      "machined-seam": {
+        "role": "neutral",
+        "displayName": "Machined Seam",
+        "canonical": "#322a2e",
+        "tonalRamp": [
+          "#151012",
+          "#30292d",
+          "#4e4549",
+          "#6c6368",
+          "#8d8388",
+          "#aea5a9",
+          "#cfc8cc",
+          "#f2edef"
+        ]
+      },
+      "warm-bone": {
+        "role": "neutral",
+        "displayName": "Warm Bone",
+        "canonical": "#ebe6e3",
+        "tonalRamp": [
+          "#131110",
+          "#2e2b29",
+          "#4b4744",
+          "#696562",
+          "#8a8582",
+          "#aba7a4",
+          "#cdcac8",
+          "#f0eeed"
+        ]
+      },
+      "quiet-ink": {
+        "role": "neutral",
+        "displayName": "Quiet Ink",
+        "canonical": "#a69ba0",
+        "tonalRamp": [
+          "#151012",
+          "#31292c",
+          "#4e4549",
+          "#6d6367",
+          "#8d8388",
+          "#aea5a9",
+          "#d0c8cb",
+          "#f2edef"
+        ]
+      },
+      "faintest-honest-ink": {
+        "role": "neutral",
+        "displayName": "Faintest Honest Ink",
+        "canonical": "#90858b",
+        "tonalRamp": [
+          "#151013",
+          "#31292d",
+          "#4e444a",
+          "#6d6368",
+          "#8d8389",
+          "#aea4aa",
+          "#d0c8cc",
+          "#f2edf0"
+        ]
+      },
+      "electric-ultramarine": {
+        "role": "primary",
+        "displayName": "Electric Ultramarine",
+        "canonical": "#6f7dff",
+        "tonalRamp": [
+          "#0c0049",
+          "#1e0b7d",
+          "#322eab",
+          "#4c52d0",
+          "#6875f6",
+          "#8b9cff",
+          "#b3c4ff",
+          "#ddebff"
+        ]
+      },
+      "quiet-sage": {
+        "role": "ok",
+        "displayName": "Quiet Sage",
+        "canonical": "#7dc48d",
+        "tonalRamp": [
+          "#001901",
+          "#00370e",
+          "#055727",
+          "#307744",
+          "#529864",
+          "#7db88a",
+          "#abd8b3",
+          "#d9f8de"
+        ]
+      },
+      "lantern-amber": {
+        "role": "warn",
+        "displayName": "Lantern Amber",
+        "canonical": "#e0af68",
+        "tonalRamp": [
+          "#230a00",
+          "#452100",
+          "#683d00",
+          "#895c05",
+          "#ab7c34",
+          "#c9a065",
+          "#e5c599",
+          "#ffebcc"
+        ]
+      },
+      "signal-rose": {
+        "role": "err",
+        "displayName": "Signal Rose",
+        "canonical": "#e26d72",
+        "tonalRamp": [
+          "#310001",
+          "#5b000e",
+          "#851326",
+          "#a93a43",
+          "#cf5c62",
+          "#eb8688",
+          "#ffb2b2",
+          "#ffdedd"
+        ]
+      },
+      "on-accent-ink": {
+        "role": "neutral",
+        "displayName": "On-Accent Ink",
+        "canonical": "#0d1017",
+        "tonalRamp": [
+          "#0f1216",
+          "#282b32",
+          "#444850",
+          "#62666f",
+          "#828690",
+          "#a4a8b0",
+          "#c7cad1",
+          "#eceef3"
+        ]
+      },
+      "violet-crimson": {
+        "role": "semantic-derived",
+        "displayName": "Violet-Crimson (merged)",
+        "canonical": "color-mix(in srgb, var(--accent) 55%, var(--err) 45%)",
+        "note": "Derived, never pinned; sRGB resolution of the default theme ≈ #a376c0",
+        "tonalRamp": [
+          "#1d032b",
+          "#3c1650",
+          "#5c3175",
+          "#7c5097",
+          "#9d70ba",
+          "#bc96d6",
+          "#dbbdf0",
+          "#fae5ff"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "hero": {
+        "displayName": "Hero",
+        "purpose": "The boot screen's one line. 20px, letter-spacing 0.02em."
+      },
+      "heading": {
+        "displayName": "Heading",
+        "purpose": "A dialog's one h2. 16px."
+      },
+      "glyph": {
+        "displayName": "Glyph",
+        "purpose": "Icon-button glyphs only. 15px, line-height 1."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Prose and titles — what is actually read. 13px/1.55, the base size."
+      },
+      "data": {
+        "displayName": "Data",
+        "purpose": "Status lines, code, chips, diffs — what the wall is scanned by. The CJK floor: 12px."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Labels and hints — read once, then recognized. 11px."
+      },
+      "micro": {
+        "displayName": "Micro",
+        "purpose": "Counts inside pills, nothing else. 10px/700."
+      },
+      "mono": {
+        "displayName": "Mono (IBM Plex Mono)",
+        "purpose": "The product's voice for data: branches, paths, kbd, diffs, terminals (13px there, line-height exactly 1)."
+      }
+    },
+    "shadows": [
+      {
+        "name": "bevel",
+        "value": "inset 0 1px 0 color-mix(in srgb, var(--fg) 7%, transparent)",
+        "purpose": "The machined edge: a one-pixel light on top of anything that sits on the desk. Material, not decoration."
+      },
+      {
+        "name": "modal",
+        "value": "var(--bevel), 0 18px 50px rgba(0,0,0,0.5)",
+        "purpose": "Dialogs, over a rgba(0,0,0,0.55) backdrop."
+      },
+      {
+        "name": "palette",
+        "value": "0 12px 40px rgba(0,0,0,0.5)",
+        "purpose": "The command palette."
+      },
+      {
+        "name": "menu",
+        "value": "var(--bevel), 0 10px 32px rgba(0,0,0,0.5)",
+        "purpose": "The world menu."
+      },
+      {
+        "name": "toast-coach",
+        "value": "var(--bevel), 0 6px 24px rgba(0,0,0,0.45)",
+        "purpose": "Toasts and coach marks."
+      },
+      {
+        "name": "findbar",
+        "value": "0 2px 8px color-mix(in srgb, #000 25%, transparent)",
+        "purpose": "The smallest floater; the terminal find overlay."
+      }
+    ],
+    "motion": [
+      {
+        "name": "breathe",
+        "value": "2.4s ease-in-out infinite",
+        "purpose": "THE BREATH — anything blocked on a human. A 0→2px amber-28% ring over the bevel. The only attention-scale motion."
+      },
+      {
+        "name": "shimmer",
+        "value": "3.6s ease-in-out infinite",
+        "purpose": "THE SHIMMER — a mid-turn card's status edge glows accent↔accent-45%. Weather, never a request."
+      },
+      {
+        "name": "beckon",
+        "value": "3.2s ease-in-out infinite",
+        "purpose": "The empty board's CTA border drifts toward accent — a hand raised slowly, once."
+      },
+      {
+        "name": "row-move",
+        "value": "background 120ms ease",
+        "purpose": "Session-row background — the only transition; re-sorting reads as a move, not a flicker."
+      },
+      {
+        "name": "disarm",
+        "value": "4000ms (7000ms for merge/discard)",
+        "purpose": "Armed buttons auto-disarm when the hand walks away."
+      }
+    ],
+    "themePresets": {
+      "note": "The frontmatter documents the default \"ink\" preset (= styles.css :root). Five hand-tuned presets exist (ink, paper[light], pine, wisteria, sunset); custom themes take six primaries and derive tiers by sRGB mixing: bg2=2%, bg3=5%, line=11%, fgDim=63%, fgFaint=54% of fg into bg. Semantic hues are load-bearing and survive every preset.",
+      "paper": {
+        "light": true,
+        "bg": "#f6f6f4",
+        "fg": "#1d1d22",
+        "accent": "#3556b8",
+        "ok": "#22713d",
+        "warn": "#8a5a12",
+        "err": "#b03340"
+      },
+      "pine": {
+        "bg": "#121614",
+        "fg": "#e4e9e5",
+        "accent": "#8fc7a2",
+        "ok": "#79c08a",
+        "warn": "#dcb56e",
+        "err": "#e07a75"
+      },
+      "wisteria": {
+        "bg": "#141219",
+        "fg": "#e8e6ee",
+        "accent": "#b39aef",
+        "ok": "#7fbd8e",
+        "warn": "#ddad6c",
+        "err": "#e0748f"
+      },
+      "sunset": {
+        "bg": "#181310",
+        "fg": "#ece6e1",
+        "accent": "#e8a568",
+        "ok": "#88bd85",
+        "warn": "#e0af68",
+        "err": "#e06c75"
+      }
+    }
+  },
+  "components": [
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "The quiet instrument: Desk Surface fill, seam border, 6px radius.",
+      "html": "<button class=\"ds-btn\">Open attempt</button>",
+      "css": ".ds-btn { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Noto Sans TC', sans-serif; font-size: 13px; background: var(--bg-3, #221c1f); color: var(--fg, #ebe6e3); border: 1px solid var(--line, #322a2e); border-radius: 6px; padding: 5px 10px; cursor: pointer; } .ds-btn:hover { background: color-mix(in srgb, var(--fg, #ebe6e3) 5%, var(--bg-3, #221c1f)); } .ds-btn:focus-visible { outline: 2px solid var(--accent, #6f7dff); outline-offset: -1px; }"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one committed jewel as a button: solid ultramarine, dark ink, weight 600.",
+      "html": "<button class=\"ds-btn-primary\">Start attempt</button>",
+      "css": ".ds-btn-primary { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Noto Sans TC', sans-serif; font-size: 13px; background: var(--accent, #6f7dff); color: var(--on-accent, #0d1017); border: 1px solid var(--accent, #6f7dff); border-radius: 6px; padding: 5px 10px; font-weight: 600; cursor: pointer; } .ds-btn-primary:hover { filter: brightness(1.08); } .ds-btn-primary:focus-visible { outline: 2px solid var(--accent, #6f7dff); outline-offset: -1px; }"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Outline-tinted, never filled — red is for deletion.",
+      "html": "<button class=\"ds-btn-danger\">Discard</button>",
+      "css": ".ds-btn-danger { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Noto Sans TC', sans-serif; font-size: 13px; background: var(--bg-3, #221c1f); color: var(--err, #e26d72); border: 1px solid color-mix(in srgb, var(--err, #e26d72) 35%, var(--bg-3, #221c1f)); border-radius: 6px; padding: 5px 10px; cursor: pointer; } .ds-btn-danger:hover { background: color-mix(in srgb, var(--err, #e26d72) 8%, var(--bg-3, #221c1f)); } .ds-btn-danger:focus-visible { outline: 2px solid var(--accent, #6f7dff); outline-offset: -1px; }"
+    },
+    {
+      "name": "Armed Delete",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "The two-click grammar, second click: renamed, in the color of consequence, auto-disarms in 4s.",
+      "html": "<button class=\"ds-confirm-delete\">Delete \"auth-fix\" — click again</button>",
+      "css": ".ds-confirm-delete { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Noto Sans TC', sans-serif; background: transparent; border: 1px solid var(--err, #e26d72); color: var(--err, #e26d72); font-size: 11px; padding: 1px 8px; border-radius: 5px; cursor: pointer; } .ds-confirm-delete:hover { background: color-mix(in srgb, var(--err, #e26d72) 8%, var(--bg-3, #221c1f)); } .ds-confirm-delete:focus-visible { outline: 2px solid var(--accent, #6f7dff); outline-offset: -1px; }"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "A chip is a chip whatever element carries it; doubles as a small action.",
+      "html": "<span class=\"ds-chip\">worktrees/auth-fix-2</span>",
+      "css": ".ds-chip { display: inline-block; font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace; font-size: 12px; background: var(--bg-3, #221c1f); color: var(--fg, #ebe6e3); border: 1px solid var(--line, #322a2e); border-radius: 5px; padding: 2px 8px; }"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Fields sit on the deepest surface — the well you type into.",
+      "html": "<input class=\"ds-input\" placeholder=\"Task title…\" />",
+      "css": ".ds-input { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Noto Sans TC', sans-serif; font-size: 13px; background: var(--bg, #161214); color: var(--fg, #ebe6e3); border: 1px solid var(--line, #322a2e); border-radius: 6px; padding: 6px 8px; width: 100%; box-sizing: border-box; } .ds-input:focus-visible { outline: 2px solid var(--accent, #6f7dff); outline-offset: -1px; } .ds-input::placeholder { color: var(--fg-faint, #90858b); }"
+    },
+    {
+      "name": "Board Card (needs you)",
+      "kind": "card",
+      "refersTo": "board-card",
+      "description": "The signature: 3px status edge + THE BREATH when blocked on a human.",
+      "html": "<div class=\"ds-board-card\"><div class=\"ds-card-title\">Fix the login redirect loop</div><div class=\"ds-card-state\">等你授權 · waiting on permission</div></div>",
+      "css": ".ds-board-card { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Noto Sans TC', sans-serif; display: flex; flex-direction: column; gap: 6px; background: color-mix(in srgb, var(--warn, #e0af68) 5%, var(--bg-2, #1b1719)); border: 1px solid var(--line, #322a2e); border-left: 3px solid var(--warn, #e0af68); border-radius: 8px; padding: 9px 11px; box-shadow: inset 0 1px 0 color-mix(in srgb, var(--fg, #ebe6e3) 7%, transparent); animation: ds-breathe 2.4s ease-in-out infinite; max-width: 260px; } .ds-card-title { font-size: 13px; font-weight: 600; color: var(--fg, #ebe6e3); } .ds-card-state { font-size: 12px; color: var(--warn, #e0af68); font-weight: 600; } @keyframes ds-breathe { 0%, 100% { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--fg, #ebe6e3) 7%, transparent), 0 0 0 0 transparent; } 50% { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--fg, #ebe6e3) 7%, transparent), 0 0 0 2px color-mix(in srgb, var(--warn, #e0af68) 28%, transparent); } } @media (prefers-reduced-motion: reduce) { .ds-board-card { animation: none; box-shadow: inset 0 1px 0 color-mix(in srgb, var(--fg, #ebe6e3) 7%, transparent), 0 0 0 2px color-mix(in srgb, var(--warn, #e0af68) 28%, transparent); } }"
+    },
+    {
+      "name": "Session Row",
+      "kind": "custom",
+      "refersTo": "session-row",
+      "description": "Sidebar row: status dot, accent tool name, faint elapsed pushed right.",
+      "html": "<button class=\"ds-session-row\"><span class=\"ds-dot\"></span><span class=\"ds-row-main\"><span class=\"ds-row-title\">auth-fix · attempt 2</span><span class=\"ds-row-sub\"><span class=\"ds-row-tool\">claude</span> · running<span class=\"ds-row-elapsed\">12m</span></span></span></button>",
+      "css": ".ds-session-row { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Noto Sans TC', sans-serif; display: flex; gap: 8px; align-items: center; width: 260px; background: transparent; border: none; border-radius: 6px; padding: 5px 8px; text-align: left; cursor: pointer; transition: background 120ms ease; color: var(--fg, #ebe6e3); } .ds-session-row:hover { background: color-mix(in srgb, var(--fg, #ebe6e3) 4%, var(--bg-2, #1b1719)); } .ds-session-row:focus-visible { outline: 2px solid var(--accent, #6f7dff); outline-offset: -1px; } .ds-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent, #6f7dff); flex: none; } .ds-row-main { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; } .ds-row-title { font-size: 13px; } .ds-row-sub { display: flex; gap: 4px; font-size: 12px; color: var(--fg-dim, #a69ba0); } .ds-row-tool { color: var(--accent, #6f7dff); } .ds-row-elapsed { margin-left: auto; color: var(--fg-faint, #90858b); }"
+    },
+    {
+      "name": "Tab (active, unseen)",
+      "kind": "nav",
+      "refersTo": "tab",
+      "description": "Accent underline for active; unread wears a filled pill so it is never the busy dot.",
+      "html": "<div class=\"ds-tabstrip\"><button class=\"ds-tab ds-active\">terminal-wall<span class=\"ds-tab-badge\">3</span></button><button class=\"ds-tab\">board</button></div>",
+      "css": ".ds-tabstrip { display: flex; gap: 1px; background: var(--bg, #161214); border-bottom: 1px solid var(--line, #322a2e); padding: 0 6px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Noto Sans TC', sans-serif; } .ds-tab { display: flex; align-items: center; gap: 6px; padding: 7px 10px 6px; font-size: 12px; color: var(--fg-dim, #a69ba0); background: transparent; border: none; border-bottom: 2px solid transparent; cursor: pointer; } .ds-tab.ds-active { color: var(--fg, #ebe6e3); border-bottom-color: var(--accent, #6f7dff); background: var(--bg-2, #1b1719); } .ds-tab:focus-visible { outline: 2px solid var(--accent, #6f7dff); outline-offset: -1px; } .ds-tab-badge { background: var(--accent, #6f7dff); color: var(--on-accent, #0d1017); border-radius: 999px; padding: 0 5px; font-size: 10px; font-weight: 700; }"
+    },
+    {
+      "name": "Toast (error)",
+      "kind": "custom",
+      "refersTo": "toast",
+      "description": "Bottom-center stack — parallel agents fail in parallel; tinted border, colored text, neutral fill.",
+      "html": "<div class=\"ds-toast\">codex exited 1 — worktree kept</div>",
+      "css": ".ds-toast { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Noto Sans TC', sans-serif; max-width: 70vw; padding: 9px 12px; border-radius: 8px; font-size: 12px; background: var(--bg-3, #221c1f); color: var(--err, #e26d72); border: 1px solid color-mix(in srgb, var(--err, #e26d72) 35%, var(--bg-3, #221c1f)); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--fg, #ebe6e3) 7%, transparent), 0 6px 24px rgba(0, 0, 0, 0.45); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Ultramarine Desk",
+    "overview": "A warm near-black desk — ink with blood in it, not server-room gray — on which real terminals are laid out like instruments, and one committed jewel of an accent: electric ultramarine at full saturation. The desk stays quiet so the only loud things on it are the agents’ own terminals and the moments a human is actually needed. Color is a language of events, not decoration: a colored edge means something is happening; rest is neutral.\n\nThe system is dense, honest, and machined. Dense: 13px body type, 220px sidebar, 5–10px paddings — an operator’s console. Honest: nothing is shown that was not measured; quiet text is a token that still clears AA, never an opacity. Machined: every surface lifts the same way, from the same one-pixel bevel of light, and consequence has a two-click grammar. Components are quiet instruments; consequence is armed.",
+    "keyCharacteristics": [
+      "Eleven theme tokens; every other color is color-mix() over them",
+      "Warm near-black three-tier ground with a fixed 2.5% top-light gradient",
+      "One saturated accent as focus voice, cursor, and event color — never wallpaper",
+      "State speaks through 3px card edges, 7px dot shapes, and two named motions",
+      "CJK-aware type floor (12px for anything scanned) and whole-button wrapping",
+      "WCAG AA 4.5:1 kept as a floor on every text tier, on the surface it sits on"
+    ],
+    "rules": [
+      {
+        "name": "The One Jewel Rule",
+        "body": "There is one saturated accent and it is spent on attention and motion. A resting surface never wears it; an idle card’s edge is Machined Seam, not blue.",
+        "section": "colors"
+      },
+      {
+        "name": "The Eleven Tokens Rule",
+        "body": "No component may introduce a new color. New meanings derive (Violet-Crimson); hovers, tints, and armed states are color-mix() percentages over the tokens: 4–7% resting, 9–12% active, 18–35% selection/borders, 45% peaks.",
+        "section": "colors"
+      },
+      {
+        "name": "The No-Container-Opacity Rule",
+        "body": "De-emphasis uses Faintest Honest Ink; opacity on a container drags the buttons and data inside it below AA with it. Cards recede by losing fill and edge, never by fading their text.",
+        "section": "colors"
+      },
+      {
+        "name": "The Scanned-vs-Read Rule",
+        "body": "Anything scanned repeatedly sits at 12px or above; 11px is only for things read once and then recognized. Dense CJK decides this floor, not latin.",
+        "section": "typography"
+      },
+      {
+        "name": "The Whole-Word Rule",
+        "body": "Buttons wrap as whole buttons, never inside a word — a CJK label broken across lines reads as a different word. Card titles clamp at two lines.",
+        "section": "typography"
+      },
+      {
+        "name": "The Desk Rule",
+        "body": "Things lying on the desk are flat: they separate by the three-tier ground ladder and the bevel, and never cast a shadow. Only what floats above the desk carries one.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Pill Rule",
+        "body": "Pills are literal 999px and stay out of the radius ladder — a pill is a shape, not a rung.",
+        "section": "shapes"
+      },
+      {
+        "name": "The One Loud Motion Rule",
+        "body": "Anything blocked on a human breathes, and the breath stays loud by being the only attention-scale motion. The shimmer is weather, never a request. Everything settles to honest static states under prefers-reduced-motion.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do derive every new color as a color-mix() over the eleven tokens; follow the percentage vocabulary (4–7% resting, 9–12% active, 18–35% selection/borders, 45% peaks).",
+      "Do de-emphasize with Faintest Honest Ink (#90858b) — it clears 4.5:1 on every surface tier by construction.",
+      "Do reveal hover-hidden actions on :focus-within too — focus landing on an invisible button is the worst of both.",
+      "Do keep pointer targets ≥18px square and terminal panes ≥490×350px.",
+      "Do arm consequence: two clicks, the button renames itself, rose for deletion, amber for mutation, auto-disarm.",
+      "Do give every animation an honest static ending under prefers-reduced-motion.",
+      "Do write refusals as content that wraps in place, in full — raw errors behind a disclosure, not a tooltip.",
+      "Do keep new UI strings in the typed bilingual catalogue (en defines the keys; zh-TW is a total map)."
+    ],
+    "donts": [
+      "Don't introduce a twelfth color, pin Violet-Crimson to a hex, or hardcode any hex outside the tokens (sanctioned exceptions: the preview iframe's #fff and literal-black shadows).",
+      "Don't put opacity on a container to de-emphasize it — it drags everything inside below AA.",
+      "Don't give a resting card a colored edge: color on the edge means something is happening. A board of stripes is how state language degrades into decoration.",
+      "Don't add a second attention-scale motion; no bounce, no elastic, no cubic-bezier — ease/ease-in-out only.",
+      "Don't resize the terminal with chrome, unmount a live terminal, or let a pane fall below the TUI's minimums.",
+      "Don't load remote fonts or third-party UI kits; icons are inline one-stroke SVGs at 1em, aria-hidden.",
+      "Don't use uppercase letter-spacing outside small section heads, or weight 700 outside pills and tab badges.",
+      "Don't show a status you didn't measure: absence of signal wears the no-signal disclaimer; blank and broken must not look alike."
+    ]
+  }
+}

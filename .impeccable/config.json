@@ -1,0 +1,56 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-color",
+        "value": "rgba(0,0,0,0.5)",
+        "createdAt": "2026-08-10T12:34:30.784Z",
+        "reason": "User confirmed: DESIGN.md sanctions literal-black shadows (modal/palette/menu vocabulary)"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(0,0,0,0.45)",
+        "createdAt": "2026-08-10T12:34:30.835Z",
+        "reason": "User confirmed: DESIGN.md shadow vocabulary (toast/coach)"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(0,0,0,0.55)",
+        "createdAt": "2026-08-10T12:34:30.890Z",
+        "reason": "User confirmed: DESIGN.md modal backdrop"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#fff",
+        "createdAt": "2026-08-10T12:34:30.943Z",
+        "reason": "User confirmed: DESIGN.md's one sanctioned ground exception — the preview iframe"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#000",
+        "createdAt": "2026-08-10T12:34:30.993Z",
+        "reason": "User confirmed: find-bar shadow color-mix base, part of the literal-black shadow exception"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "999px",
+        "createdAt": "2026-08-10T12:34:31.048Z",
+        "reason": "User confirmed: The Pill Rule — a pill is a shape, not a rung"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "1.5px",
+        "createdAt": "2026-08-10T12:34:31.102Z",
+        "reason": "User confirmed: the trust-gate rotated square in the status-dot shape vocabulary"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "3px",
+        "createdAt": "2026-08-10T12:34:31.153Z",
+        "reason": "User confirmed: splitter/grip aim-wash radius, an incumbent value"
+      }
+    ]
+  }
+}

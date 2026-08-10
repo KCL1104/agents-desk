@@ -2,6 +2,7 @@
   "name": "agentdesk",
   "private": true,
   "version": "0.2.0",
+  "license": "Apache-2.0",
   "scripts": {
     "setup": "npm --prefix sidecar install && npm --prefix ui install && npm run build:sidecar",
     "build:sidecar": "npm --prefix sidecar run build",
