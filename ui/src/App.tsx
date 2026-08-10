@@ -1353,7 +1353,18 @@ export default function App() {
             viewed={reviewViewed[inspected.id] ?? []}
             onViewed={(files) => setReviewViewed((v) => ({ ...v, [inspected.id]: files }))}
             onClose={() => setInspectId(null)}
-            onDone={() => setInspectId(null)}
+            // 終局不丟包:抽屜連著按鈕一起卸載時,鍵盤要有安排好的落點。
+            // 牆上還有別的活 pane 就交給它(focusedId 落回 members[0],
+            // 不把人從工作中的牆上拽走);牆會空掉時,切到看板、落在剛
+            // 判定的那張卡上 —— 判決在哪,焦點就在哪。
+            onDone={() => {
+              const survivors = members.filter((m) => m !== inspected.session_id);
+              setInspectId(null);
+              if (view !== 'terminal' || survivors.length === 0) {
+                setView('board');
+                setBoardFocusId(inspected.task_id);
+              }
+            }}
             // The loop's peak action gets its confirmation moment: the drawer
             // closing alone reads as "gone", not "landed".
             onMerged={(branch) => pushToast('ok', t('inspector.merged', { branch }))}

@@ -254,6 +254,9 @@ test('J1 · the first run, end to end', async ({ page }) => {
     // 一批一則,整包送回 session 自己的終端。
     await page.getByTestId('review-send').click();
     await expect(page.getByTestId('review-pending')).toHaveCount(0);
+    // Send 之後 caret 回到 diff —— 走查不因送出而斷(丟包已修,
+    // 與 ⌘Enter 加註同一條規矩)。
+    await expect(page.getByTestId('diff-body')).toBeFocused();
     // 真的送出去了:訊息以 prompt 之姿落在 attempt 的時間線上。
     expect(
       await page.evaluate(() =>
@@ -280,13 +283,13 @@ test('J1 · the first run, end to end', async ({ page }) => {
     await expect(page.locator('.toast.ok')).toContainText('已合併回 main');
     await expect(page.getByTestId('inspector')).toHaveCount(0);
     await expect(page.locator('.pane')).toHaveCount(0);
-    // (a) 抽屜連著按鈕一起卸下,焦點退回 <body> —— 這是 app 今天的真話
-    //（見報告:合併後沒有安排落點),契約先釘在這裡,改了會被看見。
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
-
-    // 回看板:贏了的卡片。
-    await chord(page, '2');
+    // (a) 終局不丟包:牆空了,app 自己切到看板、把鍵盤放在剛判定的
+    // 那張卡上 —— 旅程首跑抓到的丟包(焦點退回 <body>)已修;
+    // 判決在哪,焦點就在哪。
     await expect(page.getByTestId('board')).toBeVisible();
+    // merged 卡沒有 session 可進、沒有門 —— 落點機制退而聚焦卡片本體,
+    // 這正是 ⌘→ 收卡動作要的起點。
+    await expect(card).toBeFocused();
     await expect(card).toHaveAttribute('data-outcome', 'merged');
     await expect(page.getByTestId('state-k1')).toContainText('已合併');
     // 「再試一次」不再是 primary —— 勝利的卡片不邀請重做。

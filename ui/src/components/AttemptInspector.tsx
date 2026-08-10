@@ -767,6 +767,9 @@ function Review({
         // The timeline now carries what was just asked — or, queued, the
         // banner above says what is waiting to be.
         onSent();
+        // Send 借走的 caret 也要還 —— 與 add() 同一條規矩:下一個 j 從
+        // 走查停下的地方繼續,而不是把焦點丟在 <body> 上。
+        document.querySelector<HTMLElement>('[data-testid="diff-body"]')?.focus();
       })
       .catch((e) => onProblem(String(e)))
       .finally(() => setBusy(false));
