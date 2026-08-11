@@ -834,6 +834,10 @@ pub struct Core {
     /// JSONL is the durable record, and a cached copy that survives a
     /// restart is a cache that lies after one.
     usage_state: Mutex<HashMap<String, UsageState>>,
+    /// What tells this machine apart from another with the same data
+    /// directory. Only remote socket names need it, so it is read — and on a
+    /// first run, written — the first time one is asked for.
+    machine_id: OnceLock<String>,
 }
 
 /// What a resume did. `restore_error` set means the worktree is back on
@@ -900,6 +904,29 @@ pub struct HostEnv {
     /// hook listener is down or the tunnel could not be raised — sessions
     /// run either way, they just show no status.
     pub hook_plugin_dir: Option<String>,
+    /// What it takes to hold a session in this world past the app's own life,
+    /// or `None` when this world cannot: no tmux in it, or nowhere to put the
+    /// config. Resolved beside the environment probe, because both answer
+    /// "what can this world do", both cost a round trip into it, and neither
+    /// should cost one per session.
+    pub hold: Option<WorldHold>,
+}
+
+/// What one world takes to hold a session, once the world has been asked.
+#[derive(Debug, Clone)]
+pub struct WorldHold {
+    /// The config `-f` points at, spelled the way that world spells paths.
+    ///
+    /// Never optional, and never the person's own `~/.tmux.conf`. tmux does
+    /// not complain about a `-f` file that is not there — it starts with its
+    /// defaults, status line and all — so a config this app failed to write
+    /// is not an error anyone would see, it is tmux quietly drawing over the
+    /// agent's terminal. Hence: no config, no hold.
+    conf: String,
+    /// Where the socket files go, when this process cannot see the world's
+    /// own tmux directory. `None` for the local world, where `-L` and tmux's
+    /// answer are both available and already in use.
+    socket_dir: Option<String>,
 }
 
 /// What holding one session in one world takes.
@@ -909,13 +936,15 @@ pub struct HostEnv {
 /// through the world's doorway on the way out.
 struct HoldPlan {
     /// Which socket, and in which of the two shapes. Carries the desk and the
-    /// session, so two installs on one machine cannot collect each other's.
+    /// session, so two installs cannot collect each other's.
     socket: pty::Socket,
     /// `-f`. Never the user's own `~/.tmux.conf`: their prefix key, their
     /// status line and their bindings belong to their terminal, not to a
     /// process this app is only babysitting.
     conf: String,
-    /// Where the socket file lands, when that is on this machine.
+    /// Where the socket file lands, when that is on this machine. `None` in
+    /// another world, whose filesystem this process cannot reach: there, the
+    /// destroy command unlinks it.
     socket_file: Option<String>,
 }
 
@@ -1065,6 +1094,7 @@ impl Core {
             checkpoints_on: Mutex::new(checkpoints_on),
             checkpointing: Mutex::new(std::collections::HashSet::new()),
             usage_state: Mutex::new(HashMap::new()),
+            machine_id: OnceLock::new(),
         });
 
         // Status reporting is a nicety: if the listener cannot bind, sessions
@@ -1101,6 +1131,13 @@ impl Core {
             let core = Arc::clone(&core);
             std::thread::spawn(move || core.sweep_held_orphans());
         }
+
+        // The same two questions for every other world, where asking costs a
+        // probe and so cannot happen before the board is on screen.
+        {
+            let core = Arc::clone(&core);
+            std::thread::spawn(move || core.visit_remote_holds());
+        }
         Ok(core)
     }
 
@@ -1125,6 +1162,7 @@ impl Core {
                     .hooks
                     .get()
                     .map(|s| s.plugin_dir.to_string_lossy().to_string()),
+                hold: self.local_hold(),
             },
             _ => {
                 let env = h.probe_env(&self.env)?;
@@ -1170,12 +1208,14 @@ impl Core {
                         Some(dir)
                     }),
                 };
+                let hold = world_hold(&hr, &home);
                 HostEnv {
                     host: h.clone(),
                     env,
                     claude_version,
                     worktree_root: format!("{home}/.agentdesk/worktrees"),
                     hook_plugin_dir,
+                    hold,
                 }
             }
         });
@@ -3024,7 +3064,7 @@ impl Core {
         // it after the wrap and it could only ever be this machine's — which
         // is useless for a WSL world, since a WSL world only exists on a
         // Windows host and there is no native Windows tmux to be the holder.
-        let plan = self.hold_plan(&he.host, id);
+        let plan = self.hold_plan(&he, id);
         let (program, args) = match &plan {
             Some(p) => pty::hold_attach(&p.socket, &p.conf, Some(&loc.path), &program, &args),
             None => (program, args),
@@ -3042,17 +3082,16 @@ impl Core {
                 }
             };
 
-        // Ending it travels the same road. A socket in another world is
-        // unlinked by the command that kills its server, since this process
-        // cannot reach that filesystem to do it afterwards.
+        // Ending it travels the same road, but not in the same company: this
+        // one runs from a close button with no terminal behind it, so it goes
+        // through the quiet doorway. Over SSH that is the difference between
+        // failing in a moment and hanging for ever on a password prompt
+        // nothing can answer.
         let hold = plan.map(|p| {
             let (dp, da) = pty::hold_destroy(&p.socket);
             let (dp, da) = match &he.host {
                 Host::Local => (dp, da),
-                _ => {
-                    let (x, y, _) = he.host.wrap(&dp, &da, None, &[]);
-                    (x, y)
-                }
+                _ => he.host.wrap_quiet(&dp, &da),
             };
             pty::Hold {
                 destroy: (dp, da),
@@ -3287,6 +3326,13 @@ impl Core {
     /// whole job is being trusted at a glance. `has-session` is a socket
     /// connect, so the cost is a millisecond apiece.
     ///
+    /// Local sessions only, and deliberately. Another world's answer costs a
+    /// probe of that world before the first question can even be asked — a
+    /// login shell, and over SSH a connection — and a board that will not
+    /// paint until a laptop has finished talking to a server is worse than a
+    /// board that corrects one row a moment later. `visit_remote_holds` asks
+    /// the rest, on a thread, and repaints when it knows.
+    ///
     /// Sessions in worlds that hold nothing simply have no socket to find,
     /// so they stay `Saved` without needing to be asked about separately.
     fn mark_detached(&self) {
@@ -3300,7 +3346,7 @@ impl Core {
         let tag = self.desk_tag();
         let mut sessions = self.sessions.lock().unwrap();
         for (id, meta) in sessions.iter_mut() {
-            if meta.status != Status::Saved {
+            if meta.status != Status::Saved || !is_local(&meta.cwd) {
                 continue;
             }
             let sock = pty::Socket::Named(pty::hold_socket(&tag, id));
@@ -3310,34 +3356,53 @@ impl Core {
         }
     }
 
-    /// Whether this world can hold a session past the app's own life, and
-    /// what it takes to.
+    /// What this machine takes to hold a local session.
     ///
-    /// Persistence is a property of a **world**, not a premise of the app —
-    /// the same ruling `worlds.md` already made about which machine a card
-    /// runs on. A world with tmux gets it; a world without keeps the old
-    /// behaviour exactly.
-    ///
-    /// Local only so far. What changed is where the tmux line is built: it
-    /// used to be built inside `PtyRegistry::spawn`, which could only ever
-    /// build a local one, and is now built here and handed through the same
-    /// doorway as everything else. That is the whole of what another world
-    /// needs from this side.
-    fn hold_plan(&self, host: &Host, session_id: &str) -> Option<HoldPlan> {
-        if !matches!(host, Host::Local) || self.env.which("tmux").is_none() {
-            return None;
-        }
+    /// The socket keeps its `-L` shape: it works, it is tested, and moving it
+    /// onto `-S` would strand every session a previous version left held —
+    /// still running, under a name nothing looks for any more.
+    fn local_hold(&self) -> Option<WorldHold> {
+        self.env.which("tmux")?;
         let conf = self.data_dir.join("tmux.conf");
         // Rewritten each start rather than once: an upgrade that changes what
         // tmux is told must not wait for someone to delete a stale file.
         if std::fs::write(&conf, pty::HOLD_CONF).is_err() {
             return None;
         }
-        let name = pty::hold_socket(&self.desk_tag(), session_id);
-        let socket_file = tmux_socket_dir().map(|d| d.join(&name).to_string_lossy().to_string());
-        Some(HoldPlan {
-            socket: pty::Socket::Named(name),
+        Some(WorldHold {
             conf: conf.to_string_lossy().to_string(),
+            socket_dir: None,
+        })
+    }
+
+    /// Which socket holds this one session, and how tmux is told about it.
+    ///
+    /// Persistence is a property of a **world**, not a premise of the app —
+    /// the same ruling `worlds.md` already made about which machine a card
+    /// runs on. A world that answered `tmux -V` gets it; a world that did not
+    /// keeps the behaviour it always had, and nothing here has to know which
+    /// of the two it is looking at.
+    fn hold_plan(&self, he: &HostEnv, session_id: &str) -> Option<HoldPlan> {
+        let world = he.hold.as_ref()?;
+        let (socket, socket_file) = match &world.socket_dir {
+            None => {
+                let name = pty::hold_socket(&self.desk_tag(), session_id);
+                let file =
+                    tmux_socket_dir().map(|d| d.join(&name).to_string_lossy().to_string());
+                (pty::Socket::Named(name), file)
+            }
+            Some(dir) => (
+                pty::Socket::Path(pty::hold_socket_path(
+                    dir,
+                    &self.remote_tag(),
+                    session_id,
+                )),
+                None,
+            ),
+        };
+        Some(HoldPlan {
+            socket,
+            conf: world.conf.clone(),
             socket_file,
         })
     }
@@ -3346,6 +3411,51 @@ impl Core {
     /// one machine never collect each other's held sessions.
     fn desk_tag(&self) -> String {
         pty::desk_tag(&self.data_dir.to_string_lossy())
+    }
+
+    /// This desk's tag *as another machine sees it*.
+    ///
+    /// The data directory alone identifies a desk here, because two installs
+    /// on one machine cannot share a path. It does not identify one over
+    /// there. Two laptops belonging to the same person have the same data
+    /// directory, and if they both reach one SSH host they would agree on a
+    /// tag — at which point one desk's orphan sweep, whose entire job is
+    /// killing sockets no card claims, finds the other's live agents and
+    /// kills them. Nothing reports it. The work is simply gone.
+    ///
+    /// So the remote tag mixes in something only this machine has. Not the
+    /// hostname: hostnames get renamed and reassigned, and a tag that moved
+    /// would strand every session held under the old one.
+    fn remote_tag(&self) -> String {
+        pty::desk_tag(&format!(
+            "{}\n{}",
+            self.data_dir.to_string_lossy(),
+            self.machine_id()
+        ))
+    }
+
+    /// A random id written once into the data directory, and read for ever
+    /// after. Its lifetime is exactly right: lose the data directory and the
+    /// sessions it named are gone too, so there is nothing left to strand.
+    ///
+    /// Held in memory as well as on disk. A disk that will not take the write
+    /// would otherwise hand out a fresh id per call, and every socket named
+    /// this run would be unfindable by the next call in the same run.
+    fn machine_id(&self) -> String {
+        self.machine_id
+            .get_or_init(|| {
+                let f = self.data_dir.join("machine-id");
+                if let Ok(s) = std::fs::read_to_string(&f) {
+                    let s = s.trim().to_string();
+                    if !s.is_empty() {
+                        return s;
+                    }
+                }
+                let id = uuid::Uuid::new_v4().to_string();
+                let _ = std::fs::write(&f, &id);
+                id
+            })
+            .clone()
     }
 
     /// Kill held sessions this desk no longer has a card for.
@@ -3362,7 +3472,7 @@ impl Core {
     fn sweep_held_orphans(&self) {
         let Some(tmux) = self.env.which("tmux") else { return };
         let Some(dir) = tmux_socket_dir() else { return };
-        let prefix = format!("agentdesk-{}-", self.desk_tag());
+        let prefix = pty::hold_prefix(&self.desk_tag(), false);
         let known: std::collections::HashSet<String> = self
             .sessions
             .lock()
@@ -3396,6 +3506,109 @@ impl Core {
             }
             let _ = std::fs::remove_file(e.path());
             eprintln!("[core] swept a held session with no card left: {name}");
+        }
+    }
+
+    /// The same two startup jobs — what survived, and what should not have —
+    /// for every world that is not this machine.
+    ///
+    /// Both need the same thing first: the world, probed. That is a login
+    /// shell and, over SSH, a connection, which is why this is a thread and
+    /// not part of the first paint. It reads a row as `Detached` a moment
+    /// after the board appears rather than holding the board until a server
+    /// answers.
+    ///
+    /// **Only worlds this desk currently has a session in.** Reaching an SSH
+    /// host opens a connection to it, and opening one nobody asked for is not
+    /// tidiness — it is a machine on someone's network waking up because an
+    /// app felt thorough. The cost is that a world whose every card was
+    /// deleted keeps its sockets until somebody opens a card there again;
+    /// they are a handful of files in a directory of ours, and that is the
+    /// cheaper mistake.
+    ///
+    /// **A world that does not answer is left entirely alone.** Not reachable
+    /// is not the same as not there: a laptop off the VPN would otherwise
+    /// decide every agent on the work server had vanished.
+    fn visit_remote_holds(&self) {
+        let mut worlds: Vec<Host> = Vec::new();
+        for meta in self.sessions.lock().unwrap().values() {
+            if let Ok(loc) = host::locate(&meta.cwd) {
+                if !matches!(loc.host, Host::Local) && !worlds.contains(&loc.host) {
+                    worlds.push(loc.host);
+                }
+            }
+        }
+        for h in worlds {
+            let he = match self.host_env(&h) {
+                Ok(he) => he,
+                // Unreachable, or nothing there to talk to. Say so and change
+                // nothing: every card in this world keeps the state it had.
+                Err(e) => {
+                    eprintln!("[core] cannot reach {h:?} to ask about held sessions: {e:#}");
+                    continue;
+                }
+            };
+            let Some(dir) = he.hold.as_ref().and_then(|w| w.socket_dir.clone()) else {
+                continue;
+            };
+            let hr = he.hr(&self.env);
+            let tag = self.remote_tag();
+
+            // What survived. Only rows the last run left as `Saved`: anything
+            // else is either live in this process or already known.
+            let saved: Vec<String> = self
+                .sessions
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(_, m)| {
+                    m.status == Status::Saved
+                        && host::locate(&m.cwd).map(|l| l.host == h).unwrap_or(false)
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            let mut found = false;
+            for id in &saved {
+                let sock =
+                    pty::Socket::Path(pty::hold_socket_path(&dir, &tag, id));
+                if !hold_answers(&hr, &sock) {
+                    continue;
+                }
+                if let Some(m) = self.sessions.lock().unwrap().get_mut(id) {
+                    m.status = Status::Detached;
+                    found = true;
+                }
+            }
+            if found {
+                self.broadcast();
+            }
+
+            // And what should not have. Read off the world's own directory,
+            // because a session this desk has forgotten exists nowhere else.
+            let known: std::collections::HashSet<String> = self
+                .sessions
+                .lock()
+                .unwrap()
+                .keys()
+                .map(|id| pty::hold_socket_name(&tag, id))
+                .collect();
+            let prefix = pty::hold_prefix(&tag, true);
+            for name in hr.list_dir(&dir) {
+                if !name.starts_with(&prefix) || known.contains(&name) {
+                    continue;
+                }
+                // Kill and unlink in one command, which is also the one the
+                // close button fires: over there this desk gets no second
+                // visit, and a socket left behind is indistinguishable from a
+                // live one on the next sweep.
+                let sock = pty::Socket::Path(format!("{dir}/{name}"));
+                let (p, a) = pty::hold_destroy(&sock);
+                let a: Vec<&str> = a.iter().map(String::as_str).collect();
+                match hr.run(&p, &a, None) {
+                    Ok(_) => eprintln!("[core] swept a held session with no card left: {name}"),
+                    Err(e) => eprintln!("[core] could not sweep {name}: {e:#}"),
+                }
+            }
         }
     }
 
@@ -4101,6 +4314,37 @@ mod tests {
 /// answer it differently. A failure to run tmux at all reads as "no" here,
 /// which is the safe direction for the check and, in the sweep, is why the
 /// unlink asks again rather than trusting a kill it may never have run.
+/// Ask a world whether it can hold sessions, and set it up if it can.
+///
+/// Three questions, in the order that makes a "no" cheapest: is there a tmux
+/// in there, can this app put a config where that tmux will read it, and is
+/// there somewhere to keep the sockets. Any "no" and the world simply does
+/// not hold — the same answer a machine without tmux has always given, and
+/// every card in it goes on working exactly as before.
+///
+/// One round trip apiece, once per host per run, beside the environment probe
+/// that already costs the same.
+fn world_hold(hr: &HostRef, home: &str) -> Option<WorldHold> {
+    if let Err(e) = hr.run_ok("tmux", &["-V"], None) {
+        eprintln!("[core] no tmux in this world, so nothing holds its sessions: {e:#}");
+        return None;
+    }
+    let conf = format!("{home}/.agentdesk/tmux.conf");
+    let socket_dir = format!("{home}/.agentdesk/s");
+    if let Err(e) = hr.write_file(&conf, pty::HOLD_CONF) {
+        eprintln!("[core] could not write the tmux config into this world: {e:#}");
+        return None;
+    }
+    if let Err(e) = hr.mkdir_p(&socket_dir) {
+        eprintln!("[core] could not make a socket directory in this world: {e:#}");
+        return None;
+    }
+    Some(WorldHold {
+        conf,
+        socket_dir: Some(socket_dir),
+    })
+}
+
 fn tmux_answers(tmux: &std::path::Path, socket: &pty::Socket) -> bool {
     let (_, args) = pty::hold_alive(socket);
     std::process::Command::new(tmux)
@@ -4108,6 +4352,24 @@ fn tmux_answers(tmux: &std::path::Path, socket: &pty::Socket) -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// The same question, asked inside another world. A failure to reach the
+/// world at all reads as "no", which is safe for the startup check — a row
+/// stays `Saved`, which is what it already said — and never reaches the
+/// sweep, which only ever runs against a world that has already answered.
+fn hold_answers(hr: &HostRef, socket: &pty::Socket) -> bool {
+    let (p, a) = pty::hold_alive(socket);
+    let a: Vec<&str> = a.iter().map(String::as_str).collect();
+    hr.run(&p, &a, None)
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Does this stored path name this machine? Cheaper than resolving the world,
+/// and the only thing the local startup pass needs to know.
+fn is_local(cwd: &str) -> bool {
+    host::locate(cwd).map(|l| l.host == Host::Local).unwrap_or(true)
 }
 
 pub fn tmux_socket_dir() -> Option<std::path::PathBuf> {

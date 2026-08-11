@@ -425,6 +425,16 @@ impl Drop for Harness {
                 let _ = std::fs::remove_file(dir.join(&sock));
             }
         }
+        // The same for the worlds behind the stand-in wsl.exe, whose sockets
+        // this desk named itself. Removing the root takes the files; the
+        // servers holding them have to be told.
+        if let Ok(entries) = std::fs::read_dir(self.root.join(".agentdesk").join("s")) {
+            for e in entries.flatten() {
+                let _ = std::process::Command::new("tmux")
+                    .args(["-S", &e.path().to_string_lossy(), "kill-server"])
+                    .output();
+            }
+        }
         let _ = std::fs::remove_dir_all(&self.root);
     }
 }
@@ -1033,6 +1043,290 @@ fn a_wsl_repository_runs_its_whole_attempt_inside_the_distro() {
         h.core.attempt_diff(&a.attempt_id).unwrap().contains("fixed"),
         "the frozen diff was lost with the worktree"
     );
+}
+
+/// A session in another world survives the app too, and the next start finds
+/// it there.
+///
+/// The half of persistence that was missing. Holding was built on `-L`, which
+/// asks tmux where its own socket directory is — a question only this machine
+/// can answer. In a distro the answer depends on a uid and a profile this side
+/// cannot see, so the app names the path instead and tells tmux. Everything
+/// downstream follows from that one change: the config has to be written into
+/// the world, the sweep has to read the world's directory, and the "is it
+/// alive" question has to travel through the doorway like every other command.
+///
+/// The stand-in wsl.exe shares this machine's filesystem, so the test can look
+/// at what the app put in the distro's home and check tmux is really holding
+/// it. What it cannot vouch for is the real wsl.exe; that is what CI's Windows
+/// leg and a person's own machine are for.
+#[test]
+fn a_session_in_another_world_is_held_there_and_found_again() {
+    if std::process::Command::new("tmux").arg("-V").output().is_err() {
+        eprintln!("no tmux on PATH — nothing holds sessions here");
+        return;
+    }
+    let h = Harness::new("wsl-hold");
+    let _guard = h.rt.enter();
+    let repo_url = format!("wsl://TestOS{}", h.repo.display());
+    let task = h
+        .core
+        .create_task("修好登入".into(), "make it work".into(), repo_url, "main".into())
+        .expect("a wsl:// repository must be checkable through the doorway");
+    let a = h.start(&task, "claude");
+    h.launches(&a.session_id, 1);
+
+    // The config went into the distro, not onto the app's disk. Without it
+    // tmux starts on its defaults and draws a status line over the agent's
+    // terminal — and it does not complain about a `-f` that is not there, so
+    // this is a failure that would only ever show up as a stripe at the
+    // bottom of somebody's screen.
+    let conf = h.root.join(".agentdesk").join("tmux.conf");
+    assert!(
+        std::fs::read_to_string(&conf)
+            .unwrap_or_default()
+            .contains("status off"),
+        "no tmux config in the distro at {}",
+        conf.display()
+    );
+
+    // And the socket landed in the app's own directory inside the world,
+    // where a `-L` would have gone looking in tmux's instead.
+    let socks = h.root.join(".agentdesk").join("s");
+    let held: Vec<PathBuf> = std::fs::read_dir(&socks)
+        .expect("no socket directory in the distro")
+        .flatten()
+        .map(|e| e.path())
+        .collect();
+    assert_eq!(held.len(), 1, "{held:?}");
+    let sock = held[0].to_string_lossy().to_string();
+    assert!(sock.ends_with(&a.session_id), "{sock}");
+    // Not the tag this desk uses at home. Over there the data directory alone
+    // does not identify a desk — two laptops belonging to one person have the
+    // same path, and if they both reached this host they would agree on a tag
+    // and then sweep each other's running agents. What tells them apart is
+    // written once, here.
+    let name = held[0].file_name().unwrap().to_string_lossy().into_owned();
+    let tag = name.strip_suffix(&format!("-{}", a.session_id)).unwrap();
+    assert_ne!(tag, pty::desk_tag(&h.root.join("data").to_string_lossy()));
+    assert!(
+        h.root.join("data").join("machine-id").exists(),
+        "nothing was written down to tell this machine from another"
+    );
+    assert!(
+        sock.len() < 104,
+        "a {} byte socket path will not fit in a sockaddr_un: {sock}",
+        sock.len()
+    );
+    assert!(
+        std::process::Command::new("tmux")
+            .args(["-S", &sock, "has-session", "-t", "agent"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false),
+        "tmux is not holding the session at {sock}"
+    );
+
+    // Quitting drops the client. The agent stays.
+    h.core.shutdown();
+    let core2 = h
+        .rt
+        .block_on(Core::start_with(
+            h.env.clone(),
+            Arc::new(Events::default()) as Arc<dyn UiSink>,
+            h.root.join("agentdesk.db"),
+            h.root.join("data"),
+            h.root.join("worktrees"),
+        ))
+        .expect("second core");
+
+    // Off the first paint, so it is answered on a thread — the board must not
+    // wait on a distro, still less on an SSH host. It arrives shortly after.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let status = loop {
+        let s = core2
+            .sessions()
+            .into_iter()
+            .find(|s| s.id == a.session_id)
+            .expect("the session is still on the list");
+        if s.status != Status::Saved || Instant::now() > deadline {
+            break s.status;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert_eq!(
+        status,
+        Status::Detached,
+        "a session the distro's tmux kept running came back as {status:?}",
+    );
+
+    // Attaching reaches the same agent, and does not claim it is starting:
+    // `new-session -A -D` drops the argv, so no SessionStart will ever fire.
+    core2
+        .reopen_session(&a.session_id, 100, 30)
+        .expect("reattach through the doorway");
+    let after = core2
+        .sessions()
+        .into_iter()
+        .find(|s| s.id == a.session_id)
+        .expect("still on the list");
+    assert_eq!(after.status, Status::Detached, "running, and not yet heard from");
+    assert!(after.live, "a terminal in this process carries it now");
+    core2.shutdown();
+}
+
+/// A world without tmux keeps exactly the behaviour it always had.
+///
+/// Not an edge case: a fresh Ubuntu on WSL has no tmux, so this is what most
+/// distros are on the day this ships. Persistence is a property of a world,
+/// and a world that hasn't got it must lose nothing — the session still opens,
+/// still runs, still carries its identity across the boundary. What it must
+/// not do is half-hold: a `tmux` that is not there cannot be asked to keep
+/// anything, and a socket path invented for it would be a promise to come back
+/// for something nobody is holding.
+#[test]
+fn a_world_without_tmux_still_runs_its_sessions() {
+    let h = Harness::new("wsl-no-tmux");
+    let _guard = h.rt.enter();
+    // A tmux on the world's PATH that answers nothing. Findable, so this is
+    // the harder case than an absent one: only actually asking finds out.
+    let broken = h.root.join("bin").join("tmux");
+    std::fs::write(&broken, "#!/bin/bash\nexit 127\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let repo_url = format!("wsl://TestOS{}", h.repo.display());
+    let task = h
+        .core
+        .create_task("修好登入".into(), "make it work".into(), repo_url, "main".into())
+        .expect("a wsl:// repository is checkable without tmux");
+    let a = h.start(&task, "claude");
+
+    // The agent is running, in the right place, with its argv intact.
+    let launch = h.launches(&a.session_id, 1).pop().unwrap();
+    assert_eq!(launch.args.last(), Some(&a.prompt));
+    assert!(
+        !launch.args.contains(&"new-session".to_string()),
+        "tmux got into the command line of a world that has none: {:?}",
+        launch.args
+    );
+    assert!(
+        !h.root.join(".agentdesk").join("s").exists(),
+        "a socket directory in a world that holds nothing"
+    );
+}
+
+/// The sweep reaches into the world, and stops at its edge.
+///
+/// A held session whose card is gone is an agent nobody will look at again and
+/// nothing can name — the reason the sweep exists. Over there it also has to
+/// take the socket file with it, because there is no second visit: this
+/// process cannot reach that filesystem, and on the next run a dead socket and
+/// a live one look exactly alike.
+///
+/// The other half is what it must *not* touch: a socket wearing another
+/// desk's tag. Two laptops with the same username have the same data
+/// directory, and if both reach one host they would agree on a tag unless
+/// something told them apart — at which point one desk's tidying kills the
+/// other's running work, silently.
+#[test]
+fn the_sweep_ends_forgotten_sessions_in_a_world_and_leaves_other_desks_alone() {
+    if std::process::Command::new("tmux").arg("-V").output().is_err() {
+        eprintln!("no tmux on PATH — nothing holds sessions here");
+        return;
+    }
+    let h = Harness::new("wsl-sweep");
+    let _guard = h.rt.enter();
+    let repo_url = format!("wsl://TestOS{}", h.repo.display());
+    let task = h
+        .core
+        .create_task("修好登入".into(), "make it work".into(), repo_url, "main".into())
+        .expect("a wsl:// repository is checkable");
+    let a = h.start(&task, "claude");
+    h.launches(&a.session_id, 1);
+
+    let socks = h.root.join(".agentdesk").join("s");
+    let mine = std::fs::read_dir(&socks)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .next()
+        .expect("the session was held");
+    // The name is `<desk tag>-<session id>`, and the id is what we came with.
+    let tag = mine
+        .strip_suffix(&format!("-{}", a.session_id))
+        .expect("the socket is named for its session")
+        .to_string();
+    assert!(!tag.is_empty(), "{mine}");
+
+    // Two more servers in the same directory: one this desk left behind and
+    // forgot, one belonging to a different desk entirely.
+    let orphan = socks.join(format!("{tag}-{}", uuid::Uuid::new_v4()));
+    let stranger = socks.join(format!("beef1234-{}", uuid::Uuid::new_v4()));
+    for p in [&orphan, &stranger] {
+        assert!(
+            std::process::Command::new("tmux")
+                .args([
+                    "-S",
+                    &p.to_string_lossy(),
+                    "new-session",
+                    "-d",
+                    "-s",
+                    "agent",
+                    "--",
+                    "sleep",
+                    "300",
+                ])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false),
+            "could not stage {}",
+            p.display()
+        );
+    }
+
+    h.core.shutdown();
+    let core2 = h
+        .rt
+        .block_on(Core::start_with(
+            h.env.clone(),
+            Arc::new(Events::default()) as Arc<dyn UiSink>,
+            h.root.join("agentdesk.db"),
+            h.root.join("data"),
+            h.root.join("worktrees"),
+        ))
+        .expect("second core");
+
+    let alive = |p: &PathBuf| {
+        std::process::Command::new("tmux")
+            .args(["-S", &p.to_string_lossy(), "has-session", "-t", "agent"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    };
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while alive(&orphan) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(!alive(&orphan), "a held session with no card left is still running");
+    assert!(
+        !orphan.exists(),
+        "the socket file outlived its server, and nothing over there will ever \
+         remove it — the next sweep cannot tell it from a live one"
+    );
+    assert!(
+        alive(&stranger),
+        "the sweep killed another desk's running agent"
+    );
+    assert!(stranger.exists());
+
+    let _ = std::process::Command::new("tmux")
+        .args(["-S", &stranger.to_string_lossy(), "kill-server"])
+        .output();
+    core2.shutdown();
 }
 
 /// A host nobody can reach fails at first contact, in the dialog, with the

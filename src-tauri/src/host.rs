@@ -149,6 +149,31 @@ impl Host {
         cwd: Option<&'a str>,
         envs: &[(String, String)],
     ) -> (String, Vec<String>, Option<&'a str>) {
+        self.wrap_inner(program, args, cwd, envs, true)
+    }
+
+    /// `wrap`, for a command with nobody watching it.
+    ///
+    /// The difference is only ever SSH's, and it is two flags: no `-t`,
+    /// because there is no terminal on this side to give one — ssh would warn
+    /// on stderr and carry on — and `BatchMode`, so a host that wants a
+    /// password fails in a moment instead of blocking for ever on a prompt
+    /// that has no keyboard in front of it. The interactive session is the one
+    /// place a prompt *can* be answered, so it keeps the tty; a `kill-server`
+    /// fired from a close button is not.
+    pub fn wrap_quiet(&self, program: &str, args: &[String]) -> (String, Vec<String>) {
+        let (p, a, _) = self.wrap_inner(program, args, None, &[], false);
+        (p, a)
+    }
+
+    fn wrap_inner<'a>(
+        &self,
+        program: &str,
+        args: &[String],
+        cwd: Option<&'a str>,
+        envs: &[(String, String)],
+        tty: bool,
+    ) -> (String, Vec<String>, Option<&'a str>) {
         match self {
             // Locally the caller applies cwd and env natively, as it always
             // has; wrapping would only add a process to every spawn.
@@ -171,7 +196,7 @@ impl Host {
                 ("wsl.exe".to_string(), wrapped, None)
             }
             Host::Ssh { host } => {
-                let mut a = ssh_base_args(true);
+                let mut a = ssh_base_args(tty);
                 a.push("--".to_string());
                 a.push(host.clone());
                 a.push(remote_command(program, args, cwd, envs));

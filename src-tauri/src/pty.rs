@@ -155,10 +155,33 @@ pub fn hold_attach(
 /// `kill-server`, not `kill-session`: this socket holds exactly one session,
 /// so ending it should not leave a server behind waiting for a session that
 /// will never come.
+///
+/// A socket in another world is unlinked in the same breath, because there is
+/// no second visit: this process cannot reach that filesystem, and anything
+/// coming back later would first have to tell a dead socket from a live one,
+/// which is precisely what tmux leaving the inode behind makes hard. `;`
+/// rather than `&&` — tmux exits non-zero when the server has already gone,
+/// and that is the case where the file most needs removing.
 pub fn hold_destroy(socket: &Socket) -> (String, Vec<String>) {
-    let mut a = socket.args().to_vec();
-    a.push("kill-server".to_string());
-    ("tmux".to_string(), a)
+    match socket {
+        Socket::Named(_) => {
+            let mut a = socket.args().to_vec();
+            a.push("kill-server".to_string());
+            ("tmux".to_string(), a)
+        }
+        // The path travels as an *argument*, never spliced into the script —
+        // the same rule `write_file` keeps, and the reason neither has to
+        // think about what a directory name might contain.
+        Socket::Path(p) => (
+            "sh".to_string(),
+            vec![
+                "-c".to_string(),
+                r#"tmux -S "$1" kill-server; rm -f "$1""#.to_string(),
+                "_".to_string(),
+                p.clone(),
+            ],
+        ),
+    }
 }
 
 /// Is anything answering on this socket? The one question the startup check
@@ -180,6 +203,40 @@ pub fn hold_alive(socket: &Socket) -> (String, Vec<String>) {
 /// would do it to each other.
 pub fn hold_socket(desk: &str, session_id: &str) -> String {
     format!("agentdesk-{desk}-{session_id}")
+}
+
+/// The socket *file* for one session of one desk, in a world whose tmux
+/// directory this process cannot see.
+///
+/// Shorter than the local name, and not out of taste: a unix socket path has
+/// about 104 bytes to live in, and all of it is spent here — a home
+/// directory, ours inside it, and a name that already carries a 36-character
+/// session id. The `agentdesk-` the local name wears is what keeps it apart
+/// from the person's own sockets in tmux's shared directory; this directory
+/// belongs to us, so the prefix would be ten bytes of saying so twice.
+pub fn hold_socket_path(dir: &str, desk: &str, session_id: &str) -> String {
+    format!(
+        "{}/{}",
+        dir.trim_end_matches('/'),
+        hold_socket_name(desk, session_id)
+    )
+}
+
+/// Just the file's name, for the sweep — which reads a directory listing and
+/// has to recognise its own. The same function as the path builds from, so the
+/// two cannot drift into naming one thing and looking for another.
+pub fn hold_socket_name(desk: &str, session_id: &str) -> String {
+    format!("{desk}-{session_id}")
+}
+
+/// The prefix every socket of one desk shares, in each of the two worlds.
+/// The sweep matches on it, so it lives beside the names it has to match.
+pub fn hold_prefix(desk: &str, remote: bool) -> String {
+    if remote {
+        format!("{desk}-")
+    } else {
+        format!("agentdesk-{desk}-")
+    }
 }
 
 /// A short, stable tag for a desk, from wherever it keeps its data.
@@ -619,7 +676,6 @@ mod hold_tests {
             let head = sock.args();
             for (_, args) in [
                 hold_attach(sock, "/c", None, "claude", &[]),
-                hold_destroy(sock),
                 hold_alive(sock),
             ] {
                 assert_eq!(&args[..2], &head[..], "socket flags differ: {args:?}");
@@ -631,6 +687,57 @@ mod hold_tests {
         let (_, args) = hold_alive(&named);
         assert!(args.contains(&"has-session".to_string()), "{args:?}");
         assert!(!args.iter().any(|a| a.starts_with("new-")), "{args:?}");
+    }
+
+    /// Ending a session in another world has to take the socket file with it.
+    ///
+    /// Locally the caller unlinks the inode tmux leaves behind. Over there it
+    /// cannot: it has no filesystem to reach and no way to tell a dead socket
+    /// from a live one afterwards. So the kill and the unlink are one command
+    /// or the directory grows a file per session, for ever, and every later
+    /// sweep has to open each one to find out it is nothing.
+    #[test]
+    fn ending_a_session_in_another_world_takes_its_socket_file_too() {
+        let p = "/home/me/.agentdesk/s/1a2b-s1";
+        let (prog, args) = hold_destroy(&Socket::Path(p.to_string()));
+        assert_eq!(prog, "sh");
+        let line = &args[1];
+        assert!(line.contains("kill-server"), "{line}");
+        assert!(line.contains("rm -f"), "{line}");
+        // `;`, not `&&`: an already-dead server exits non-zero, and that is
+        // exactly when the file is rubbish that must still go.
+        assert!(!line.contains("&&"), "{line}");
+        // The path is an argument, not text spliced into a script, and both
+        // halves read the same one.
+        assert_eq!(args.last().unwrap(), p);
+        assert!(!line.contains(p), "the path was pasted into the script: {line}");
+        assert_eq!(line.matches("$1").count(), 2, "{line}");
+    }
+
+    /// The path a socket lands on has to fit in a `sockaddr_un`, which is
+    /// about 104 bytes and not negotiable. A home directory plus ours plus a
+    /// uuid is most of that already, so the budget is pinned here rather than
+    /// discovered as "tmux: socket name too long" on somebody's machine.
+    #[test]
+    fn a_remote_socket_path_fits_in_a_unix_socket_address() {
+        let long_home = "/home/a-rather-long-account-name";
+        let p = hold_socket_path(
+            &format!("{long_home}/.agentdesk/s"),
+            &desk_tag("/Users/someone/Library/Application Support/agentdesk"),
+            "550e8400-e29b-41d4-a716-446655440000",
+        );
+        assert!(p.len() < 104, "{} bytes: {p}", p.len());
+        // Trailing slashes come from joins upstream and must not double.
+        assert!(!hold_socket_path("/d/", "t", "s").contains("//"));
+        // Two desks share one remote home; the tag is what keeps their
+        // sockets — and their sweeps — apart.
+        assert_ne!(
+            hold_socket_path("/d", "aaaa", "s1"),
+            hold_socket_path("/d", "bbbb", "s1"),
+        );
+        assert!(hold_socket_path("/d", "aaaa", "s1").starts_with("/d/aaaa-"));
+        assert_eq!(hold_prefix("aaaa", true), "aaaa-");
+        assert_eq!(hold_prefix("aaaa", false), "agentdesk-aaaa-");
     }
 
     /// The reason there is a socket per session at all, stated as a test so
