@@ -137,7 +137,7 @@ test.describe('dev server preview', () => {
       );
     });
     await expect(page.getByTestId('preview-pick')).toContainText(
-      'LoginForm —— src/auth/LoginForm.tsx:42',
+      'LoginForm · src/auth/LoginForm.tsx:42',
     );
 
     // The words go to the agent only when a person sends them.

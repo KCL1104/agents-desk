@@ -173,7 +173,7 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
 
     // 開門:焦點進對話框,落在第一個控件(agent 選單)。
     await page.keyboard.press('Enter');
-    await expect(page.locator('.modal h2')).toHaveText(`開始 attempt — ${FIRST_LINE}`);
+    await expect(page.locator('.modal h2')).toHaveText(`開始 attempt：${FIRST_LINE}`);
     await expectFocusWithin(page, '.modal');
     await expect(page.getByTestId('attempt-agent')).toBeFocused();
 

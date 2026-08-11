@@ -101,7 +101,7 @@ test('J1 · the first run, end to end', async ({ page }) => {
     await page.keyboard.press('Enter');
 
     // (c) 開始對話框:預設 claude、照常詢問,prompt 預覽整段可讀可改。
-    await expect(page.locator('.modal h2')).toHaveText(`開始 attempt — ${FIRST_LINE}`);
+    await expect(page.locator('.modal h2')).toHaveText(`開始 attempt：${FIRST_LINE}`);
     await expect(page.getByTestId('attempt-agent')).toHaveValue('claude');
     await expect(page.getByLabel('權限模式')).toHaveValue('normal');
     await expect(

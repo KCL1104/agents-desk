@@ -90,7 +90,7 @@ test('V · six key screens, one continuous line', async ({ page }) => {
     await expect(page.locator('.modal')).toHaveCount(0);
     await expect(page.getByTestId('board')).toBeVisible();
     await expect(page.getByTestId('board-cta')).toHaveText(
-      '開第一張卡 —— 一個 repo、一個分支、一件要做的事',
+      '開第一張卡：一個 repo、一個分支、一件要做的事',
     );
     // (a) 自動浮起的面板沒有召喚者可還，焦點退回 <body>；(b) 通道安靜。
     expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);

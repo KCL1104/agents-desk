@@ -1,9 +1,12 @@
 import { useT, type MessageKey } from '../i18n';
 
 /**
- * The refusals the core is known to make, translated into what to do about
- * them. The backend speaks precise English; a person mid-dialog needs the
- * next step in their own language, with the raw text one disclosure away.
+ * The refusals the core is known to make, said in the reader's language.
+ * The backend speaks precise English; the dialog says the same fact in one
+ * sentence, with the raw text one disclosure away. It does not go on to
+ * explain git or the filesystem — whoever runs coding agents already knows,
+ * and the sentence that teaches it is the one that condescends.
+ *
  * Anything unrecognized passes through verbatim — an unknown failure
  * paraphrased is worse than an unknown failure quoted.
  */

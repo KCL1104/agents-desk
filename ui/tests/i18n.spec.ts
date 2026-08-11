@@ -114,6 +114,9 @@ test.describe('language', () => {
       // "worktree" is the catalogue's standing loanword (every zh sentence
       // already says it in English); the chip-row label is the bare word.
       'inspector.worktreeGroup',
+      // Pure format: a component name, a middot, a file:line. There is no
+      // word in it to translate, and the separator is the app's own.
+      'preview.pick',
     ]);
     const untranslated = (Object.keys(en) as Array<keyof typeof en>).filter(
       (k) => zhTW[k] === en[k] && !SHARED.has(k),

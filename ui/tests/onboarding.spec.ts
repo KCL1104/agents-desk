@@ -62,7 +62,7 @@ test.describe('the first-run panel', () => {
     await expect(page.getByTestId('board')).toBeVisible();
     // 整張桌子還沒有卡片:CTA 說完整的一句。
     await expect(page.getByTestId('board-cta')).toHaveText(
-      '開第一張卡 —— 一個 repo、一個分支、一件要做的事',
+      '開第一張卡：一個 repo、一個分支、一件要做的事',
     );
     // 有了第一張卡,短標籤就夠了(backlog 空著時才有 CTA 可看:把卡
     // 拖去進行中就看得到)。

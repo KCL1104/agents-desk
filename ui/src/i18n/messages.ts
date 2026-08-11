@@ -30,7 +30,7 @@ export const en = {
   // The dialog has always shown this text and let it be edited for one
   // attempt; naming the file is what makes it editable for all of them.
   'set.promptingHint':
-    'What this desk adds to a session on its own — the branch, the base, and where commits go. Every attempt shows the composed prompt before it is sent.',
+    'What this desk adds to a session on its own: the branch, the base, and where commits go. Every attempt shows the composed prompt before it is sent.',
   'set.openTemplate': 'Open the template',
   'set.licenses': 'Third-party licenses',
   /* --- Why the setting you are looking for is not here. Each of these sits
@@ -42,7 +42,7 @@ export const en = {
   'note.scrollback':
     'Scrollback is not written to disk, so it does not survive a restart. What scrolled past is the agent’s own conversation, and this desk keeps no copy of it.',
   'note.telemetry':
-    'There is no telemetry switch because nothing is collected. No usage data, no crash reports, no account — what happens on this desk stays on this machine.',
+    'There is no telemetry switch because nothing is collected. No usage data, no crash reports, no account. What happens on this desk stays on this machine.',
   /* Joiners live in the catalog: a hardcoded 、 or ， reads Chinese
      punctuation into an English sentence, and vice versa. `sep` joins
      label-and-state phrases (aria-labels); `listSep` joins list items. */
@@ -70,7 +70,7 @@ export const en = {
   'newTask.titleHint': 'Leave blank to use the prompt’s first line.',
   'newTask.promptLabel': 'What the agent should do',
   'newTask.promptHint':
-    'Starting an attempt appends the branch and base — you can edit it before it is sent.',
+    'Starting an attempt appends the branch and base. It is editable before it is sent.',
   'newTask.repo': 'Repo',
   'newTask.repoHint': 'A local path, or wsl://<distro>/<path>, or ssh://<host>/<path>.',
   'newTask.base': 'Base branch',
@@ -80,13 +80,17 @@ export const en = {
   'newTask.created': 'Card created: {title}',
 
   /* -------------------------- start attempt --------------------------- */
-  'attempt.startTitle': 'Start attempt — {title}',
+  'attempt.startTitle': 'Start attempt: {title}',
   'attempt.agent': 'Agent',
   'attempt.firstPrompt': 'First prompt',
   'attempt.trustHint':
     'The prompt goes out once Claude Code has asked whether you trust the new folder.',
+  // A refusal owes its reason, and stops there. Which flags mean what in
+  // which CLI is the README's paragraph to write — spelling it out in the
+  // dialog explains the reader's own tools back to them, every single time
+  // they pick a non-Claude agent.
   'attempt.unmeasuredHint':
-    'We have not measured {agent}’s argument conventions, so nothing is sent automatically — a flag that means “here is your prompt” in one CLI can mean “print this and exit” in another. The session still opens; copy the text below into it.',
+    'Not sent automatically: {agent}’s argument conventions are unmeasured. The session still opens; the prompt is below.',
   'attempt.copied': 'Copied',
   'attempt.copyPrompt': 'Copy prompt',
   'attempt.openNoPrompt': 'Open session (no prompt)',
@@ -94,7 +98,7 @@ export const en = {
   // fires once, this choice is made every time. Naming the power without
   // the fence would be a scare; naming both is the consequence.
   'attempt.yoloHint':
-    'No permission prompts at all — the agent runs to the end of its own judgement. The fence is the worktree: this attempt cannot touch your checkout.',
+    'No permission prompts at all: the agent runs to the end of its own judgement. The fence is the worktree, so this attempt cannot touch your checkout.',
 
   /* -------------------------- permission modes ------------------------- */
   'mode.normal': 'Ask as usual',
@@ -122,7 +126,7 @@ export const en = {
   'pane.restore': 'Restore',
   'pane.zoom': 'Zoom to full',
   'pane.remove': 'Remove from layout (the session keeps running)',
-  'pane.empty': 'Drag a session in from the left, or just click one',
+  'pane.empty': 'Drag a session in from the left, or click one',
   'pane.emptyFirstRun': 'Press ＋ at the top left to open a session, or create a card on the board',
   // 第一次的空終端牆:三行認鍵卡的說明文字。和弦本身由 chord() 依平台
   // 組出來,所以型錄裡只放「這顆鍵做什麼」。
@@ -134,17 +138,19 @@ export const en = {
   'keys.title': 'Keyboard shortcuts',
   'keys.jump': 'Jump to the session waiting on you',
   'keys.last': 'Back to the session you were on before',
-  'keys.palette': 'Command palette — sessions, cards, actions',
+  'keys.palette': 'Command palette: sessions, cards, actions',
   'keys.cyclePanes': 'Focus the next / previous pane',
-  'keys.moveCard': 'Move the focused board card — a column sideways, a slot up or down',
+  'keys.moveCard': 'Move the focused board card: a column sideways, a slot up or down',
   'keys.cycleTabs': 'Next / previous tab',
   'keys.inspector': 'Open or close the inspector',
   'keys.diff':
     'J/K walk the diff lines, N/P the files; on a file header E edits, V toggles viewed; Enter acts on the focused one',
   'keys.escape': 'Close the open dialog',
   'keys.sheet': 'This list',
-  'keys.shellNote':
-    'In a terminal, Ctrl+letter belongs to the shell — the app’s shortcuts add Shift.',
+  // States the rule, not the reason. Why the terminal keeps Ctrl+letter for
+  // itself is in the first-run walkthrough, which is where an explanation
+  // belongs; a reference sheet that lectures is read once and then skipped.
+  'keys.shellNote': 'Inside a terminal the app’s shortcuts take Shift: Ctrl+Shift+E, not Ctrl+E.',
   'attempt.modeLabel': 'Permission mode',
   'attempt.acceptHint':
     'File edits are accepted without asking; every other action still checks with you.',
@@ -168,7 +174,7 @@ export const en = {
   'palette.compose': 'Make this a card',
 
   /* ------------------------------ tabs -------------------------------- */
-  'tabs.rename': '{name} — double-click to rename',
+  'tabs.rename': '{name} (double-click to rename)',
   'tabs.waiting': 'Waiting on you',
   'tabs.unseen': 'Finished while you were away',
   'tabs.busy': 'Running',
@@ -192,7 +198,7 @@ export const en = {
   'board.emptyBacklog': 'Press ＋ to add a card',
   // 整張桌子還沒有任何卡片時,CTA 說完整的一句 —— 第一分鐘值得一個
   // 完整的句子;桌子用過之後,短標籤就夠了。
-  'board.emptyBacklogFirst': 'Add the first card — a repo, a branch, something to do',
+  'board.emptyBacklogFirst': 'Add the first card: a repo, a branch, something to do',
   'board.emptyDrop': 'Drag a card here',
   'board.adHoc': 'Ad-hoc sessions',
   'board.adHocEmpty': 'No ad-hoc sessions.',
@@ -209,7 +215,7 @@ export const en = {
   'board.retryHint': 'Open another attempt with a different agent',
   'board.deleteCard': 'Delete card',
   'board.confirmDelete': 'Delete for good?',
-  'board.deleteBusy': 'The agent is mid-turn — deleting would take its session and worktree. Wait for it to settle, or park first.',
+  'board.deleteBusy': 'The agent is mid-turn, and deleting would take its session and worktree. Wait for it to settle, or park first.',
   'board.movedTo': '{title} moved to {col}',
   'board.reordered': '{title} moved to position {n}',
   // 螢幕閱讀器聽的「⚠」:卡片的 aria-label 用這個詞,不用圖形字元 ——
@@ -217,13 +223,17 @@ export const en = {
   'board.needsYou': 'needs you',
   'announce.multi': '{count} sessions waiting on you: {titles}',
   'announce.finished': '{title} finished a turn',
-  'err.notDir': 'This path does not exist (or is not a folder). Check it, or pick the repository with Choose.',
-  'err.notGitRepo': 'That folder is not a git repository. Point the card at the repo root — the folder holding .git.',
-  'err.noBranch': 'The repository has no branch named "{branch}". Check the base branch name — it is often main or master.',
+  /* An error says what happened. It does not then explain the person's own
+     trade back to them — where .git lives, what branches are usually called,
+     that a wrong path could be checked. Whoever is running coding agents
+     knows; the sentence that teaches it is the one that condescends. */
+  'err.notDir': 'This path does not exist, or is not a folder.',
+  'err.notGitRepo': 'That folder is not a git repository.',
+  'err.noBranch': 'The repository has no branch named "{branch}".',
   'err.details': 'Details',
   'env.diagnostics': 'Diagnostics',
   'sidebar.title': 'Sessions',
-  'toast.more': '{count} earlier — clear all',
+  'toast.more': '{count} earlier · clear all',
 
   /* ----------------------------- theme -------------------------------- */
   'env.theme': 'Theme',
@@ -234,7 +244,7 @@ export const en = {
   'theme.sunset': 'Sunset',
   'theme.custom': 'Custom',
   'theme.customHint':
-    'The rest derive. Chips measure each text tier against its surface — 4.5 is the floor.',
+    'The rest derive. Chips measure each text tier against its surface; 4.5 is the floor.',
   'theme.bg': 'Background',
   'theme.fg': 'Text',
   'theme.accent': 'Accent',
@@ -297,7 +307,7 @@ export const en = {
   'welcome.model': 'How it works',
   'welcome.model1': 'A card is a repo, a base branch, and something to do.',
   'welcome.model2':
-    'Starting an attempt opens an isolated git worktree with a real terminal — the agent can only touch its own branch, never your checkout.',
+    'Starting an attempt opens an isolated git worktree with a real terminal. The agent can only touch its own branch, never your checkout.',
   'welcome.model3':
     'Finishing merges the branch back, opens a PR, or discards it. Either way the diff is frozen and kept.',
   'welcome.newCard': 'Create the first card',
@@ -318,25 +328,25 @@ export const en = {
   'coach.gotIt': 'Got it',
   'coach.attempt.title': 'This attempt has its own worktree',
   'coach.attempt.body':
-    'Every attempt opens an isolated branch and folder from the base — the agent only ever touches its own copy. A brand-new folder makes Claude Code ask for trust first; the prompt goes out once you answer.',
+    'Every attempt opens an isolated branch and folder from the base, so the agent only ever touches its own copy. A brand-new folder makes Claude Code ask for trust first; the prompt goes out once you answer.',
   'coach.mode.title': 'This session will ask less',
   'coach.mode.body':
     'With fewer prompts, the agent runs on its own judgement. The safety boundary is the worktree: it can only spend this attempt’s branch, never your checkout. The card and the pane wear the badge the whole time.',
   'coach.finish.title': 'Finishing is final',
   'coach.finish.body':
-    'Merge folds the branch back and takes the worktree; discard takes it too. Both freeze the diff first, so the record survives — but nothing here can be reopened to type into. To compare agents, start a second attempt before deciding.',
+    'Merge folds the branch back and takes the worktree; discard takes it too. Both freeze the diff first, so the record survives, but nothing here can be reopened to type into. To compare agents, start a second attempt before deciding.',
   'coach.terminal.title': 'This is a real terminal',
   'coach.terminal.body':
-    'Ctrl+letter belongs to the shell in here — the app’s shortcuts take Shift (Ctrl+Shift+E), the way Ctrl+Shift+C copies. ⌘/Ctrl+Alt+←→ moves between panes; ⌘/Ctrl+1/2/3 switches views.',
+    'Ctrl+letter belongs to the shell in here, so the app’s shortcuts take Shift (Ctrl+Shift+E), the way Ctrl+Shift+C copies. ⌘/Ctrl+Alt+←→ moves between panes; ⌘/Ctrl+1/2/3 switches views.',
   'coach.waiting.title': 'An agent is waiting on you',
   // {jump} 由 CoachMark 依平台代入(⌘E / Ctrl+E)—— coach 教的是
   // 「現在就按這顆」,不是規則表。
   'coach.waiting.body':
-    'The amber breath means a human is needed — nothing else on the desk pulses. {jump} jumps to whoever waits; the question in the pane is the CLI’s own, so answer it there.',
+    'The amber breath means a human is needed; nothing else on the desk pulses. {jump} jumps to whoever waits, and the question in the pane is the CLI’s own, so answer it there.',
 
   /* ------------------------------ stats ------------------------------- */
   'stats.ahead': '{n} commits {branch} does not have yet',
-  'stats.behind': '{branch} has moved on by {n} commits — rebase before merging',
+  'stats.behind': '{branch} has moved on by {n} commits; rebase before merging',
   'stats.hint': 'Lines changed vs {branch} · ↑ commits ahead · ↓ commits behind',
 
   /* ---------------------------- inspector ----------------------------- */
@@ -362,7 +372,7 @@ export const en = {
     'Ended. The changes are frozen and kept; nothing here can change them.',
   'inspector.openPr': 'Push + open PR',
   'inspector.discard': 'Discard',
-  'inspector.discardHint': 'Take the worktree back — the diff is frozen and kept.',
+  'inspector.discardHint': 'Take the worktree back. The diff is frozen and kept.',
   'inspector.noChanges': 'This attempt has not changed any files yet.',
   'inspector.noActivity': 'No activity yet. Status reporting only works with Claude Code.',
   'inspector.eventsFailed': 'Could not read the activity: {err}',
@@ -372,14 +382,14 @@ export const en = {
   'inspector.jumpLabel': 'Jump to a file',
   'inspector.viewedCount': '· viewed {seen}/{files}',
   'inspector.wrap': 'Wrap long lines',
-  'inspector.markViewed': 'Mark as viewed — folds it away',
-  'inspector.unmarkViewed': 'Viewed — click to take it back',
+  'inspector.markViewed': 'Mark as viewed and fold it away',
+  'inspector.unmarkViewed': 'Viewed. Click to take it back',
   'inspector.resize': 'Drag to resize; ← wider, → narrower',
 
   /* --------------------------- next action ----------------------------- */
-  'next.commit': 'Uncommitted changes — a merge now would not include them',
-  'next.rebase': '{branch} has moved on by {n} — rebase before merging',
-  'next.finish': 'Clean and ahead — ready to merge into {branch} or open a PR',
+  'next.commit': 'Uncommitted changes: a merge now would not include them',
+  'next.rebase': '{branch} has moved on by {n}; rebase before merging',
+  'next.finish': 'Clean and ahead: ready to merge into {branch} or open a PR',
   'inspector.runHint': 'Run `{name}` in this attempt’s worktree, in its own terminal',
   'inspector.worktreeGroup': 'worktree',
   'inspector.shell': 'shell',
@@ -442,54 +452,55 @@ export const en = {
     'Snapshots the worktree at each turn’s end. Kept in private refs, deleted when the attempt ends; the agent’s own git state is never touched.',
   'ckpt.onStop': 'Snapshot when a turn ends (Claude Code sessions)',
   'inspector.ckpt': 'Checkpoint',
-  'inspector.ckptHint': 'Snapshot this worktree now — any agent, any moment',
+  'inspector.ckptHint': 'Snapshot this worktree now: any agent, any moment',
   'inspector.ckptMade': 'Kept #{n} ✓',
   'inspector.ckptNone': 'Nothing new since the last one',
-  'ckpt.restoreHint': 'Restore the worktree to before this turn — code only, the conversation stays',
+  'ckpt.restoreHint': 'Restore the worktree to before this turn: code only, the conversation stays',
   'ckpt.restoreArm': 'Restore to before this turn?',
-  'ckpt.blocked': 'The agent is mid-turn; wait for it to end — or close the session — to restore',
+  'ckpt.blocked': 'The agent is mid-turn. Restoring needs the turn to end, or the session closed.',
   'ckpt.restored': 'Restored to checkpoint #{n}. The pre-restore state was snapshotted first.',
   'ckpt.restoredBase': 'Restored to the attempt’s base. The pre-restore state was snapshotted first.',
   'ckpt.tell': 'Tell the agent',
   'ckpt.note':
-    'Note: this worktree was restored to an earlier checkpoint. Files may not match what you last wrote — re-read anything before editing it.',
+    'Note: this worktree was restored to an earlier checkpoint. Files may not match what you last wrote, so re-read anything before editing it.',
   'board.park': 'Park',
   'board.parkHint':
-    'Give the worktree and the slot back — branch, checkpoints and conversation all stay',
-  'park.done': 'Parked. Branch {branch} is on the clipboard — the work and the conversation are kept.',
+    'Give the worktree and the slot back; branch, checkpoints and conversation all stay',
+  'park.done': 'Parked. Branch {branch} is on the clipboard, and the work and the conversation are kept.',
   'park.restoreFailed':
-    'Resumed, but the parked work did not come down cleanly: {err}. The worktree is on its branch — restore from the timeline.',
-  'park.restoreParked': 'Parked — resume first, then restore',
+    'Resumed, but the parked work did not come down cleanly: {err}. The worktree is on its branch; the timeline can restore it.',
+  'park.restoreParked': 'Parked. Resume first, then restore',
   /* ---------------------------- preview ------------------------------ */
   'preview.title': 'Dev server preview',
   'preview.open': 'Preview',
-  'preview.openHint': 'See the dev server beside the desk — the page exactly as it serves it',
-  'preview.sshHint':
-    'The server runs on the remote host, so its port is not reachable from here. Open a tunnel of your own, or a browser on that machine.',
+  'preview.openHint': 'See the dev server beside the desk: the page exactly as it serves it',
+  // Says why the preview is unavailable and stops. Suggesting a tunnel is
+  // suggesting the reader's own trade back to them.
+  'preview.sshHint': 'The server runs on the remote host, so its port is not reachable from here.',
   'preview.copy': 'Copy',
   'preview.reload': 'Reload the page',
   'preview.external': 'Open in the browser',
-  'preview.dead': 'The server has ended — its terminal closed.',
+  'preview.dead': 'The server has ended: its terminal closed.',
   'preview.notListening': 'Nothing is answering at {url} yet.',
   'preview.retry': 'Check again',
   'preview.close': 'Close the preview',
-  'preview.pick': '{component} — {file}:{line}',
+  'preview.pick': '{component} · {file}:{line}',
   'preview.note':
-    'In the preview I am pointing at {component} ({file}:{line}) — the next feedback is about this element.',
-  'ckpt.timelineHint': 'Every prompt row carries ↩ — restore the code to before that turn.',
+    'In the preview I am pointing at {component} ({file}:{line}). The next feedback is about this element.',
+  'ckpt.timelineHint': 'Every prompt row carries ↩, which restores the code to before that turn.',
   'inspector.diffKeys': 'j/k lines · n/p files · e edit · v viewed · Enter comment',
   'ckpt.compare': 'Against',
-  'ckpt.compareBase': 'Base — the whole attempt',
+  'ckpt.compareBase': 'Base (the whole attempt)',
   'ckpt.compareN': 'Checkpoint #{n} · {time}',
   /* -------------------------- editable diff --------------------------- */
   'edit.chip': 'edit',
-  'edit.hint': 'Edit this file in place — saving writes into the attempt’s worktree',
-  'edit.oneAtATime': 'One file at a time — save or close the open editor first',
+  'edit.hint': 'Edit this file in place; saving writes into the attempt’s worktree',
+  'edit.oneAtATime': 'One file at a time. Save or close the open editor first',
   'edit.save': 'Save',
   'edit.saveHint': 'Write this text into {file} (⌘S)',
   'edit.saved': 'Saved ✓',
   'edit.close': 'Close',
-  'edit.note': 'I hand-edited {file} — re-read it before continuing.',
+  'edit.note': 'I hand-edited {file}. Re-read it before continuing.',
   'edit.failed': 'Could not read {file}: {err}',
   'edit.discardTitle': 'Unsaved changes',
   'edit.discardBody': 'Close the editor and lose the edits to {file}?',
@@ -498,11 +509,11 @@ export const en = {
   'edit.compareLocked': 'Close the editor to switch the baseline',
   'review.stale': 'line changed',
   'review.staleHint':
-    'The quoted line is no longer in the diff — the note still sends, quoting what you saw.',
+    'The quoted line is no longer in the diff. The note still sends, quoting what you saw.',
   /* ----------------------------- worlds ------------------------------- */
   'world.local': 'This machine',
   'world.where': 'World',
-  'world.pick': 'Where new cards and sessions open — WSL distros and SSH hosts included',
+  'world.pick': 'Where new cards and sessions open, WSL distros and SSH hosts included',
   'world.hint': 'New cards and sessions open here. Each card keeps its own world.',
   'world.probing': 'reaching…',
   'world.noClaude': 'no claude on this world’s PATH',
@@ -567,17 +578,17 @@ export const zhTW: Record<MessageKey, string> = {
   'set.advanced': '進階',
   'set.prompting': '開場 prompt',
   'set.promptingHint':
-    '這張桌子自己加進 session 的東西 —— 分支、base、commit 該去哪。每個 attempt 送出前都會先讓你看到組好的全文。',
+    '這張桌子自己加進 session 的東西：分支、base、commit 該去哪。每個 attempt 送出前都會先讓你看到組好的全文。',
   'set.openTemplate': '開啟模板',
   'set.licenses': '第三方授權',
   'note.agents':
-    '模型、憑證、推理與沙箱行為都留在各 agent 自己的設定裡。這張桌子不替任何 agent 把權限設定翻譯成另一個 agent 的,也從不代管憑證檔。',
+    '模型、憑證、推理與沙箱行為都留在各 agent 自己的設定裡。這張桌子不替任何 agent 把權限設定翻譯成另一個 agent 的，也從不代管憑證檔。',
   'note.cost':
-    '不換算金額,也不顯示語境百分比:價格隨方案與模型而異,而百分比需要一個這張桌子誠實給不出來的分母。量得到的 token 數在檢視器裡。',
+    '不換算金額，也不顯示語境百分比：價格隨方案與模型而異，而百分比需要一個這張桌子誠實給不出來的分母。量得到的 token 數在檢視器裡。',
   'note.scrollback':
-    'Scrollback 不寫進磁碟,所以重開之後不會留下。捲過去的東西是 agent 自己的對話,這張桌子不留副本。',
+    'Scrollback 不寫進磁碟，所以重開之後不會留下。捲過去的東西是 agent 自己的對話，這張桌子不留副本。',
   'note.telemetry':
-    '沒有遙測開關,因為沒有東西被收集。沒有使用數據、沒有當機回報、沒有帳號 —— 這張桌子上發生的事留在這台機器上。',
+    '沒有遙測開關，因為沒有東西被收集。沒有使用數據、沒有當機回報、沒有帳號。這張桌子上發生的事留在這台機器上。',
   'common.sep': '，',
   'common.listSep': '、',
 
@@ -601,7 +612,7 @@ export const zhTW: Record<MessageKey, string> = {
   'newTask.titleLabel': '標題（選填）',
   'newTask.titleHint': '留白就用 prompt 的第一行。',
   'newTask.promptLabel': '要 agent 做什麼',
-  'newTask.promptHint': '開 attempt 時會補上分支與 base —— 送出前可以改。',
+  'newTask.promptHint': '開 attempt 時會補上分支與 base，送出前可以改。',
   'newTask.repo': 'Repo',
   'newTask.repoHint': '本機路徑，或 wsl://<distro>/<路徑>，或 ssh://<host>/<路徑>。',
   'newTask.base': 'Base 分支',
@@ -609,17 +620,17 @@ export const zhTW: Record<MessageKey, string> = {
   'newTask.created': '已建立卡片：「{title}」',
 
   /* -------------------------- start attempt --------------------------- */
-  'attempt.startTitle': '開始 attempt — {title}',
+  'attempt.startTitle': '開始 attempt：{title}',
   'attempt.agent': 'Agent',
   'attempt.firstPrompt': '首則 prompt',
   'attempt.trustHint': 'Claude Code 會先問你信不信任這個新資料夾，答完 prompt 才送出。',
   'attempt.unmeasuredHint':
-    '{agent} 的參數慣例我們沒有實測過，所以不會自動送出 —— 在某個 CLI 代表「這是你的 prompt」的參數，在另一個可能代表「印出來然後結束」。session 照樣會開，把下面這段複製貼進去即可。',
+    '不會自動送出：{agent} 的參數慣例我們沒有實測過。session 照樣會開，prompt 在下面。',
   'attempt.copied': '已複製',
   'attempt.copyPrompt': '複製 prompt',
   'attempt.openNoPrompt': '開 session（不送 prompt）',
   'attempt.yoloHint':
-    '完全不再詢問權限 —— agent 全憑自己的判斷跑到底。圍籬是 worktree：這個 attempt 碰不到你的 checkout。',
+    '完全不再詢問權限，agent 全憑自己的判斷跑到底。圍籬是 worktree：這個 attempt 碰不到你的 checkout。',
 
   /* -------------------------- permission modes ------------------------- */
   'mode.normal': '照常詢問',
@@ -647,7 +658,7 @@ export const zhTW: Record<MessageKey, string> = {
   'pane.restore': '還原',
   'pane.zoom': '放大到滿版',
   'pane.remove': '從佈局移除（session 繼續執行）',
-  'pane.empty': '把 session 從左側拖進來，或直接點選',
+  'pane.empty': '把 session 從左側拖進來，或點選一個',
   'pane.emptyFirstRun': '按左上角的＋開新 session，或到看板開一張卡片',
   'pane.keymap1': '終端牆 · 看板 · 總覽',
   'pane.keymap2': 'session、卡片、和在等你的',
@@ -657,15 +668,15 @@ export const zhTW: Record<MessageKey, string> = {
   'keys.title': '鍵盤快捷鍵',
   'keys.jump': '跳到正在等你的 session',
   'keys.last': '回到剛才那個 session',
-  'keys.palette': '命令面板 —— session、卡片、動作',
+  'keys.palette': '命令面板：session、卡片、動作',
   'keys.cyclePanes': '聚焦下一個 / 上一個 pane',
-  'keys.moveCard': '搬動聚焦的卡片 —— 左右換欄、上下換位',
+  'keys.moveCard': '搬動聚焦的卡片：左右換欄、上下換位',
   'keys.cycleTabs': '下一個 / 上一個分頁',
   'keys.inspector': '開關檢視器',
   'keys.diff': 'J/K 逐行、N/P 逐檔；檔頭上 E 編輯、V 切換已看；Enter 對聚焦處動作',
   'keys.escape': '關閉打開的對話框',
   'keys.sheet': '這份清單',
-  'keys.shellNote': '在終端機裡，Ctrl+字母屬於 shell —— app 的手勢要多按 Shift。',
+  'keys.shellNote': '在終端機裡，app 的快捷鍵要多按 Shift：Ctrl+Shift+E，不是 Ctrl+E。',
   'attempt.modeLabel': '權限模式',
   'attempt.acceptHint': '檔案編輯不再逐次詢問；其他動作照樣先問你。',
   'splitter.hint': '拖曳調整比例；雙擊還原等分',
@@ -688,7 +699,7 @@ export const zhTW: Record<MessageKey, string> = {
   'palette.compose': '把這句話開成一張卡',
 
   /* ------------------------------ tabs -------------------------------- */
-  'tabs.rename': '{name} — 雙擊改名',
+  'tabs.rename': '{name}（雙擊改名）',
   'tabs.waiting': '等你處理',
   'tabs.unseen': '趁你不在時完成了',
   'tabs.busy': '執行中',
@@ -709,7 +720,7 @@ export const zhTW: Record<MessageKey, string> = {
   /* ------------------------------ board ------------------------------- */
   'board.newCard': '新增卡片',
   'board.emptyBacklog': '按 ＋ 新增卡片',
-  'board.emptyBacklogFirst': '開第一張卡 —— 一個 repo、一個分支、一件要做的事',
+  'board.emptyBacklogFirst': '開第一張卡：一個 repo、一個分支、一件要做的事',
   'board.emptyDrop': '把卡片拖到這裡',
   'board.adHoc': '臨時 session',
   'board.adHocEmpty': '沒有臨時 session。',
@@ -726,19 +737,19 @@ export const zhTW: Record<MessageKey, string> = {
   'board.retryHint': '用另一個 agent 再開一個 attempt',
   'board.deleteCard': '刪除卡片',
   'board.confirmDelete': '確定刪除？',
-  'board.deleteBusy': 'agent 回合進行中 —— 刪除會連 session 和 worktree 一起帶走。等它安靜下來，或先暫停。',
+  'board.deleteBusy': 'agent 回合進行中，刪除會連 session 和 worktree 一起帶走。等它安靜下來，或先暫停。',
   'board.movedTo': '{title} 移到 {col}',
   'board.reordered': '{title} 移到第 {n} 位',
   'board.needsYou': '需要你',
   'announce.multi': '{count} 個 session 等你：{titles}',
   'announce.finished': '「{title}」回合結束',
-  'err.notDir': '這個路徑不存在（或不是資料夾）。檢查一下，或用「選擇」挑選 repository。',
-  'err.notGitRepo': '這個資料夾不是 git repository。請指向 repo 根目錄 —— 也就是有 .git 的那層。',
-  'err.noBranch': 'Repository 裡沒有叫「{branch}」的分支。確認 base 分支名稱 —— 通常是 main 或 master。',
+  'err.notDir': '這個路徑不存在，或者不是資料夾。',
+  'err.notGitRepo': '這個資料夾不是 git repository。',
+  'err.noBranch': 'Repository 裡沒有叫「{branch}」的分支。',
   'err.details': '詳細',
   'env.diagnostics': '診斷',
   'sidebar.title': 'Sessions',
-  'toast.more': '還有 {count} 則較早的 — 全部清除',
+  'toast.more': '還有 {count} 則較早的 · 全部清除',
 
   /* ----------------------------- theme -------------------------------- */
   'env.theme': '主題',
@@ -749,7 +760,7 @@ export const zhTW: Record<MessageKey, string> = {
   'theme.sunset': '落日',
   'theme.custom': '自訂',
   'theme.customHint':
-    '其餘層次由此推導。色片量的是每一階文字對它所在的底色 —— 4.5 是樓地板。',
+    '其餘層次由此推導。色片量的是每一階文字對它所在的底色，4.5 是樓地板。',
   'theme.bg': '背景',
   'theme.fg': '文字',
   'theme.accent': '強調色',
@@ -809,7 +820,7 @@ export const zhTW: Record<MessageKey, string> = {
   'welcome.model': '怎麼運作',
   'welcome.model1': '一張卡片 = 一個 repo、一個 base 分支、一件要做的事。',
   'welcome.model2':
-    '開始 attempt 會開一個隔離的 git worktree 和一個真終端 —— agent 只碰得到自己的分支，碰不到你的 checkout。',
+    '開始 attempt 會開一個隔離的 git worktree 和一個真終端。agent 只碰得到自己的分支，碰不到你的 checkout。',
   'welcome.model3': '結束時把分支合回去、開 PR、或丟棄。無論哪種，diff 都會先凍結保留。',
   'welcome.newCard': '開第一張卡',
   'welcome.newSession': '先開個臨時 session',
@@ -825,23 +836,23 @@ export const zhTW: Record<MessageKey, string> = {
   'coach.gotIt': '知道了',
   'coach.attempt.title': '這個 attempt 有自己的 worktree',
   'coach.attempt.body':
-    '每次開始都會從 base 分支開一個隔離的分支和資料夾 —— agent 只動得到它自己的這份。全新的資料夾會先觸發 Claude Code 的信任確認；答完，prompt 才送出。',
+    '每次開始都會從 base 分支開一個隔離的分支和資料夾，agent 只動得到它自己的這份。全新的資料夾會先觸發 Claude Code 的信任確認；答完，prompt 才送出。',
   'coach.mode.title': '這個 session 會少問你',
   'coach.mode.body':
     '減少詢問之後，agent 憑自己的判斷往下跑。安全邊界是 worktree：它只花得掉這個 attempt 自己的分支，碰不到你的 checkout。卡片和 pane 會一直戴著這個徽章。',
   'coach.finish.title': '結束是最終的',
   'coach.finish.body':
-    '合併會把分支收回 base 並收回 worktree；丟棄也一樣。兩者都會先凍結 diff，紀錄留得下來 —— 但之後只能讀，不能再進去改。想比較兩個 agent，先開第二個 attempt 再做決定。',
+    '合併會把分支收回 base 並收回 worktree；丟棄也一樣。兩者都會先凍結 diff，紀錄留得下來，但之後只能讀，不能再進去改。想比較兩個 agent，先開第二個 attempt 再做決定。',
   'coach.terminal.title': '這是一個真終端',
   'coach.terminal.body':
-    '在這裡 Ctrl+字母屬於 shell —— app 的快捷鍵要加 Shift（Ctrl+Shift+E），就像 Ctrl+Shift+C 是複製。⌘/Ctrl+Alt+←→ 在 pane 之間移動；⌘/Ctrl+1/2/3 切換視圖。',
+    '在這裡 Ctrl+字母屬於 shell，app 的快捷鍵要加 Shift（Ctrl+Shift+E），就像 Ctrl+Shift+C 是複製。⌘/Ctrl+Alt+←→ 在 pane 之間移動；⌘/Ctrl+1/2/3 切換視圖。',
   'coach.waiting.title': '有 agent 在等你',
   'coach.waiting.body':
-    '琥珀色的呼吸代表需要人 —— 桌上不會有別的東西這樣跳動。{jump} 跳到在等的那個；pane 裡的問題是 CLI 自己問的，就在裡面回答。',
+    '琥珀色的呼吸代表需要人，桌上不會有別的東西這樣跳動。{jump} 跳到在等的那個；pane 裡的問題是 CLI 自己問的，就在裡面回答。',
 
   /* ------------------------------ stats ------------------------------- */
   'stats.ahead': '有 {n} 個 {branch} 還沒有的 commit',
-  'stats.behind': '{branch} 已經前進了 {n} 個 commit —— 合併前先 rebase',
+  'stats.behind': '{branch} 已經前進了 {n} 個 commit，合併前先 rebase',
   'stats.hint': '相對 {branch} 的行數變更 · ↑ 領先的 commit · ↓ 落後的 commit',
 
   /* ---------------------------- inspector ----------------------------- */
@@ -863,7 +874,7 @@ export const zhTW: Record<MessageKey, string> = {
   'inspector.frozenHint': '已結束。變更凍結保留，這裡不會再改動它。',
   'inspector.openPr': 'push + 開 PR',
   'inspector.discard': '丟棄',
-  'inspector.discardHint': '收回 worktree —— diff 會凍結保留。',
+  'inspector.discardHint': '收回 worktree，diff 會凍結保留。',
   'inspector.noChanges': '這個 attempt 還沒有改動任何檔案。',
   'inspector.noActivity': '還沒有活動。狀態回報只對 Claude Code 有效。',
   'inspector.eventsFailed': '讀取活動失敗：{err}',
@@ -873,14 +884,14 @@ export const zhTW: Record<MessageKey, string> = {
   'inspector.jumpLabel': '跳到檔案',
   'inspector.viewedCount': '· 已看 {seen}/{files}',
   'inspector.wrap': '長行折行',
-  'inspector.markViewed': '標為已看 —— 順手收合',
-  'inspector.unmarkViewed': '已看 —— 點一下取消',
+  'inspector.markViewed': '標為已看，順手收合',
+  'inspector.unmarkViewed': '已看，點一下取消',
   'inspector.resize': '拖曳調整寬度；← 加寬、→ 收窄',
 
   /* --------------------------- next action ----------------------------- */
-  'next.commit': '還有未 commit 的變更 —— 現在合併不會包含它們',
-  'next.rebase': '{branch} 已前進 {n} 個 commit —— 合併前先 rebase',
-  'next.finish': '乾淨且領先 —— 可以合併回 {branch} 或開 PR',
+  'next.commit': '還有未 commit 的變更，現在合併不會包含它們',
+  'next.rebase': '{branch} 已前進 {n} 個 commit，合併前先 rebase',
+  'next.finish': '乾淨且領先，可以合併回 {branch} 或開 PR',
   'inspector.runHint': '在這個 attempt 的 worktree 裡執行 `{name}`，開自己的終端機',
   'inspector.worktreeGroup': 'worktree',
   'inspector.shell': 'shell',
@@ -937,48 +948,47 @@ export const zhTW: Record<MessageKey, string> = {
     '每輪結束時快照一次 worktree。存在私有 ref 裡，attempt 結束即刪；agent 自己的 git 狀態一概不碰。',
   'ckpt.onStop': '回合結束時自動快照（Claude Code session）',
   'inspector.ckpt': '檢查點',
-  'inspector.ckptHint': '現在就快照這個 worktree —— 任何 agent、任何時刻',
+  'inspector.ckptHint': '現在就快照這個 worktree：任何 agent、任何時刻',
   'inspector.ckptMade': '已留存 #{n} ✓',
   'inspector.ckptNone': '距上一個檢查點沒有變更',
-  'ckpt.restoreHint': '把 worktree 還原到此輪之前 —— 只還程式碼，對話不動',
+  'ckpt.restoreHint': '把 worktree 還原到此輪之前：只還程式碼，對話不動',
   'ckpt.restoreArm': '確定還原到此輪之前？',
-  'ckpt.blocked': 'agent 回合進行中；等回合結束（或關閉 session）才能還原',
+  'ckpt.blocked': 'agent 回合進行中。要還原，得等回合結束或關掉 session。',
   'ckpt.restored': '已還原到檢查點 #{n}。還原前的狀態已先快照。',
   'ckpt.restoredBase': '已還原到 attempt 起點（base）。還原前的狀態已先快照。',
   'ckpt.tell': '告訴 agent',
   'ckpt.note':
-    '提醒：這個 worktree 已被還原到較早的檢查點。檔案內容可能與你上次寫入的不同 —— 編輯前請先重新讀取。',
+    '提醒：這個 worktree 已被還原到較早的檢查點。檔案內容可能與你上次寫入的不同，編輯前請先重新讀取。',
   'board.park': '暫停',
-  'board.parkHint': '把 worktree 與併發槽還回去 —— 分支、檢查點、對話都留著',
-  'park.done': '已暫停。分支 {branch} 已在剪貼簿 —— 工作與對話都留著。',
+  'board.parkHint': '把 worktree 與併發槽還回去，分支、檢查點、對話都留著',
+  'park.done': '已暫停。分支 {branch} 已在剪貼簿，工作與對話都留著。',
   'park.restoreFailed':
-    '已繼續，但暫停時的工作沒有完整回來：{err}。worktree 已在分支上 —— 可從時間軸還原。',
-  'park.restoreParked': '已暫停 —— 先繼續，再還原',
+    '已繼續，但暫停時的工作沒有完整回來：{err}。worktree 已在分支上，可從時間軸還原。',
+  'park.restoreParked': '已暫停。先繼續，再還原',
   /* ---------------------------- preview ------------------------------ */
   'preview.title': 'Dev server 預覽',
   'preview.open': '預覽',
-  'preview.openHint': '把 dev server 掛在桌邊看 —— 頁面就是 server 送出的樣子',
-  'preview.sshHint':
-    'server 在遠端機器上，埠從這裡打不到。自己開一條 tunnel，或在那台機器的瀏覽器看。',
+  'preview.openHint': '把 dev server 掛在桌邊看：頁面就是 server 送出的樣子',
+  'preview.sshHint': 'server 在遠端機器上，埠從這裡打不到。',
   'preview.copy': '複製',
   'preview.reload': '重新載入頁面',
   'preview.external': '用瀏覽器開啟',
-  'preview.dead': 'server 已結束 —— 它的終端機關了。',
+  'preview.dead': 'server 已結束，它的終端機關了。',
   'preview.notListening': '{url} 目前沒有回應。',
   'preview.retry': '再試一次',
   'preview.close': '關閉預覽',
-  'preview.pick': '{component} —— {file}:{line}',
+  'preview.pick': '{component} · {file}:{line}',
   'preview.note':
-    '我在預覽裡指著 {component}（{file}:{line}）—— 接下來的回饋是關於這個元件。',
-  'ckpt.timelineHint': '每個 prompt 列都有 ↩ —— 可把程式碼還原到那一輪之前。',
+    '我在預覽裡指著 {component}（{file}:{line}）。接下來的回饋是關於這個元件。',
+  'ckpt.timelineHint': '每個 prompt 列都有 ↩，可把程式碼還原到那一輪之前。',
   'inspector.diffKeys': 'j/k 走行 · n/p 走檔 · e 編輯 · v 已看 · Enter 留言',
   'ckpt.compare': '比較對象',
-  'ckpt.compareBase': 'Base —— 整個 attempt',
+  'ckpt.compareBase': 'Base（整個 attempt）',
   'ckpt.compareN': '檢查點 #{n} · {time}',
   /* -------------------------- editable diff --------------------------- */
   'edit.chip': '編輯',
-  'edit.hint': '就地編輯這個檔 —— 存檔會寫進 attempt 的 worktree',
-  'edit.oneAtATime': '一次編輯一個檔 —— 先存檔或關掉開著的編輯器',
+  'edit.hint': '就地編輯這個檔，存檔會寫進 attempt 的 worktree',
+  'edit.oneAtATime': '一次編輯一個檔。先存檔或關掉開著的編輯器',
   'edit.save': '存檔',
   'edit.saveHint': '把這份內容寫進 {file}（⌘S）',
   'edit.saved': '已存檔 ✓',
@@ -991,11 +1001,11 @@ export const zhTW: Record<MessageKey, string> = {
   'edit.keep': '繼續編輯',
   'edit.compareLocked': '關掉編輯器才能切換比較基準',
   'review.stale': '行已變',
-  'review.staleHint': '引用的那行已不在 diff 裡 —— 訊息照送，引用的是你當時看到的。',
+  'review.staleHint': '引用的那行已不在 diff 裡。訊息照送，引用的是你當時看到的。',
   /* ----------------------------- worlds ------------------------------- */
   'world.local': '本機',
   'world.where': '世界',
-  'world.pick': '新卡片與新 session 開在哪 —— 包含 WSL distro 與 SSH host',
+  'world.pick': '新卡片與新 session 開在哪，包含 WSL distro 與 SSH host',
   'world.hint': '新開的東西預設在這裡。每張卡各自保有自己的世界。',
   'world.probing': '連線中…',
   'world.noClaude': '這個世界的 PATH 上找不到 claude',
