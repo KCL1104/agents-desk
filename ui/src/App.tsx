@@ -574,18 +574,30 @@ export default function App() {
   /** Clicking a sidebar row adds it to the layout; dragging places it. */
   const onSelect = useCallback(
     async (id: string) => {
-      commit(layout, addMember(members, id));
-      setFocused(id);
       const s = sessions.find((x) => x.id === id);
       // Reopening a saved session reattaches a terminal, continuing the
       // agent's own conversation history in that directory.
+      //
+      // **Reopen first, then take the slot.** The other order raced itself:
+      // adding a session that is still `live: false` to the layout, then
+      // waiting for the reopen, gave the reconcile effect above a render in
+      // which to do exactly what it is for — drop the members whose sessions
+      // have stopped — and its write landed last. The tab ended up empty, so
+      // clicking a stopped card switched to the terminal wall and showed
+      // nothing at all. Awaiting first means the session is live by the time
+      // it is added, and there is nothing for reconcile to disagree with.
       if (s && !s.live) {
         try {
           await api.reopenSession(id, INITIAL_COLS, INITIAL_ROWS);
         } catch (e) {
           setError(t('error.reopen', { err: String(e) }));
+          // No pane for a session that did not come back: an empty slot
+          // claiming to hold a terminal is worse than no slot.
+          return;
         }
       }
+      commit(layout, addMember(members, id));
+      setFocused(id);
     },
     [sessions, commit, layout, members],
   );

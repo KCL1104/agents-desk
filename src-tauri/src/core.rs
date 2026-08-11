@@ -2879,8 +2879,30 @@ impl Core {
         // Marked live before the launch, not after: a child that exits at
         // once reports Exited in between, and writing "starting, live" over
         // that report would leave a zombie row nothing can ever update.
+        //
+        // **Attaching is not starting.** A session tmux held through a
+        // restart is already running, and `new-session -A -D` reattaches to
+        // it and drops the argv on the floor — so no `SessionStart` fires,
+        // and nothing would ever move the row off 啟動中. It would sit there
+        // for the rest of the session's life, which is the same lie the
+        // status label used to tell, told from the other side.
+        //
+        // So the honest state is kept: running, and this desk has not heard
+        // from it yet. The first real hook replaces it, which is now a thing
+        // that can happen again (see `hooks::start`).
+        let attaching = self
+            .sessions
+            .lock()
+            .unwrap()
+            .get(id)
+            .map(|s| s.status == Status::Detached)
+            .unwrap_or(false);
         if let Some(s) = self.sessions.lock().unwrap().get_mut(id) {
-            s.status = Status::Starting;
+            s.status = if attaching {
+                Status::Detached
+            } else {
+                Status::Starting
+            };
             s.live = true;
             s.last_active_at = now_ms();
         }
@@ -3180,6 +3202,13 @@ impl Core {
 
     pub fn shutdown(&self) {
         self.ptys.kill_all();
+        // Give the hook port back. It is part of the address every held
+        // session was told to report to, so the next run has to be able to
+        // take it again — and a listener nobody stops keeps it for as long as
+        // this process lives.
+        if let Some(h) = self.hooks.get() {
+            h.stop();
+        }
         // Close the standing SSH connections, tunnels and all — with
         // ControlPersist they would otherwise outlive the app.
         for h in self.hosts.lock().unwrap().keys() {

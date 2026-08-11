@@ -211,16 +211,33 @@ Four decisions worth naming:
   directory), so one installation's orphan sweep can never kill another's live
   agent.
 
-A held session comes back as **Running unwatched** rather than as "Closed",
-checked with `tmux has-session` before the first paint rather than on a
-background thread: a status that corrects itself a moment later is a flicker,
-on the one surface whose job is to be believed at a glance. Its dot stays
-neutral, because the agent's hooks still answer to the port the previous app
-instance held. We know it is running. We do not know what it is doing until
-the session is opened.
+A held session comes back as **Running, not reporting**, checked with `tmux
+has-session` before the first paint rather than on a background thread: a
+status that corrects itself a moment later is a flicker, on the one surface
+whose job is to be believed at a glance. Its dot stays neutral, because at
+that moment we know the agent is running and nothing more.
 
-Not yet done: the same for WSL and SSH worlds, and live status for a detached
-session.
+It does not stay that way. **The hook endpoint is the same one across
+restarts**: the port is asked for again by number and the token is kept, so
+the URL baked into a running session's plugin config still resolves, and the
+agent's next event puts a real status back on the row. That baking is why the
+endpoint has to be stable rather than the URL indirect. Most of these are
+`http` hooks, whose `url` is a literal string with no shell behind it, and
+Claude Code reads the file once when the session starts. For a session already
+running, that file is a photograph, not a pointer.
+
+Two consequences worth naming:
+
+- **Reattaching is not starting.** `new-session -A -D` attaches to the running
+  agent and drops the argv, so no `SessionStart` fires. Claiming 啟動中 there
+  would have been the same lie the status label used to tell, told from the
+  other side, and it would never have corrected itself.
+- **If the port is taken**, by a second AgentDesk or by anything else, a fresh
+  one is used and the sessions the last run left behind stay quiet for the
+  rest of their lives. That is exactly where this was before the endpoint was
+  remembered, so it degrades rather than refusing to start.
+
+Not yet done: the same for the WSL and SSH worlds.
 
 ---
 
@@ -902,10 +919,10 @@ is a usable starting point.
   same goes for superseded attempts: "kept for reference" means read-only
   reference, not somewhere you can jump back in and type
 - Sessions outliving the app is local-only for now. A card in a WSL distro or
-  on an SSH host still stops when the app does and needs resume pressed, and a
-  session held through a restart reads as **Running unwatched** until it is
-  opened, because its hooks are still reporting to a port that no longer
-  exists
+  on an SSH host still stops when the app does and needs resume pressed. A
+  held session reads as **Running, not reporting** until its agent's next hook
+  event lands, which for an agent sitting idle at a prompt may be until you
+  type something
 
 ---
 

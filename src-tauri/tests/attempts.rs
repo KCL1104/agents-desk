@@ -2209,6 +2209,11 @@ fn a_session_tmux_kept_running_does_not_come_back_as_closed() {
     let a = h.start(&task, "claude");
     h.launches(&a.session_id, 1);
 
+    // The endpoint this session was told to report to. Its plugin config has
+    // this string baked into it now, and Claude Code reads that file once, so
+    // this is the only address it will ever have.
+    let told = h.core.hook_url().expect("the hook server is up");
+
     // The agent is running under tmux. Quitting drops the client and leaves
     // it there — which is `shutdown`, exactly what closing the window does.
     h.core.shutdown();
@@ -2238,4 +2243,36 @@ fn a_session_tmux_kept_running_does_not_come_back_as_closed() {
     );
     // Not live: no pty in *this* process carries it yet. Opening attaches.
     assert!(!seen.live, "nothing is attached to it in this process");
+
+    // The cause, not the symptom. Whether the held agent's reports arrive is
+    // decided entirely by whether this string is the one it was told, so that
+    // is what is asserted: not "a status eventually appeared", which could
+    // pass for a dozen unrelated reasons, but "the address did not move".
+    assert_eq!(
+        core2.hook_url().as_deref(),
+        Some(told.as_str()),
+        "the endpoint moved, so every session held through the restart is \
+         posting into nothing for the rest of its life",
+    );
+
+    // Attaching is not starting. `new-session -A -D` reattaches to the agent
+    // and drops the argv, so no SessionStart will ever fire for it — a row
+    // that said 啟動中 here would say it forever.
+    core2
+        .reopen_session(&a.session_id, 100, 30)
+        .expect("reattach to the held session");
+    let after = core2
+        .sessions()
+        .into_iter()
+        .find(|s| s.id == a.session_id)
+        .expect("still on the list");
+    assert_ne!(
+        after.status,
+        Status::Starting,
+        "reattaching claimed the agent was starting; nothing would ever correct that",
+    );
+    assert_eq!(after.status, Status::Detached, "running, and not yet heard from");
+    assert!(after.live, "a terminal in this process carries it now");
+
+    core2.shutdown();
 }

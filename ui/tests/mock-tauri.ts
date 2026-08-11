@@ -470,8 +470,12 @@ export function installMock(): void {
     reopen_session: (args) => {
       const s = mock.sessions.find((x) => x.id === args.id);
       if (s) {
+        // Attaching is not starting, and the mock has to agree with the core
+        // about that: `new-session -A -D` reattaches to a held agent and drops
+        // the argv, so no SessionStart fires and 啟動中 would never correct
+        // itself. See Core::reopen_session.
+        s.status = s.status === 'detached' ? 'detached' : 'starting';
         s.live = true;
-        s.status = 'starting';
       }
       mock.pushSessions();
       return null;

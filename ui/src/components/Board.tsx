@@ -468,7 +468,16 @@ function Card({
   // The whole card is the target when there is a session behind it: getting
   // into the TUI is the common act, and making people find a small button
   // for it would be the wrong thing to optimise.
-  const enter = live.kind === 'session' ? () => onOpenSession(live.session.id) : undefined;
+  //
+  // `detached` is a door too, and it was the one card that said so and then
+  // did not open. tmux is still holding that agent; clicking reattaches to
+  // the run in progress rather than starting anything. A card whose state
+  // reads 「執行中」 and offers no way in is worse than one that reads
+  // 「未執行」, because it is the state where something is actually at stake.
+  const enter =
+    live.kind === 'session' || live.kind === 'detached'
+      ? () => onOpenSession(live.session.id)
+      : undefined;
 
   /** A live turn in flight: parking checks this, and now so does the ✕ —
    *  deleting the card would take the running session and its worktree

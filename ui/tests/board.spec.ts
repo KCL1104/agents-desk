@@ -599,3 +599,44 @@ test.describe('parked — work kept, ground given back', () => {
     await expect(restore).toHaveAttribute('title', /先繼續/);
   });
 });
+
+/**
+ * 被 tmux 扛住的卡片是一扇門。
+ *
+ * `board.ts` 的註解一直寫著「打開卡片就接回還在跑的那個」,但卡片上從來沒有
+ * 那個入口:`enter` 只認 `session`,detached 既不可點、footer 也沒有按鈕。
+ * 一張寫著「執行中」卻打不開的卡,比一張寫著「未執行」的更糟 —— 那正是真的
+ * 有東西在跑的那一格。
+ */
+test.describe('a card tmux is still holding', () => {
+  test('is a door: clicking it reattaches instead of doing nothing', async ({ page }) => {
+    await boot(page);
+    await newCard(page, '修好登入');
+    await start(page, 'k1');
+    await page.getByTestId('view-board').click();
+
+    // 這就是重啟後那一格:session 還在清單上,狀態是 detached,但這個行程裡
+    // 沒有 pty 扛著它。
+    await page.evaluate(() => {
+      const s = window.__mock.sessions.find((x) => x.id === 's1');
+      if (s) {
+        s.live = false;
+        s.status = 'detached';
+      }
+      window.__mock.pushSessions();
+    });
+
+    await expect(page.getByTestId('state-k1')).toContainText('執行中，尚未回報');
+    const door = page.locator('[data-testid="task-k1"] .card-door');
+    await expect(door).toHaveCount(1);
+
+    await door.click();
+    // 接回去了:離開看板、終端機在眼前,而且它在版面上真的佔了一格 ——
+    // slots 是空的話,終端機牆會切過去然後什麼都不顯示。
+    await expect(page.getByTestId('board')).toHaveCount(0);
+    await expect(page.locator('.pane[data-session-id="s1"]')).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => window.__mock.tabs[0].slots.filter(Boolean).length))
+      .toBe(1);
+  });
+});

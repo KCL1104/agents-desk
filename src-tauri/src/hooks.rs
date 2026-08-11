@@ -87,28 +87,133 @@ pub struct HookServer {
     /// Shared secret in the URL, so another local process cannot forge status.
     pub token: String,
     pub plugin_dir: PathBuf,
+    /// The accept loop. Held so shutting the desk down gives the port back
+    /// rather than sitting on it: the port is part of the address held
+    /// sessions were told to use, and the next run has to be able to take it.
+    accept: tokio::task::AbortHandle,
 }
 
 impl HookServer {
     pub fn url(&self) -> String {
         format!("http://127.0.0.1:{}/h/{}", self.port, self.token)
     }
+
+    /// Stop listening and release the port.
+    pub fn stop(&self) {
+        self.accept.abort();
+    }
+}
+
+/// Where the port and token are kept between runs. See `start`.
+const ENDPOINT_FILE: &str = "hook-endpoint";
+
+/// The endpoint the last run used, if it is still readable and sane.
+///
+/// The token is checked, not merely read. It goes straight into a URL path,
+/// so a file that has been edited by hand — or truncated by a full disk —
+/// must not be able to smuggle a second path segment into the route.
+fn remembered(data_dir: &Path) -> (Option<u16>, Option<String>) {
+    let Ok(text) = std::fs::read_to_string(data_dir.join(ENDPOINT_FILE)) else {
+        return (None, None);
+    };
+    let mut lines = text.lines();
+    let port = lines.next().and_then(|s| s.trim().parse::<u16>().ok());
+    let token = lines
+        .next()
+        .map(str::trim)
+        .filter(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_alphanumeric()))
+        .map(str::to_string);
+    (port, token)
+}
+
+/// Write the endpoint down for the next run.
+///
+/// The token is the only thing between another local process and the ability
+/// to forge status for a session, so it is written the way a key is written.
+/// The mode is asked for at creation *and* set afterwards: `mode()` is
+/// ignored when the file already exists, and a chmod that follows the write
+/// leaves a window where the secret is readable — a secret is only as good as
+/// its narrowest moment.
+fn remember(data_dir: &Path, port: u16, token: &str) -> Result<()> {
+    std::fs::create_dir_all(data_dir)?;
+    let path = data_dir.join(ENDPOINT_FILE);
+    let body = format!("{port}\n{token}\n");
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)?;
+        f.write_all(body.as_bytes())?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    #[cfg(not(unix))]
+    std::fs::write(&path, body)?;
+    Ok(())
+}
+
+/// Take last run's port if it is still free, otherwise any port.
+///
+/// Briefly patient about it. The commonest reason the old port is busy is the
+/// previous instance still letting go of it — a relaunch, or an upgrade
+/// restarting the app — and giving up on the first refusal would silence
+/// every session that instance left running, for the sake of a fifth of a
+/// second.
+async fn bind_preferring(port: Option<u16>) -> Result<TcpListener> {
+    if let Some(p) = port.filter(|p| *p != 0) {
+        let mut last = None;
+        for _ in 0..10 {
+            match TcpListener::bind(("127.0.0.1", p)).await {
+                Ok(l) => return Ok(l),
+                Err(e) => last = Some(e),
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        if let Some(e) = last {
+            // Somebody else has it for good: a second AgentDesk install, or an
+            // unrelated program. Taking a fresh port loses the reports from
+            // sessions the previous run left running, which is exactly where
+            // this was before any of it was remembered — so it degrades to the
+            // old behaviour rather than refusing to start.
+            eprintln!("[hooks] port {p} is taken ({e}); sessions held by the last run will stay quiet");
+        }
+    }
+    Ok(TcpListener::bind("127.0.0.1:0").await?)
 }
 
 /// Bind a loopback listener and write the companion plugin.
+///
+/// **The endpoint is the same one as last time, when it can be.** A session
+/// tmux held through a restart is still running, but the URL it reports to
+/// was baked into `hooks.json` when the session started, and Claude Code
+/// reads that file once. Both halves of that URL used to be fresh every run —
+/// an ephemeral port and a new uuid — so a held agent kept posting into
+/// nothing: it ran on, and the desk went blind to it for the rest of its
+/// life. Remembering the pair is not a second channel; it is the existing one
+/// made to survive the thing it was already meant to survive.
 pub async fn start(data_dir: &Path, handler: Arc<dyn HookHandler>) -> Result<HookServer> {
-    let listener = TcpListener::bind("127.0.0.1:0")
+    let (kept_port, kept_token) = remembered(data_dir);
+    let listener = bind_preferring(kept_port)
         .await
         .context("binding the hook listener")?;
     let port = listener.local_addr()?.port();
-    let token = uuid::Uuid::new_v4().simple().to_string();
+    let token = kept_token.unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+    if let Err(e) = remember(data_dir, port, &token) {
+        // Not fatal: this run works either way. Only the *next* one loses the
+        // sessions this one leaves behind.
+        eprintln!("[hooks] could not remember the endpoint: {e}");
+    }
 
     let plugin_dir = data_dir.join("plugin");
     let url = format!("http://127.0.0.1:{port}/h/{token}");
     write_plugin(&plugin_dir, &url).context("writing the status plugin")?;
 
     let want = format!("/h/{token}");
-    tokio::spawn(async move {
+    let accept = tokio::spawn(async move {
         loop {
             let (stream, _) = match listener.accept().await {
                 Ok(pair) => pair,
@@ -121,13 +226,15 @@ pub async fn start(data_dir: &Path, handler: Arc<dyn HookHandler>) -> Result<Hoo
             let want = want.clone();
             tokio::spawn(async move { serve(stream, &want, handler).await });
         }
-    });
+    })
+    .abort_handle();
 
     eprintln!("[hooks] listening on 127.0.0.1:{port}, plugin at {}", plugin_dir.display());
     Ok(HookServer {
         port,
         token,
         plugin_dir,
+        accept,
     })
 }
 
@@ -368,8 +475,11 @@ pub fn plugin_files(url: &str) -> Vec<(&'static str, String)> {
 
 /// Write (or refresh) the plugin so an app upgrade updates the hooks too.
 ///
-/// The listener port changes every run, so the URL is baked in at startup
-/// rather than read from the environment at hook time.
+/// The URL is baked in here rather than read at hook time because most of
+/// these are `http` hooks, whose `url` is a literal string with no shell
+/// behind it to resolve anything. That is why `start` goes to the trouble of
+/// keeping the same URL across runs: for a session that is already running,
+/// this file is a photograph, not a pointer.
 fn write_plugin(dir: &Path, url: &str) -> Result<()> {
     for (rel, contents) in plugin_files(url) {
         let path = dir.join(rel);
@@ -399,6 +509,52 @@ mod tests {
             }
         }
         out
+    }
+
+    /// The remembered token is the path segment of the route, so a file that
+    /// has been hand-edited, half-written, or filled with someone else's idea
+    /// of a good time must not be able to add a segment of its own. A rejected
+    /// token costs one run's worth of held sessions; an accepted bad one
+    /// changes what the server is listening for.
+    #[test]
+    fn a_remembered_token_that_is_not_a_token_is_refused() {
+        let dir = std::env::temp_dir().join(format!("agentdesk-hooks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        for bad in [
+            "9000\n../../h/other\n",     // a second path segment
+            "9000\nabc def\n",           // a space, which would split the request line
+            "9000\n\n",                  // empty
+            "9000\ntok?state=idle\n",    // a query of its own
+        ] {
+            std::fs::write(dir.join(ENDPOINT_FILE), bad).unwrap();
+            let (_, token) = remembered(&dir);
+            assert!(token.is_none(), "accepted {bad:?} as a token");
+        }
+
+        // The two halves are independent, and only one of them is a secret.
+        // An unreadable port with a good token keeps the token and takes a
+        // fresh port: that loses the sessions the last run held, which is a
+        // cost, where reusing a token nobody can vouch for is a hazard.
+        std::fs::write(dir.join(ENDPOINT_FILE), "not-a-port\ncafef00d\n").unwrap();
+        assert_eq!(remembered(&dir), (None, Some("cafef00d".to_string())));
+
+        // And the round trip it is actually for.
+        remember(&dir, 41234, "cafef00d").unwrap();
+        assert_eq!(remembered(&dir), (Some(41234), Some("cafef00d".to_string())));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(dir.join(ENDPOINT_FILE))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o600, "the token is readable by other users");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
