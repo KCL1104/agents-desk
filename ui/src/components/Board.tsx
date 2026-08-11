@@ -576,30 +576,18 @@ function Card({
         data-testid={`repo-${task.id}`}
         title={task.repo_path}
       >
-        {hostLabel(task.repo_path) && (
-          <span className="host-badge">{hostLabel(task.repo_path)} · </span>
-        )}
-        {repoName(task.repo_path)}
-        <span className="board-card-branch"> ⎇ {task.base_branch}</span>
-        {/* The attempt's footprint, and where its branch stands. ↓ wears the
-            warning color because it is a merge refusal you have not hit yet
-            — the one number that says "rebase before you try". */}
-      </div>
-
-      <div className="board-card-state" data-testid={`state-${task.id}`}>
-        {/* Drawn, not the unicode ⚠: the aria-label above still speaks the
-            word, so AT loses nothing the eye gains in consistency. */}
-        {waiting && (
-          <>
-            <Icon name="warn" />{' '}
-          </>
-        )}
-        {liveLabel(live, t)}
-        {hasAttempt && <span className="muted small mono"> #{live.attempt.seq}</span>}
-        {/* The attempt's footprint rides the state line, where nothing
-            truncates: +42 −9 vanishing into the repo line's ellipsis was
-            the number triage runs on, gone at exactly the narrow widths
-            the peek causes. ↓ stays the one warning-colored count. */}
+        <span className="board-card-where">
+          {hostLabel(task.repo_path) && (
+            <span className="host-badge">{hostLabel(task.repo_path)} · </span>
+          )}
+          {repoName(task.repo_path)}
+          <span className="board-card-branch"> ⎇ {task.base_branch}</span>
+        </span>
+        {/* The attempt's footprint, on the row that names what it measures
+            against. It sits at the far end and never shrinks, so the repo
+            name is what gives way at narrow widths — the numbers triage runs
+            on are the last thing that should. ↓ wears the warning color: it
+            is a merge refusal you have not hit yet. */}
         {stat && (stat.adds > 0 || stat.dels > 0 || stat.ahead > 0 || stat.behind > 0) && (
           <span
             className="card-stat"
@@ -612,6 +600,18 @@ function Card({
             {stat.behind > 0 && <span className="stat-behind">↓{stat.behind}</span>}
           </span>
         )}
+      </div>
+
+      <div className="board-card-state" data-testid={`state-${task.id}`}>
+        {/* Drawn, not the unicode ⚠: the aria-label above still speaks the
+            word, so AT loses nothing the eye gains in consistency. */}
+        {waiting && (
+          <>
+            <Icon name="warn" />{' '}
+          </>
+        )}
+        {liveLabel(live, t)}
+        {hasAttempt && <span className="muted small mono"> #{live.attempt.seq}</span>}
         {/* Hooks are Claude Code's; for anyone else 「安靜」 must never be
             read as 「沒事」— the absence of signal is itself the signal. */}
         {live.kind === 'session' &&
@@ -633,25 +633,43 @@ function Card({
         )}
       </div>
 
-      {live.kind === 'session' && live.session.activity && (
-        <div className="board-card-activity mono small muted">
-          {live.session.activity.tool} {live.session.activity.detail}
-        </div>
-      )}
+      {/* One reserved line, always present, whether or not there is anything
+          to put in it.
 
-      {/* The one state-appropriate next step, read off git — and only when
-          a human decision is plausible. A running agent's worktree is dirty
-          by definition; nagging about it mid-work would be noise. */}
+          Two things want to speak here and they are all but mutually
+          exclusive: the next step is offered only when a decision is
+          plausible (stopped, idle, or blocked on you), and the activity line
+          only while a turn is actually running. So one row holds both, with
+          the next step ahead of the activity — a decision outranks a
+          description. The row exists even when both are silent, because a
+          card that grows the moment its agent reaches for a tool is a card
+          that moves out from under the cursor. */}
       {(() => {
         const decidable =
           live.kind === 'stopped' ||
           (live.kind === 'session' &&
             (live.status === 'idle' || needsYou(live.status)));
         const next = decidable && stat ? nextAction(stat) : null;
-        if (next === null) return null;
+        const advice = next
+          ? t(NEXT_KEY[next], { branch: task.base_branch, n: stat?.behind ?? 0 })
+          : null;
+        const activity =
+          live.kind === 'session' && live.session.activity
+            ? `${live.session.activity.tool} ${live.session.activity.detail}`
+            : null;
+        const text = advice ?? activity;
         return (
-          <div className={`card-next ${next}`} data-testid={`next-${task.id}`}>
-            → {t(NEXT_KEY[next], { branch: task.base_branch, n: stat?.behind ?? 0 })}
+          <div
+            className={`board-card-msg ${advice ? `card-next ${next}` : 'mono muted'}`}
+            // Kept on the advice only: `next-<id>` means "this card is
+            // offering a next step", and an activity line answering to it
+            // would make the absence of advice untestable.
+            data-testid={advice ? `next-${task.id}` : undefined}
+            // The row clips to one line; the full sentence is a hover away,
+            // and the inspector's banner says it in full besides.
+            title={text ?? undefined}
+          >
+            {advice ? `→ ${advice}` : activity}
           </div>
         );
       })()}

@@ -842,35 +842,75 @@ button.board-cta:hover {
 .board-card[data-outcome='merged'] { border-left-color: var(--merged); }
 .board-card[data-outcome='merged'] .board-card-state { color: var(--merged); }
 
-.board-card-head { display: flex; align-items: center; gap: 7px; }
-/* Two lines before truncating: zh-TW titles say less per character-width,
-   and the title is the one thing a card exists to show. */
+/* ---------- one height for every card ----------
+
+   Cards mutate while you look at them: a tool call starts, a turn ends, git
+   moves. When each row appears and disappears the card resizes under the
+   cursor and every card below it shifts — on the one surface whose whole job
+   is to be scanned. So the rows are *reserved* rather than conditional. Each
+   one below is pinned to a whole number of lines whether or not it has
+   anything to say, which makes the sum constant: the same height for every
+   card on the board, and the same height for a card a second from now.
+
+   `em` rather than px throughout, so the reservation follows the font size
+   it is reserving for. `1.55` is the body line-height set at the top. */
+.board-card-head { display: flex; align-items: flex-start; gap: 7px; }
+/* The dot rides the first line's optical centre rather than the top of a
+   two-line box. */
+.board-card-head .dot { margin-top: 6px; }
+/* Two lines, always: clamped so a long title cannot push, floored so a short
+   one cannot pull. zh-TW titles say less per character-width, and the title
+   is the one thing a card exists to show. */
 .board-card-title {
   flex: 1; font-weight: 600; font-size: var(--fs-body);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden;
+  min-height: calc(2 * 1.55em);
 }
-.board-card-state { font-size: var(--fs-data); color: var(--fg-dim); }
+/* One line. The stats moved to the repo row precisely so this one can never
+   wrap — with the icon, the label, the sequence number and the elapsed time
+   it was the row that most often did. */
+.board-card-state {
+  font-size: var(--fs-data); color: var(--fg-dim);
+  min-height: 1.55em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The reserved message line: the next step, or what the agent is doing, or
+   nothing at all — the same height in all three cases. */
+.board-card-msg {
+  font-size: var(--fs-data);
+  min-height: 1.55em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .board-card.needs-you .board-card-state { color: var(--warn); font-weight: 600; }
 /* "Can't tell" wears the faintest ink: a disclaimer, never a status. */
 .board-card-state .no-signal { color: var(--fg-faint); font-size: var(--fs-label); padding: 1px 6px; }
 /* Quiet beside the warning it qualifies, and exempt from its weight. */
 .card-elapsed { color: var(--fg-faint); font-weight: 400; }
-.board-card-activity { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-data); }
-
 /* Buttons wrap as whole buttons, never inside a word: a CJK label broken
    across lines (繼/續 stacked) reads as a different word. A tight column
-   flows the row instead. */
-.board-card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 5px; }
+   flows the row instead. One row is reserved; see `.quiet` below for why
+   that is enough at rest. */
+.board-card-foot {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 5px;
+  min-height: calc(1.55em + 11px);
+}
 .board-card-foot button { padding: 3px 9px; font-size: var(--fs-label); white-space: nowrap; }
 
-/* 停止卡的五鍵降噪。重啟後整個看板都是停止卡,而那一刻九成的答案是
-   Resume:Park 與換 agent 退到瞄準才現身 —— hover 或鍵盤 focus 進卡即
-   全現,sidebar 列動作立下的同一條規矩(styles.css:434-436)。其他
-   live 狀態的 footer 本來就在四鍵以內,照舊全現。 */
-.board-card[data-live='stopped'] .board-card-foot .quiet { opacity: 0; }
-.board-card[data-live='stopped']:hover .board-card-foot .quiet,
-.board-card[data-live='stopped']:focus-within .board-card-foot .quiet { opacity: 1; }
+/* 次要動作退到瞄準才現身,現在對所有 live 狀態都成立(原本只有停止卡)。
+   理由從降噪變成了尺寸:Park 與「換 agent」留在原地時,停止卡與暫停卡
+   的按鈕列在四欄寬度下必然折成兩排,而那正是卡片高度不一致最大的一份。
+   收起來之後,每一種狀態的靜止列都在三顆以內 —— 一排。
+
+   用 display:none 而非 opacity:0:留著位子就等於留著那第二排,而位子
+   正是這裡要省的東西。
+
+   代價說在明處:指到停止卡時,那張卡會多長出一排。那是使用者自己把游標
+   放上去換來的、而且只發生在指著的那一張、移開就回去 —— 和卡片自己在
+   你眼前長高完全是兩回事,後者才是這輪要修掉的。 */
+.board-card-foot .quiet { display: none; }
+.board-card:hover .board-card-foot .quiet,
+.board-card:focus-within .board-card-foot .quiet { display: inline-flex; }
 
 /* Outside the columns on purpose: no worktree, no branch, no lifecycle. */
 .board-adhoc {
@@ -1287,12 +1327,17 @@ button.board-cta:hover {
 /* Which codebase the card is about — cards from different repos share the
    board, so each names its repo and base branch. */
 .board-card-repo {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  min-height: 1.55em;
   margin-top: 2px;
+}
+/* The name gives way, not the numbers. */
+.board-card-where {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .board-card-branch { color: var(--fg-dim); }
 /* The attempt's footprint, quiet beside the branch it measures against. */
-.card-stat { margin-left: 6px; display: inline-flex; gap: 5px; }
+.card-stat { flex: none; display: inline-flex; gap: 5px; }
 .stat-ahead { color: var(--fg-dim); }
 /* Behind is the merge refusal you have not hit yet — the one count that
    asks for an action, so it alone takes the warning color. */

@@ -79,6 +79,18 @@ for (const [w, h] of SIZES) {
       if (side && main && side.right > main.left + 1) {
         bad.push(`sidebar overlaps main by ${Math.round(side.right - main.left)}px`);
       }
+
+      // 5) 每張卡片一樣高。這一批卡片跨了佇列、執行中、等你、有 diffstat
+      //    與沒有 diffstat —— 也就是各列會出現與消失的所有組合。它們高度
+      //    相同,才證明那些列是被「保留」下來而不是有才長出來的。
+      //    留 1px 給次像素捨入,不留第二像素:19px 的一列漏掉就會被抓到。
+      const heights = [...document.querySelectorAll('.board-card')].map(
+        (c) => Math.round(c.getBoundingClientRect().height),
+      );
+      if (heights.length > 1) {
+        const lo = Math.min(...heights), hi = Math.max(...heights);
+        if (hi - lo > 1) bad.push(`cards differ in height: ${lo}px … ${hi}px (${heights.join(', ')})`);
+      }
       return bad;
     });
     console.log(`${w}x${h}: ${report.length === 0 ? 'clean' : JSON.stringify(report)}`);

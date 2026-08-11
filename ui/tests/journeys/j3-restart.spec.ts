@@ -156,37 +156,42 @@ test('J3 · restart recovery, end to end', async ({ page }) => {
       await expect(first).toHaveAttribute('data-testid', `resume-k${n}`);
       await expect(first).toHaveClass(/primary/);
       await expect(first).toHaveText('繼續');
-      // 五鍵降噪的靜止態：Park 與換 agent 在停止卡上退到 opacity 0。
-      await expect(page.getByTestId(`park-k${n}`)).toHaveCSS('opacity', '0');
-      await expect(page.getByTestId(`retry-k${n}`)).toHaveCSS('opacity', '0');
+      // 靜止態：Park 與換 agent 完全不佔位（display:none），不是變透明。
+      // 佔位就等於留著那第二排按鈕，而那正是卡片高度不一致最大的一份。
+      await expect(page.getByTestId(`park-k${n}`)).toBeHidden();
+      await expect(page.getByTestId(`retry-k${n}`)).toBeHidden();
     }
     // 藏起來的是「暫停」與「換 agent」；「檢視」不藏 —— 看 diff 是
     // 停止卡上第二常見的動作，降噪不降它。
-    await expect(page.getByTestId('park-k2')).toHaveText('暫停');
-    await expect(page.getByTestId('retry-k2')).toHaveText('換 agent');
-    await expect(page.getByTestId('inspect-k2')).toHaveCSS('opacity', '1');
+    await expect(page.getByTestId('inspect-k2')).toBeVisible();
 
     // 瞄準即現身，之一：hover 進卡，兩顆 quiet 全亮；離開就退場。
     await page.getByTestId('task-k2').hover();
-    await expect(page.getByTestId('park-k2')).toHaveCSS('opacity', '1');
-    await expect(page.getByTestId('retry-k2')).toHaveCSS('opacity', '1');
+    await expect(page.getByTestId('park-k2')).toBeVisible();
+    await expect(page.getByTestId('park-k2')).toHaveText('暫停');
+    await expect(page.getByTestId('retry-k2')).toBeVisible();
+    await expect(page.getByTestId('retry-k2')).toHaveText('換 agent');
     await page.mouse.move(0, 0);
-    await expect(page.getByTestId('park-k2')).toHaveCSS('opacity', '0');
-    await expect(page.getByTestId('retry-k2')).toHaveCSS('opacity', '0');
+    await expect(page.getByTestId('park-k2')).toBeHidden();
+    await expect(page.getByTestId('retry-k2')).toBeHidden();
 
     // 之二：鍵盤也是一隻手 —— focus 進卡（focus-within）同樣全亮。
+    // display:none 的東西進不了 tab 序，所以這一條是它唯一的入口：
+    // 焦點先落在卡片自己（或 primary 那顆）上，quiet 才長出來，接著
+    // 才輪得到它們。少了這條規則，鍵盤使用者永遠碰不到暫停。
     await page.getByTestId('task-k2').focus();
+    await expect(page.getByTestId('park-k2')).toBeVisible();
     await page.keyboard.press('Tab');
     await expect(page.getByTestId('resume-k2')).toBeFocused();
-    await expect(page.getByTestId('park-k2')).toHaveCSS('opacity', '1');
-    await expect(page.getByTestId('retry-k2')).toHaveCSS('opacity', '1');
+    await page.keyboard.press('Tab');
+    await expect(page.getByTestId('park-k2')).toBeFocused();
     // 而且是一卡一亮：焦點搬去 k1，k2 的立刻退回去。
     await page.getByTestId('task-k1').focus();
-    await expect(page.getByTestId('park-k1')).toHaveCSS('opacity', '1');
-    await expect(page.getByTestId('park-k2')).toHaveCSS('opacity', '0');
+    await expect(page.getByTestId('park-k1')).toBeVisible();
+    await expect(page.getByTestId('park-k2')).toBeHidden();
 
     // 暫停卡：一樣以 primary 的「繼續」領頭，但沒有 Park —— 已經停著
-    // 的東西沒有再停一次的理由；換 agent 不退場，降噪只屬於停止卡。
+    // 的東西沒有再停一次的理由。
     const parked = page.getByTestId('task-k5');
     await expect(parked).toHaveAttribute('data-live', 'parked');
     await expect(page.getByTestId('state-k5')).toContainText('已暫停');
@@ -194,19 +199,19 @@ test('J3 · restart recovery, end to end', async ({ page }) => {
     await expect(parkedFirst).toHaveAttribute('data-testid', 'resume-k5');
     await expect(parkedFirst).toHaveClass(/primary/);
     await expect(page.getByTestId('park-k5')).toHaveCount(0);
-    await expect(page.getByTestId('retry-k5')).toHaveCSS('opacity', '1');
 
     // 已合併的卡：勝利不邀請重做 ——「再試一次」是一般按鈕，不是
-    // primary，也不參加停止卡的降噪（全程可見）。繼續無處可繼續。
+    // primary。繼續無處可繼續。
     const merged = page.getByTestId('task-k6');
     await expect(merged).toHaveAttribute('data-live', 'finished');
     await expect(merged).toHaveAttribute('data-outcome', 'merged');
     await expect(page.getByTestId('state-k6')).toContainText('已合併');
+    await page.getByTestId('task-k6').hover();
     const retry = page.getByTestId('retry-k6');
+    await expect(retry).toBeVisible();
     await expect(retry).toHaveText('再試一次');
     await expect(retry).toHaveClass(/quiet/);
     await expect(retry).not.toHaveClass(/primary/);
-    await expect(retry).toHaveCSS('opacity', '1');
     await expect(page.getByTestId('resume-k6')).toHaveCount(0);
   });
 

@@ -222,6 +222,7 @@ test.describe('one-shot coaching', () => {
 
     // A second attempt has nothing left to teach about worktrees.
     await page.getByTestId('view-board').click();
+    await page.getByTestId('task-k1').hover();
     await page.getByTestId('retry-k1').click();
     await page.getByTestId('attempt-start').click();
     await expect(page.locator('.pane:visible')).toHaveCount(2);

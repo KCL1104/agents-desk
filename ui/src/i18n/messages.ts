@@ -387,9 +387,13 @@ export const en = {
   'inspector.resize': 'Drag to resize; ← wider, → narrower',
 
   /* --------------------------- next action ----------------------------- */
-  'next.commit': 'Uncommitted changes: a merge now would not include them',
-  'next.rebase': '{branch} has moved on by {n}; rebase before merging',
-  'next.finish': 'Clean and ahead: ready to merge into {branch} or open a PR',
+  /* One reserved line on the card, so these three say the whole thing in
+     roughly thirty characters. The inspector's banner uses the same keys and
+     has room to spare; the card is the constraint, and the card is where
+     they are read during triage. */
+  'next.commit': 'Commit first, or a merge misses it',
+  'next.rebase': '{branch} moved on by {n}; rebase first',
+  'next.finish': 'Clean and ahead: merge or open a PR',
   'inspector.runHint': 'Run `{name}` in this attempt’s worktree, in its own terminal',
   'inspector.worktreeGroup': 'worktree',
   'inspector.shell': 'shell',
@@ -889,9 +893,9 @@ export const zhTW: Record<MessageKey, string> = {
   'inspector.resize': '拖曳調整寬度；← 加寬、→ 收窄',
 
   /* --------------------------- next action ----------------------------- */
-  'next.commit': '還有未 commit 的變更，現在合併不會包含它們',
-  'next.rebase': '{branch} 已前進 {n} 個 commit，合併前先 rebase',
-  'next.finish': '乾淨且領先，可以合併回 {branch} 或開 PR',
+  'next.commit': '先 commit，不然合併會漏掉',
+  'next.rebase': '{branch} 已前進 {n} 個，先 rebase',
+  'next.finish': '乾淨且領先，可合併或開 PR',
   'inspector.runHint': '在這個 attempt 的 worktree 裡執行 `{name}`，開自己的終端機',
   'inspector.worktreeGroup': 'worktree',
   'inspector.shell': 'shell',

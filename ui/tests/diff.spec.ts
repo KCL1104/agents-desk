@@ -58,7 +58,7 @@ test.describe('the suggested next step', () => {
       window.__mock.report('s1', 'idle');
     });
     await page.getByTestId('view-board').click();
-    await expect(page.getByTestId('next-k1')).toContainText('可以合併回 main');
+    await expect(page.getByTestId('next-k1')).toContainText('可合併或開 PR');
   });
 
   test('a running agent is never nagged about its dirty worktree', async ({ page }) => {
@@ -75,7 +75,7 @@ test.describe('the suggested next step', () => {
 
     // The moment it stops being mid-work, the hint may speak.
     await page.evaluate(() => window.__mock.report('s1', 'idle'));
-    await expect(page.getByTestId('next-k1')).toContainText('未 commit');
+    await expect(page.getByTestId('next-k1')).toContainText('先 commit');
   });
 
   test('the drawer runs the merge checks before the click', async ({ page }) => {

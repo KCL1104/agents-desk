@@ -333,6 +333,9 @@ test.describe('board', () => {
     await page.getByTestId('view-board').click();
     await page.evaluate(() => window.__mock.report('s1', 'running'));
 
+    // Park and switch-agent live behind aiming at the card, so the clip
+    // that reaches them starts the way a hand does.
+    await page.getByTestId('task-k1').hover();
     await page.getByTestId('retry-k1').click();
     await page.getByTestId('attempt-agent').selectOption('codex');
     await page.getByTestId('attempt-start').click();
@@ -515,6 +518,7 @@ test.describe('parked — work kept, ground given back', () => {
     await page.getByTestId('view-board').click();
     await page.evaluate(() => window.__mock.report('s1', 'idle'));
 
+    await page.getByTestId('task-k1').hover();
     await page.getByTestId('park-k1').click();
 
     // The card is asleep, resumable — and its session left the sidebar:
@@ -539,6 +543,9 @@ test.describe('parked — work kept, ground given back', () => {
     await page.evaluate(() => window.__mock.report('s1', 'running'));
     await expect(page.getByTestId('park-k1')).toHaveCount(0);
     await page.evaluate(() => window.__mock.report('s1', 'idle'));
+    // Present again once it settles — and, like every secondary action on a
+    // card, only once the card is aimed at.
+    await page.getByTestId('task-k1').hover();
     await expect(page.getByTestId('park-k1')).toBeVisible();
   });
 
@@ -550,6 +557,7 @@ test.describe('parked — work kept, ground given back', () => {
     await start(page, 'k1');
     await page.getByTestId('view-board').click();
     await page.evaluate(() => window.__mock.report('s1', 'idle'));
+    await page.getByTestId('task-k1').hover();
     await page.getByTestId('park-k1').click();
     await expect(page.getByTestId('task-k1')).toHaveAttribute('data-live', 'parked');
 
@@ -563,6 +571,7 @@ test.describe('parked — work kept, ground given back', () => {
       window.__mock.report('s2', 'idle');
       window.__mock.resumeRestoreError = 'restore blew up';
     });
+    await page.getByTestId('task-k1').hover();
     await page.getByTestId('park-k1').click();
     await page.getByTestId('resume-k1').click();
     await expect(page.locator('.toast.error')).toContainText('restore blew up');
@@ -578,6 +587,7 @@ test.describe('parked — work kept, ground given back', () => {
     await start(page, 'k1');
     await page.getByTestId('view-board').click();
     await page.evaluate(() => window.__mock.report('s1', 'idle'));
+    await page.getByTestId('task-k1').hover();
     await page.getByTestId('park-k1').click();
 
     await page.getByTestId('inspect-k1').click();

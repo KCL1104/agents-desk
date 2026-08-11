@@ -176,6 +176,7 @@ test.describe('attempt inspector', () => {
 
     // A second attempt at the same card, with its own worktree and diff. The
     // first is left running — comparing two agents is the reason to have both.
+    await page.getByTestId('task-k1').hover();
     await page.getByTestId('retry-k1').click();
     await page.getByTestId('attempt-start').click();
     await page.evaluate(() => {
