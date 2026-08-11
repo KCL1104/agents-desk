@@ -17,7 +17,32 @@ export const en = {
   'common.start': 'Start',
   'common.choose': 'Choose…',
   'common.loading': 'Loading…',
-  'common.env': 'Environment',
+  // Renamed from "Environment" once the panel grew sections and a search:
+  // the diagnostics are one section of a settings panel now, not the whole
+  // of it, and a name that undersells is its own discoverability problem.
+  'common.env': 'Settings',
+  'set.search': 'Search settings',
+  'set.general': 'General',
+  'set.sessions': 'Sessions',
+  'set.terminal': 'Terminal',
+  'set.advanced': 'Advanced',
+  'set.prompting': 'Opening prompt',
+  // The dialog has always shown this text and let it be edited for one
+  // attempt; naming the file is what makes it editable for all of them.
+  'set.promptingHint':
+    'What this desk adds to a session on its own — the branch, the base, and where commits go. Every attempt shows the composed prompt before it is sent.',
+  'set.openTemplate': 'Open the template',
+  'set.licenses': 'Third-party licenses',
+  /* --- Why the setting you are looking for is not here. Each of these sits
+     where the search for it ends, rather than in the README. --- */
+  'note.agents':
+    'Models, credentials, reasoning and sandbox behaviour stay in each agent’s own configuration. This desk never translates one agent’s permission settings into another’s, and never holds a credential file.',
+  'note.cost':
+    'No money conversion and no context percentage: prices differ by plan and model, and a percentage needs a denominator this desk cannot honestly know. The measured token counts are in the inspector.',
+  'note.scrollback':
+    'Scrollback is not written to disk, so it does not survive a restart. What scrolled past is the agent’s own conversation, and this desk keeps no copy of it.',
+  'note.telemetry':
+    'There is no telemetry switch because nothing is collected. No usage data, no crash reports, no account — what happens on this desk stays on this machine.',
   /* Joiners live in the catalog: a hardcoded 、 or ， reads Chinese
      punctuation into an English sentence, and vice versa. `sep` joins
      label-and-state phrases (aria-labels); `listSep` joins list items. */
@@ -522,7 +547,25 @@ export const zhTW: Record<MessageKey, string> = {
   'common.start': '開始',
   'common.choose': '選擇…',
   'common.loading': '讀取中…',
-  'common.env': '環境',
+  'common.env': '設定',
+  'set.search': '搜尋設定',
+  'set.general': '一般',
+  'set.sessions': 'Session',
+  'set.terminal': '終端機',
+  'set.advanced': '進階',
+  'set.prompting': '開場 prompt',
+  'set.promptingHint':
+    '這張桌子自己加進 session 的東西 —— 分支、base、commit 該去哪。每個 attempt 送出前都會先讓你看到組好的全文。',
+  'set.openTemplate': '開啟模板',
+  'set.licenses': '第三方授權',
+  'note.agents':
+    '模型、憑證、推理與沙箱行為都留在各 agent 自己的設定裡。這張桌子不替任何 agent 把權限設定翻譯成另一個 agent 的,也從不代管憑證檔。',
+  'note.cost':
+    '不換算金額,也不顯示語境百分比:價格隨方案與模型而異,而百分比需要一個這張桌子誠實給不出來的分母。量得到的 token 數在檢視器裡。',
+  'note.scrollback':
+    'Scrollback 不寫進磁碟,所以重開之後不會留下。捲過去的東西是 agent 自己的對話,這張桌子不留副本。',
+  'note.telemetry':
+    '沒有遙測開關,因為沒有東西被收集。沒有使用數據、沒有當機回報、沒有帳號 —— 這張桌子上發生的事留在這台機器上。',
   'common.sep': '，',
   'common.listSep': '、',
 

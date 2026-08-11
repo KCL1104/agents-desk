@@ -195,6 +195,9 @@ export interface BootStatus {
   messaging?: boolean;
   db?: string;
   hookUrl?: string | null;
+  /** The opening-prompt template on disk — the one text this desk adds to a
+      session by itself, named so the settings can open it. */
+  promptTemplate?: string;
 }
 
 /** A named working arrangement. Mirrors src-tauri/src/store.rs StoredTab. */

@@ -360,6 +360,7 @@ test.describe('signals reach everyone', () => {
   test('the PATH renders as separate chips, not one fused path', async ({ page }) => {
     await boot(page);
     await page.locator('.sidebar-foot').click();
+    await page.getByTestId('sec-diagnostics').click();
     await expect(page.locator('.modal .chips .chip')).toHaveCount(3);
     await expect(page.locator('.modal .chips .chip').first()).toHaveCSS(
       'border-radius',

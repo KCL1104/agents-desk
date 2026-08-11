@@ -130,6 +130,9 @@ fn boot_status(state: State<'_, AppState>) -> serde_json::Value {
             "messaging": c.named_sessions(),
             "db": store::default_path().to_string_lossy(),
             "hookUrl": c.hook_url(),
+            // The one text this desk puts into a session on its own. Naming
+            // the file is how the settings can offer to open it.
+            "promptTemplate": c.prompt_template_path(),
         }),
         None => serde_json::json!({
             "ready": false,

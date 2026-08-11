@@ -10,6 +10,7 @@ test.describe('cross-session messaging surfaces', () => {
     await expect(page.locator('.tab')).toHaveCount(1);
 
     await page.locator('.sidebar-foot').click();
+    await page.getByTestId('sec-diagnostics').click();
     const panel = page.locator('.modal');
     await expect(panel).toContainText('跨 session 互傳訊息');
     await expect(panel).toContainText('✓ · claude 2.1.226');
@@ -38,6 +39,7 @@ test.describe('cross-session messaging surfaces', () => {
     await expect(page.locator('.tab')).toHaveCount(1);
 
     await page.locator('.sidebar-foot').click();
+    await page.getByTestId('sec-diagnostics').click();
     await expect(page.locator('.modal')).toContainText('需要 Claude Code ≥ 2.1.224（目前 2.0.14）');
   });
 });

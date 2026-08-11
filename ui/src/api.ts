@@ -243,6 +243,11 @@ export const api = {
       plain anchor inside the webview would navigate the app itself. */
   openExternal: (url: string) => invoke<void>('plugin:opener|open_url', { url, with: null }),
 
+  /** Open a local file in whatever the system opens it with. Separate from
+      `openExternal` because a Windows path is not a URL — `C:\…` through the
+      URL door either fails or means something else entirely. */
+  openPath: (path: string) => invoke<void>('plugin:opener|open_path', { path, with: null }),
+
   /** Replay buffer for a pane mounting after its PTY already started. */
   termSnapshot: (id: string) => invoke<{ data: string; seq: number }>('term_snapshot', { id }),
 

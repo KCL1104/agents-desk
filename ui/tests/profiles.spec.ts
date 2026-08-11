@@ -30,6 +30,7 @@ test.describe('named profiles', () => {
     await appWithMock(page);
 
     await page.locator('.sidebar-foot').click();
+    await page.getByTestId('sec-agents').click();
     await expect(page.getByTestId('profiles')).toBeVisible();
     await page.getByTestId('profile-add').click();
     await page.getByTestId('profile-name-0').fill('opus 版');
@@ -74,6 +75,7 @@ test.describe('named profiles', () => {
   }) => {
     await appWithMock(page);
     await page.locator('.sidebar-foot').click();
+    await page.getByTestId('sec-agents').click();
     await page.getByTestId('profile-add').click();
     await page.getByTestId('profile-name-0').fill('claude');
     await page.getByTestId('profile-save').click();
@@ -93,6 +95,7 @@ test.describe('named profiles', () => {
     });
 
     await page.locator('.sidebar-foot').click();
+    await page.getByTestId('sec-agents').click();
     await page.getByRole('button', { name: '移除這個設定檔' }).click();
     await expect(page.getByTestId('profiles')).not.toContainText('opus 版');
 

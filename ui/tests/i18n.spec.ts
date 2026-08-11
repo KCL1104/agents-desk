@@ -38,7 +38,7 @@ async function boot(page: Page, opts: { stored?: string; browserLang?: string } 
   await expect(page.locator('.sidebar')).toBeVisible();
 }
 
-const openEnvPanel = (page: Page) => page.getByRole('button', { name: /環境|Environment/ }).click();
+const openEnvPanel = (page: Page) => page.getByRole('button', { name: /設定|Settings/ }).click();
 
 test.describe('language', () => {
   test('an English system with no stored choice opens in English', async ({ page }) => {
@@ -65,7 +65,7 @@ test.describe('language', () => {
     await page.getByTestId('locale-select').selectOption('en');
 
     // The panel itself is translated live, not only on the next mount.
-    await expect(page.getByRole('heading', { name: 'Environment' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
     await page.getByRole('button', { name: 'Close' }).click();
     await expect(page.getByRole('tab', { name: 'Board' })).toBeVisible();
     await expect(page.getByRole('tab', { name: '看板' })).toHaveCount(0);
@@ -78,7 +78,7 @@ test.describe('language', () => {
     await boot(page, { stored: 'zh-TW' });
     await openEnvPanel(page);
     await page.getByTestId('locale-select').selectOption('en');
-    await expect(page.getByRole('heading', { name: 'Environment' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
 
     const sent = await page.evaluate(() =>
       window.__mock.calls.filter((c) => c.cmd === 'set_locale').map((c) => c.args),

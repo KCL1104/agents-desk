@@ -3057,6 +3057,19 @@ impl Core {
         self.hooks.get().map(|h| h.url())
     }
 
+    /// Where the opening-prompt template lives, written out on first use.
+    ///
+    /// The start-attempt dialog has always shown the composed prompt and let
+    /// it be edited for that one attempt; this is the same text one level up,
+    /// where editing it changes every attempt after. Surfacing the path is
+    /// what turns "the app adds something to your session" from a fact buried
+    /// in the README into a file the settings can open.
+    pub fn prompt_template_path(&self) -> String {
+        crate::prompt::template_path(&self.data_dir)
+            .to_string_lossy()
+            .to_string()
+    }
+
     /// The installed Claude Code's version, as measured at startup.
     pub fn claude_version(&self) -> Option<String> {
         self.claude_version.map(|(a, b, c)| format!("{a}.{b}.{c}"))

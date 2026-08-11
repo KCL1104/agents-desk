@@ -400,6 +400,7 @@ export function installMock(): void {
       messaging: true,
       db: '/tmp/agentdesk.db',
       hookUrl: 'http://127.0.0.1:1/h/tok',
+      promptTemplate: '/tmp/agentdesk/prompt-template.md',
     }),
 
     list_sessions: () => mock.sorted(),
@@ -1084,6 +1085,7 @@ export function installMock(): void {
     'plugin:event|unlisten': () => null,
     'plugin:dialog|open': () => '/Users/test/picked-repo',
     'plugin:opener|open_url': () => null,
+    'plugin:opener|open_path': () => null,
     'plugin:notification|is_permission_granted': () => true,
     'plugin:notification|notify': () => null,
   };

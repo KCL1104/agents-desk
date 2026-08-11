@@ -812,6 +812,11 @@ export default function App() {
       } else if (e.key === '/' && !shellsOwn) {
         e.preventDefault();
         setShowKeys((v) => !v);
+      } else if (e.key === ',' && !shellsOwn) {
+        // The platform's own settings chord. Not a letter, so the terminal
+        // rule does not bite: Ctrl+comma is nobody's readline binding.
+        e.preventDefault();
+        setShowEnv(true);
       }
     };
     // Capture phase: xterm stops propagation on keys it maps (modified

@@ -118,7 +118,7 @@ test.describe('the first-run panel', () => {
   }) => {
     await page.addInitScript(installMock);
     await page.goto('/');
-    await page.getByRole('button', { name: '環境' }).click();
+    await page.getByRole('button', { name: '設定' }).click();
     await page.getByTestId('show-welcome').click();
     await expect(page.locator('.modal')).toContainText('歡迎使用 AgentDesk');
 
@@ -140,7 +140,7 @@ test.describe('the first-run panel', () => {
   }) => {
     await page.addInitScript(installMock);
     await page.goto('/');
-    await page.getByRole('button', { name: '環境' }).click();
+    await page.getByRole('button', { name: '設定' }).click();
     await page.getByTestId('open-docs').click();
     const zh = await page.evaluate(
       () => window.__mock.calls.find((c) => c.cmd === 'plugin:opener|open_url')?.args,
@@ -158,7 +158,7 @@ test.describe('the first-run panel', () => {
       localStorage.setItem('agentdesk.coach', JSON.stringify({ attempt: true, finish: true })),
     );
     await page.goto('/');
-    await page.getByRole('button', { name: '環境' }).click();
+    await page.getByRole('button', { name: '設定' }).click();
     await page.getByTestId('replay-coach').click();
     await expect(page.locator('.toast')).toContainText('重新教');
     const marks = await page.evaluate(() => localStorage.getItem('agentdesk.coach'));
@@ -317,11 +317,81 @@ test.describe('the first-run terminal wall', () => {
   });
 });
 
+/**
+ * 這個面板原本是一條卷軸,把這張桌子所有能被交代的事疊在一起,藏在側欄
+ * 底部一顆 11px 灰字鈕後 —— 審查判定的最弱項。分區給了它名字,搜尋讓人
+ * 用「畫面上叫什麼」就找得到,⌘, 讓它有一扇平台自己的門。
+ */
+test.describe('settings', () => {
+  const open = async (page: Page) => {
+    await page.addInitScript(installMock);
+    await page.goto('/');
+    await page.keyboard.press('ControlOrMeta+,');
+  };
+
+  test('⌘/Ctrl+, opens it, and the rail names what is in here', async ({ page }) => {
+    await open(page);
+    await expect(page.getByRole('heading', { name: '設定' })).toBeVisible();
+    await expect(page.getByTestId('sec-general')).toBeVisible();
+    await expect(page.getByTestId('sec-diagnostics')).toBeVisible();
+  });
+
+  test('search finds a setting by the name it is called on screen', async ({ page }) => {
+    await open(page);
+    // 「檢查點」住在 Session 分區,而不在預設看得到的那一頁。
+    await page.getByTestId('settings-search').fill('檢查點');
+    await expect(page.getByTestId('sec-general')).toHaveCount(0);
+    await expect(page.getByTestId('sec-sessions')).toBeVisible();
+    await page.getByTestId('sec-sessions').click();
+    await expect(page.getByTestId('ckpt-toggle')).toBeVisible();
+  });
+
+  test('a search that matches nothing says so rather than showing everything', async ({ page }) => {
+    await open(page);
+    await page.getByTestId('settings-search').fill('zzzz');
+    await expect(page.getByTestId('sec-general')).toHaveCount(0);
+    await expect(page.getByTestId('settings-body')).toBeVisible();
+  });
+
+  /**
+   * 每個拒絕都附上完整理由 —— 但理由原本活在 README 與決策文件裡,
+   * 就是不在「使用者打開設定、找不到那個開關」的那一刻。
+   */
+  test('the refusals answer where the search for them ends', async ({ page }) => {
+    await open(page);
+    await page.getByTestId('sec-sessions').click();
+    await expect(page.getByTestId('note-cost')).toContainText('分母');
+    await page.getByTestId('sec-agents').click();
+    await expect(page.getByTestId('note-agents')).toContainText('憑證');
+    await page.getByTestId('sec-terminal').click();
+    await expect(page.getByTestId('note-scrollback')).toContainText('不留副本');
+    await page.getByTestId('sec-advanced').click();
+    await expect(page.getByTestId('note-telemetry')).toContainText('沒有東西被收集');
+    // Apache-2.0 要求的那份清單,也在這裡。
+    await expect(page.getByTestId('licenses')).toContainText('xterm.js');
+  });
+
+  /**
+   * 開場 prompt 一直都看得到、也一直都能就地改 —— 缺的只是「改給往後每一次」
+   * 的那個入口。
+   */
+  test('the opening prompt template has a door', async ({ page }) => {
+    await open(page);
+    await page.getByTestId('sec-sessions').click();
+    await page.getByTestId('open-template').click();
+    const opened = await page.evaluate(
+      () => window.__mock.calls.find((c) => c.cmd === 'plugin:opener|open_path')?.args,
+    );
+    expect((opened as { path: string }).path).toContain('prompt-template.md');
+  });
+});
+
 test.describe('notification preferences', () => {
   test('toggles persist and the test button fires one', async ({ page }) => {
     await page.addInitScript(installMock);
     await page.goto('/');
-    await page.getByRole('button', { name: '環境' }).click();
+    await page.getByRole('button', { name: '設定' }).click();
+    await page.getByTestId('sec-notifications').click();
 
     // The defaults the core ships: blocked states on, turn endings off.
     await expect(page.getByTestId('notify-permission')).toBeChecked();
@@ -346,7 +416,8 @@ test.describe('checkpoints', () => {
   test('the environment panel owns the switch, default on', async ({ page }) => {
     await page.addInitScript(installMock);
     await page.goto('/');
-    await page.getByRole('button', { name: '環境' }).click();
+    await page.getByRole('button', { name: '設定' }).click();
+    await page.getByTestId('sec-sessions').click();
 
     // On by default — the retreat is the point; opting out is the choice.
     await expect(page.getByTestId('ckpt-toggle')).toBeChecked();

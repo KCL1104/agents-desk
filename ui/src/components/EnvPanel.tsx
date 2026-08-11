@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { LOCALE_NAME, LOCALES, useI18n, type Locale } from '../i18n';
+import type * as React from 'react';
+import { LOCALE_NAME, LOCALES, useI18n, type Locale, type MessageKey } from '../i18n';
 import { api } from '../api';
 import { joinArgs, splitArgs } from '../profiles';
 import { ENV_SOURCE_KEY, envSource, type BootStatus, type NotifyPrefs } from '../types';
@@ -24,6 +25,79 @@ const DOCS_URL: Record<Locale, string> = {
   en: 'https://github.com/KCL1104/agents-desk#readme',
   'zh-TW': 'https://github.com/KCL1104/agents-desk/blob/main/README.zh-TW.md',
 };
+
+type SectionId =
+  | 'general'
+  | 'sessions'
+  | 'terminal'
+  | 'notifications'
+  | 'agents'
+  | 'diagnostics'
+  | 'advanced';
+
+/**
+ * The navigation and the search index in one table.
+ *
+ * A section is its title plus the name of every setting inside it, so
+ * "list the sections" and "find a setting by name" cannot drift apart —
+ * the same discipline the action registry holds for verbs. Terms are
+ * message keys rather than strings: the search then reads whatever the
+ * interface is currently saying, in either language.
+ */
+const SECTIONS: readonly { id: SectionId; title: MessageKey; terms: readonly MessageKey[] }[] = [
+  {
+    id: 'general',
+    title: 'set.general',
+    terms: [
+      'env.language',
+      'welcome.reopen',
+      'coach.replay',
+      'env.docs',
+      'env.theme',
+      'theme.custom',
+      'theme.light',
+    ],
+  },
+  {
+    id: 'sessions',
+    title: 'set.sessions',
+    terms: ['set.prompting', 'set.openTemplate', 'env.checkpoints', 'ckpt.onStop'],
+  },
+  { id: 'terminal', title: 'set.terminal', terms: ['env.termSr', 'termSr.toggle'] },
+  {
+    id: 'notifications',
+    title: 'env.notifications',
+    terms: ['notify.permission', 'notify.input', 'notify.done', 'notify.test'],
+  },
+  { id: 'agents', title: 'env.profiles', terms: ['profile.add', 'profile.save'] },
+  {
+    id: 'diagnostics',
+    title: 'env.diagnostics',
+    terms: ['env.shell', 'env.source', 'env.varCount', 'env.claude', 'env.messaging', 'env.db'],
+  },
+  { id: 'advanced', title: 'set.advanced', terms: ['set.licenses'] },
+];
+
+/**
+ * What ships inside the binary that somebody else wrote.
+ *
+ * Apache-2.0 asks this of us in return for what we took, and a list nobody
+ * can find satisfies nobody. Names and licence identifiers are not prose and
+ * do not translate, so they live here rather than in the catalogue — a
+ * hand-written paragraph about them would rot the first time a dependency
+ * changed.
+ */
+const LICENSES: readonly (readonly [string, string])[] = [
+  ['React', 'MIT'],
+  ['xterm.js', 'MIT'],
+  ['CodeMirror 6', 'MIT'],
+  ['IBM Plex Mono', 'SIL OFL 1.1'],
+  ['Tauri', 'MIT / Apache-2.0'],
+  ['portable-pty (wezterm)', 'MIT'],
+  ['rusqlite', 'MIT'],
+  ['SQLite', 'public domain'],
+  ['serde · tokio · anyhow · uuid · base64 · dirs', 'MIT / Apache-2.0'],
+];
 
 /**
  * Shows what environment the agents actually get. A GUI process inherits a
@@ -54,90 +128,230 @@ export function EnvPanel({
    *  does — the panel mixes settings and diagnostics, and losing the one
    *  to a stray click aimed at the other is the mix's worst failure. */
   const [dirty, setDirty] = useState(false);
+  const [section, setSection] = useState<SectionId>('general');
+  const [query, setQuery] = useState('');
+
+  /**
+   * Matching runs over what a person reads, not over keys: the index holds
+   * message keys and the search reads their translations, so it works in
+   * whichever language the interface happens to be speaking.
+   */
+  const q = query.trim().toLowerCase();
+  const hits: { id: SectionId; title: MessageKey; found: MessageKey[] }[] | null =
+    q === ''
+      ? null
+      : SECTIONS.map((s) => ({
+          id: s.id,
+          title: s.title,
+          found: [s.title, ...s.terms].filter((k) => t(k).toLowerCase().includes(q)),
+        })).filter((s) => s.found.length > 0);
+  /** One shape for the rail whether or not a search is running, so the
+   *  markup below never has to ask which case it is in. */
+  const nav = hits ?? SECTIONS.map((s) => ({ id: s.id, title: s.title, found: [] as MessageKey[] }));
+
   return (
-    <Modal onCancel={onClose} dirty={dirty}>
+    <Modal onCancel={onClose} dirty={dirty} wide>
         <h2>{t('common.env')}</h2>
 
-        <label htmlFor="locale-select">{t('env.language')}</label>
-        <select
-          id="locale-select"
-          data-testid="locale-select"
-          value={locale}
-          onChange={(e) => setLocale(e.target.value as Locale)}
-        >
-          {LOCALES.map((l) => (
-            <option key={l} value={l}>
-              {LOCALE_NAME[l]}
-            </option>
-          ))}
-        </select>
-
-        <Theming />
-
-        <Notifications />
-
-        <Checkpoints />
-
-        <TermSr />
-
-        <Profiles onDirty={setDirty} />
-
-        {/* The doctor half: what the agents actually inherit. */}
-        <h3 className="modal-section">{t('env.diagnostics')}</h3>
-        <Stat label={t('env.shell')} value={boot.shell ?? '—'} />
-        <Stat label={t('env.source')} value={t(ENV_SOURCE_KEY[envSource(boot)])} />
-        <Stat label={t('env.varCount')} value={String(boot.envVarCount ?? 0)} />
-        <Stat label={t('env.claude')} value={boot.claude ?? t('env.claudeMissing')} />
-        {/* Whether cards' agents can message each other. The feature is the
-            CLI's own; what this desk adds is naming each session after its
-            card so the messages have somewhere sayable to go. */}
-        <Stat
-          label={t('env.messaging')}
-          value={
-            boot.messaging
-              ? `✓ · claude ${boot.claudeVersion ?? ''}`.trim()
-              : t('env.messagingOff', { version: boot.claudeVersion ?? '—' })
-          }
-        />
-        <Stat label={t('env.db')} value={boot.db ?? '—'} />
-
-        {!boot.envResolved && <p className="muted small">{t('env.degraded')}</p>}
-
-        {/* 診斷的鄰居:歡迎面板本來就是這份偵測的第一次亮相 ——
-            這裡給一條回去重看的路,順便重跑偵測。
-
-            說明文件的門也開在這裡。介面上的字被刻意收短了 —— 教學搬進了
-            歡迎面板與 README;沒有這扇門,那不是搬家,是把知識丟掉。
-            連結跟著介面語言走:讀中文的人不該被丟到英文那份。 */}
-        <div className="row welcome-reopen-row">
-          <button data-testid="show-welcome" onClick={onShowWelcome}>
-            {t('welcome.reopen')}
-          </button>
-          {/* 面板是門口,導覽是課 —— 兩者不同,所以是兩顆鈕。 */}
-          <button data-testid="replay-coach" onClick={onReplayCoach}>
-            {t('coach.replay')}
-          </button>
-          <button data-testid="open-docs" onClick={() => void api.openExternal(DOCS_URL[locale])}>
-            {t('env.docs')}
-          </button>
-        </div>
-
-        <label>PATH</label>
-        <div className="chips">
-          {splitPath(boot.path ?? '')
-            .map((p, i) => (
-              <span className="chip mono" key={`${p}-${i}`}>
-                {p}
-              </span>
+        <div className="settings">
+          <div className="settings-nav">
+            <input
+              className="settings-search"
+              value={query}
+              placeholder={t('set.search')}
+              data-testid="settings-search"
+              aria-label={t('set.search')}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {nav.map((s) => (
+              <div key={s.id}>
+                <button
+                  className={`settings-nav-item${s.id === section ? ' active' : ''}`}
+                  data-testid={`sec-${s.id}`}
+                  aria-current={s.id === section}
+                  onClick={() => setSection(s.id)}
+                >
+                  {t(s.title)}
+                </button>
+                {/* A hit is the setting's own name, so the search answers
+                    "where does this live" and not merely "somewhere in
+                    here". Choosing one takes you there and clears the box. */}
+                {s.found
+                  .filter((k) => k !== s.title)
+                  .map((k) => (
+                    <button
+                      key={k}
+                      className="settings-hit"
+                      onClick={() => {
+                        setSection(s.id);
+                        setQuery('');
+                      }}
+                    >
+                      {t(k)}
+                    </button>
+                  ))}
+              </div>
             ))}
+            {hits?.length === 0 && <p className="muted small">{t('palette.empty')}</p>}
+          </div>
+
+          <div className="settings-body" data-testid="settings-body">
+            {section === 'general' && (
+              <>
+                <label htmlFor="locale-select">{t('env.language')}</label>
+                <select
+                  id="locale-select"
+                  data-testid="locale-select"
+                  value={locale}
+                  onChange={(e) => setLocale(e.target.value as Locale)}
+                >
+                  {LOCALES.map((l) => (
+                    <option key={l} value={l}>
+                      {LOCALE_NAME[l]}
+                    </option>
+                  ))}
+                </select>
+
+                {/* 歡迎面板本來就是啟動偵測的第一次亮相 —— 這裡給一條回去
+                    重看的路,順便重跑偵測。面板是門口,導覽是課,兩者不同,
+                    所以是兩顆鈕。
+
+                    說明文件的門也開在這裡:介面上的字被刻意收短了,教學搬進
+                    了導覽與 README;沒有這扇門,那不是搬家,是把知識丟掉。
+                    連結跟著介面語言走 —— 讀中文的人不該被丟到英文那份。
+
+                    放在「一般」而不是「進階」:這三扇門都是給還在摸索的人開
+                    的,而摸索的人最不會去點一個叫「進階」的東西。 */}
+                <div className="row welcome-reopen-row">
+                  <button data-testid="show-welcome" onClick={onShowWelcome}>
+                    {t('welcome.reopen')}
+                  </button>
+                  <button data-testid="replay-coach" onClick={onReplayCoach}>
+                    {t('coach.replay')}
+                  </button>
+                  <button
+                    data-testid="open-docs"
+                    onClick={() => void api.openExternal(DOCS_URL[locale])}
+                  >
+                    {t('env.docs')}
+                  </button>
+                </div>
+
+                <Theming />
+              </>
+            )}
+
+            {section === 'sessions' && (
+              <>
+                <h3 className="modal-section">{t('set.prompting')}</h3>
+                <p className="muted small">{t('set.promptingHint')}</p>
+                <Stat label="prompt-template.md" value={boot.promptTemplate ?? '—'} />
+                {boot.promptTemplate && (
+                  <div className="row welcome-reopen-row">
+                    <button
+                      data-testid="open-template"
+                      onClick={() => void api.openPath(boot.promptTemplate as string)}
+                    >
+                      {t('set.openTemplate')}
+                    </button>
+                  </div>
+                )}
+                <Checkpoints />
+                <Note testid="note-cost">{t('note.cost')}</Note>
+              </>
+            )}
+
+            {section === 'terminal' && (
+              <>
+                <TermSr />
+                <Note testid="note-scrollback">{t('note.scrollback')}</Note>
+              </>
+            )}
+
+            {section === 'notifications' && <Notifications />}
+
+            {section === 'agents' && (
+              <>
+                <Profiles onDirty={setDirty} />
+                <Note testid="note-agents">{t('note.agents')}</Note>
+              </>
+            )}
+
+            {section === 'diagnostics' && (
+              <>
+                {/* The doctor half: what the agents actually inherit. */}
+                <h3 className="modal-section">{t('env.diagnostics')}</h3>
+                <Stat label={t('env.shell')} value={boot.shell ?? '—'} />
+                <Stat label={t('env.source')} value={t(ENV_SOURCE_KEY[envSource(boot)])} />
+                <Stat label={t('env.varCount')} value={String(boot.envVarCount ?? 0)} />
+                <Stat label={t('env.claude')} value={boot.claude ?? t('env.claudeMissing')} />
+                {/* Whether cards' agents can message each other. The feature
+                    is the CLI's own; what this desk adds is naming each
+                    session after its card so messages have somewhere to go. */}
+                <Stat
+                  label={t('env.messaging')}
+                  value={
+                    boot.messaging
+                      ? `✓ · claude ${boot.claudeVersion ?? ''}`.trim()
+                      : t('env.messagingOff', { version: boot.claudeVersion ?? '—' })
+                  }
+                />
+                <Stat label={t('env.db')} value={boot.db ?? '—'} />
+                {!boot.envResolved && <p className="muted small">{t('env.degraded')}</p>}
+                <label>PATH</label>
+                <div className="chips">
+                  {splitPath(boot.path ?? '').map((p, i) => (
+                    <span className="chip mono" key={`${p}-${i}`}>
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {section === 'advanced' && (
+              <>
+                <Note testid="note-telemetry">{t('note.telemetry')}</Note>
+                <h3 className="modal-section">{t('set.licenses')}</h3>
+                {/* Data, not prose: names and licences do not translate, and
+                    a hand-written paragraph about them would rot silently. */}
+                <div className="licenses" data-testid="licenses">
+                  {LICENSES.map(([who, what]) => (
+                    <div className="stat" key={who}>
+                      <span className="stat-label">{who}</span>
+                      <span className="stat-value mono">{what}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="modal-actions">
           <button className="primary" onClick={onClose}>
             {t('common.close')}
+            <kbd>Esc</kbd>
           </button>
         </div>
     </Modal>
+  );
+}
+
+/**
+ * Why the setting you are looking for is not here.
+ *
+ * Every refusal in this product ships with its full reason — but the reasons
+ * live in the README and the decision docs, which is everywhere except the
+ * moment somebody opens settings and cannot find the switch. This is that
+ * reason, put where the search for it ends. Deliberately not a warning: it
+ * is neither a problem nor an error, it is the answer.
+ */
+function Note({ children, testid }: { children: React.ReactNode; testid: string }) {
+  return (
+    <p className="settings-note" data-testid={testid}>
+      {children}
+    </p>
   );
 }
 
