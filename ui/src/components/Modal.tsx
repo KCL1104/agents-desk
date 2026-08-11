@@ -10,6 +10,15 @@ interface Props {
    */
   dirty?: boolean;
   wide?: boolean;
+  /**
+   * The dialog's primary action, if it has one.
+   *
+   * Bound here rather than on each field so that the chord printed on the
+   * button is true wherever the caret sits. A shortcut advertised on a
+   * button and dead when that button has focus is a small lie, and this
+   * app spends its credibility elsewhere.
+   */
+  onSubmit?: () => void;
   children: React.ReactNode;
 }
 
@@ -24,10 +33,12 @@ const FOCUSABLE =
  * control wraps to the first instead of walking off into the obscured board
  * behind the backdrop — and goes back where it was when the dialog closes.
  */
-export function Modal({ onCancel, dirty = false, wide = false, children }: Props) {
+export function Modal({ onCancel, dirty = false, wide = false, onSubmit, children }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const cancel = useRef(onCancel);
   cancel.current = onCancel;
+  const submit = useRef(onSubmit);
+  submit.current = onSubmit;
   const titleId = useId();
 
   useEffect(() => {
@@ -49,6 +60,15 @@ export function Modal({ onCancel, dirty = false, wide = false, children }: Props
       if (e.key === 'Escape') {
         e.stopPropagation();
         cancel.current();
+        return;
+      }
+      // The primary action's chord, everywhere inside the dialog. The
+      // composition guard is the same one the fields kept: the Enter that
+      // confirms an IME candidate is not the Enter that submits a form.
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.isComposing && submit.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        submit.current();
         return;
       }
       if (e.key !== 'Tab') return;

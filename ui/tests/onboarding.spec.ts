@@ -148,6 +148,23 @@ test.describe('the first-run panel', () => {
     expect((zh as { url: string }).url).toContain('README.zh-TW.md');
   });
 
+  /**
+   * 面板是門口,導覽是課。介面的字收短之後,五個 coach 才是概念的家 ——
+   * 一堂只上得了一次的課,得有一條重修的路。
+   */
+  test('the walkthrough can be replayed from the environment panel', async ({ page }) => {
+    await page.addInitScript(installMock);
+    await page.addInitScript(() =>
+      localStorage.setItem('agentdesk.coach', JSON.stringify({ attempt: true, finish: true })),
+    );
+    await page.goto('/');
+    await page.getByRole('button', { name: '環境' }).click();
+    await page.getByTestId('replay-coach').click();
+    await expect(page.locator('.toast')).toContainText('重新教');
+    const marks = await page.evaluate(() => localStorage.getItem('agentdesk.coach'));
+    expect(marks).toBeNull();
+  });
+
   test('the welcome panel reopens from the palette too', async ({ page }) => {
     await page.addInitScript(installMock);
     await page.goto('/');

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useT } from '../i18n';
+import { chord } from '../platform';
 import type { PermissionMode, Task } from '../types';
 import { useLaunchers } from './launchers';
 import { Modal } from './Modal';
@@ -87,7 +88,7 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
   };
 
   return (
-    <Modal onCancel={onCancel} dirty={edited} wide>
+    <Modal onCancel={onCancel} dirty={edited} wide onSubmit={start}>
         <h2>{t('attempt.startTitle', { title: task.title })}</h2>
 
         {/* Two labeled columns: the mode select decides whether the agent
@@ -155,13 +156,8 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
             setEdited(true);
             setPrompt(e.target.value);
           }}
-          // ⌘/Ctrl+Enter 送出 —— 與 review 撰寫框同一個慣例;避開 IME
-          // 組字確認的那顆 Enter。
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
-              start();
-            }
-          }}
+          // ⌘/Ctrl+Enter 由 Modal 綁在整個對話框上,不再綁這個欄位 ——
+          // 按鈕上印著那顆和弦,它就必須在對話框裡處處為真。
         />
 
         {willSend ? (
@@ -189,7 +185,10 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
         {error && <FriendlyError text={error} testid="attempt-error" />}
 
         <div className="modal-actions">
-          <button onClick={onCancel}>{t('common.cancel')}</button>
+          <button onClick={onCancel}>
+            {t('common.cancel')}
+            <kbd>Esc</kbd>
+          </button>
           <button
             className="primary"
             disabled={prompt.trim() === '' || busy}
@@ -201,6 +200,7 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
               : willSend
                 ? t('common.start')
                 : t('attempt.openNoPrompt')}
+            <kbd>{chord('↵')}</kbd>
           </button>
         </div>
     </Modal>

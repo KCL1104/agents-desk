@@ -39,12 +39,15 @@ export function EnvPanel({
   boot,
   onClose,
   onShowWelcome,
+  onReplayCoach,
 }: {
   boot: BootStatus;
   onClose: () => void;
   /** 重開歡迎面板(偵測重跑、旗標不動)。App 會先關掉這個面板 ——
       兩層 modal 疊著,Esc 與焦點圈就說不清楚誰的了。 */
   onShowWelcome: () => void;
+  /** 忘掉五個 coach 的已讀記號,讓它們各自在下次那一刻重新教一次。 */
+  onReplayCoach: () => void;
 }) {
   const { t, locale, setLocale } = useI18n();
   /** Unsaved profile edits guard the backdrop, exactly as a typed prompt
@@ -109,6 +112,10 @@ export function EnvPanel({
         <div className="row welcome-reopen-row">
           <button data-testid="show-welcome" onClick={onShowWelcome}>
             {t('welcome.reopen')}
+          </button>
+          {/* 面板是門口,導覽是課 —— 兩者不同,所以是兩顆鈕。 */}
+          <button data-testid="replay-coach" onClick={onReplayCoach}>
+            {t('coach.replay')}
           </button>
           <button data-testid="open-docs" onClick={() => void api.openExternal(DOCS_URL[locale])}>
             {t('env.docs')}

@@ -13,6 +13,7 @@ import type { MessageKey } from './i18n';
  */
 export type ActionId =
   | 'jump-waiting'
+  | 'last-session'
   | 'new-card'
   | 'new-session'
   | 'toggle-inspector'
@@ -21,7 +22,8 @@ export type ActionId =
   | 'view-overview'
   | 'open-env'
   | 'open-keys'
-  | 'show-welcome';
+  | 'show-welcome'
+  | 'replay-coach';
 
 /** What an action's `when` may ask about. Kept to judgements the palette
  *  needs — this is visibility, not enablement: an action that cannot
@@ -32,6 +34,9 @@ export interface ActionCtx {
   /** There is an attempt to inspect — a drawer up, or a focused pane
    *  that belongs to one. */
   canInspect: boolean;
+  /** Somewhere to go back to: a session visited before this one, still
+   *  alive. Offering "back" with no back is worse than not offering it. */
+  hasPrevious: boolean;
 }
 
 export interface ActionDef {
@@ -48,6 +53,10 @@ export interface ActionDef {
  *  navigation third, the app's own surfaces last. */
 export const ACTIONS: readonly ActionDef[] = [
   { id: 'jump-waiting', title: 'keys.jump', keys: '⌘/Ctrl + E', when: (c) => c.hasWaiting },
+  // ⌘E 的另一半。E 是「去該去的地方」(注意力),L 是「回到剛才那個」
+  // (記憶)——答完一個插隊的 agent 之後,回去繼續原本在做的事。
+  // 選 L 是因為 K 進不來:終端機內 Ctrl+Shift+K 已經是叫出面板的寫法。
+  { id: 'last-session', title: 'keys.last', keys: '⌘/Ctrl + L', when: (c) => c.hasPrevious },
   // Shift 生在和弦裡,所以終端機內外都是同一顆 —— shell 擁有的是
   // 無 Shift 的 Ctrl+字母。N 沒人用過;K 不行(終端機內 Ctrl+Shift+K
   // 已經是叫出面板的寫法),C 是複製,E/F/I 各有原主。
@@ -61,6 +70,9 @@ export const ACTIONS: readonly ActionDef[] = [
   { id: 'open-keys', title: 'keys.title', keys: '⌘/Ctrl + /' },
   // 重看歡迎面板:偵測重跑、旗標不動 —— 給剛裝好 CLI 的人一條回門口的路。
   { id: 'show-welcome', title: 'welcome.reopen', keys: null },
+  // 面板是門口,導覽是課。介面的字收短之後,這五個時刻才是概念的家 ——
+  // 一堂只上得了一次的課,值得給一條重修的路。
+  { id: 'replay-coach', title: 'coach.replay', keys: null },
 ];
 
 /** Keyboard that is not an action — movement and editing chords the sheet

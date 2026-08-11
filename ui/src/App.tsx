@@ -53,7 +53,7 @@ import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { WelcomeDialog } from './components/WelcomeDialog';
 import { CoachMark } from './components/CoachMark';
 import { CommandPalette } from './components/CommandPalette';
-import { coachSeen, markCoachSeen, type CoachId } from './coach';
+import { clearCoachSeen, coachSeen, markCoachSeen, type CoachId } from './coach';
 import type { ActionCtx, ActionId } from './actions';
 import { useSize } from './useSize';
 
@@ -670,6 +670,37 @@ export default function App() {
   const onOpenFromSidebar = useCallback((id: string) => void onOpen(id), [onOpen]);
 
   /**
+   * Where you were before here.
+   *
+   * ⌘E answers whoever interrupted; this is the way back to what the
+   * interruption cost you — the two halves of the same triage loop, one
+   * for attention and one for memory. Deliberately one step deep: a real
+   * history stack would need its own UI to be usable, and the palette
+   * already lists every session for anything further back than "the one
+   * before this".
+   */
+  /**
+   * Kept in a ref advanced during render, not in an effect.
+   *
+   * An effect commits a frame late: the pane would already be showing the
+   * session you just moved to while the way back was still the one before
+   * *that*. A chord pressed in the gap did nothing — rare for a person,
+   * reliable enough for a test to catch. Advancing here means the trail is
+   * true on the same render that shows the move. The write is idempotent
+   * per focused id, so a double render changes nothing.
+   */
+  const trail = useRef<{ cur: string | null; prev: string | null }>({ cur: null, prev: null });
+  if (focusedId !== null && focusedId !== trail.current.cur) {
+    trail.current = { cur: focusedId, prev: trail.current.cur };
+  }
+
+  /** The way back, only while it still exists: a session can end or be
+   *  removed while you are away, and a door onto nothing is worse than no
+   *  door — so the chord and the palette row both vanish with it. */
+  const back = trail.current.prev;
+  const backTo = back !== null && sessions.some((s) => s.id === back) ? back : null;
+
+  /**
    * The keyboard set. Every chord is one a shell does not own — the bindings
    * follow the terminal-app convention (gnome-terminal, VS Code): letters on
    * ⌘/Ctrl, but a Ctrl+letter pressed *inside* a terminal belongs to readline
@@ -730,6 +761,13 @@ export default function App() {
           const i = waiting.findIndex((s) => s.id === focusedId);
           void onOpen(waiting[(i + 1) % waiting.length].id);
         }
+      } else if ((e.key === 'l' || e.key === 'L') && !shellsOwn) {
+        // The other half of ⌘E. K was not available for this: inside a
+        // terminal Ctrl+Shift+K is already how the palette is reached.
+        if (backTo !== null) {
+          e.preventDefault();
+          void onOpen(backTo);
+        }
       } else if ((e.key === 'k' || e.key === 'K') && !shellsOwn) {
         e.preventDefault();
         paletteReturn.current = document.activeElement as HTMLElement | null;
@@ -782,7 +820,18 @@ export default function App() {
     // preventDefault still reaches the terminal untouched.
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [sessions, onOpen, view, inspectId, activeAttemptId, tabs, activeTab, members, focusedId]);
+  }, [
+    sessions,
+    onOpen,
+    view,
+    inspectId,
+    activeAttemptId,
+    tabs,
+    activeTab,
+    members,
+    focusedId,
+    backTo,
+  ]);
 
   /* ------------------------------ board ----------------------------- */
 
@@ -972,8 +1021,9 @@ export default function App() {
     () => ({
       hasWaiting: sessions.some((s) => needsYou(s.status)),
       canInspect: Boolean(inspectId || activeAttemptId),
+      hasPrevious: backTo !== null,
     }),
-    [sessions, inspectId, activeAttemptId],
+    [sessions, inspectId, activeAttemptId, backTo],
   );
 
   /** Closed without restoring focus: the jump decides where focus goes. */
@@ -1000,6 +1050,11 @@ export default function App() {
           }
           break;
         }
+        case 'last-session':
+          // Same door the chord opens, same guard: the row is only offered
+          // while there is somewhere alive to go back to.
+          if (backTo !== null) void onOpen(backTo);
+          break;
         case 'new-card':
           setDialogError(null);
           setView('board');
@@ -1032,9 +1087,16 @@ export default function App() {
         case 'show-welcome':
           reopenWelcome();
           break;
+        case 'replay-coach':
+          // Forgetting is the whole action; the marks fire on their own the
+          // next time each moment comes round, so there is nothing to show
+          // right now beyond saying it took.
+          clearCoachSeen();
+          pushToast('ok', t('coach.replayed'));
+          break;
       }
     },
-    [sessions, focusedId, onOpen, inspectId, activeAttemptId, reopenWelcome],
+    [sessions, focusedId, onOpen, inspectId, activeAttemptId, reopenWelcome, backTo, pushToast, t],
   );
 
   const paletteCancel = useCallback(() => {
@@ -1484,6 +1546,12 @@ export default function App() {
           onShowWelcome={() => {
             setShowEnv(false);
             reopenWelcome();
+          }}
+          // 重播導覽不關面板:忘掉記號是瞬間的事,而下一課要等它自己
+          // 的那一刻才到 —— 現在唯一該發生的就是一句「收到了」。
+          onReplayCoach={() => {
+            clearCoachSeen();
+            pushToast('ok', t('coach.replayed'));
           }}
         />
       )}

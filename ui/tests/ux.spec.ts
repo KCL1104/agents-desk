@@ -317,6 +317,28 @@ test.describe('signals reach everyone', () => {
     await expect(page.locator('.pane.focused')).toHaveAttribute('data-session-id', 's1');
   });
 
+  /**
+   * ⌘E 的另一半。E 去該去的地方,L 回剛才那個 —— 答完一個插隊的 agent
+   * 之後,回去繼續原本在做的事,是這個迴圈少掉的那一步。
+   */
+  test('⌘/Ctrl+L goes back to the session you were on before', async ({ page }) => {
+    await boot(page);
+    await toBoard(page);
+    await newCard(page, '第一張');
+    await newCard(page, '第二張');
+    await start(page, 'k1');
+    await toBoard(page);
+    await start(page, 'k2');
+    await expect(page.locator('.pane.focused')).toHaveAttribute('data-session-id', 's2');
+
+    // 在終端機裡,所以走加了 Shift 的那一顆 —— 無 Shift 的 Ctrl+L 屬於 shell。
+    await page.keyboard.press('ControlOrMeta+Shift+L');
+    await expect(page.locator('.pane.focused')).toHaveAttribute('data-session-id', 's1');
+    // 回頭路本身也有回頭路:再按一次回到 s2。
+    await page.keyboard.press('ControlOrMeta+Shift+L');
+    await expect(page.locator('.pane.focused')).toHaveAttribute('data-session-id', 's2');
+  });
+
   test('workspace tabs answer the keyboard', async ({ page }) => {
     await boot(page);
     await page.locator('.tab-add').click();

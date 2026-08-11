@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { api } from '../api';
 import { useT } from '../i18n';
+import { chord } from '../platform';
 import { composePath, storedWorld, type World } from '../worlds';
 import { Modal } from './Modal';
 import { WorldSelect } from './WorldSelect';
@@ -128,7 +129,7 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
   };
 
   return (
-    <Modal onCancel={onCancel} dirty={dirty}>
+    <Modal onCancel={onCancel} dirty={dirty} onSubmit={submit}>
         <h2>{t('newTask.title')}</h2>
 
         <label>{t('newTask.titleLabel')}</label>
@@ -145,14 +146,9 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
           rows={5}
           value={prompt}
           data-testid="task-prompt"
+          // 多行欄位裡 Enter 是換行;送出的 ⌘/Ctrl+Enter 由 Modal 綁在整個
+          // 對話框上 —— 按鈕上印著那顆和弦,它就必須處處為真。
           onChange={(e) => setPrompt(e.target.value)}
-          // 多行欄位裡 Enter 是換行,送出走 ⌘/Ctrl+Enter —— 與 review
-          // 撰寫框同一個慣例;一樣避開 IME 組字確認的那顆 Enter。
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
-              submit();
-            }
-          }}
         />
         <p className="muted small">{t('newTask.promptHint')}</p>
 
@@ -208,7 +204,10 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
         {error && <FriendlyError text={error} testid="task-error" />}
 
         <div className="modal-actions">
-          <button onClick={onCancel}>{t('common.cancel')}</button>
+          <button onClick={onCancel}>
+            {t('common.cancel')}
+            <kbd>Esc</kbd>
+          </button>
           <button
             className="primary"
             disabled={!ready || busy}
@@ -216,6 +215,7 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
             onClick={submit}
           >
             {busy ? t('inspector.working') : t('common.create')}
+            <kbd>{chord('↵')}</kbd>
           </button>
         </div>
     </Modal>

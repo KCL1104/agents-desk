@@ -247,6 +247,18 @@ textarea { resize: vertical; }
 .modal .fields .field label { margin-top: 0; }
 .recents { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+/* The chord rides the button it fires. A gesture that lives only in a
+   tooltip is a gesture most people never find — and the ⌘/ sheet is a
+   place you go, not a place you are. Mixed from currentColor so one rule
+   reads correctly on a quiet button and on the accent fill alike; no
+   opacity, because that would drag the chip under its own contrast. */
+.modal-actions kbd {
+  font-family: var(--mono); font-size: var(--fs-label);
+  margin-left: 7px; padding: 1px 5px; border-radius: var(--radius-xs);
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  white-space: nowrap;
+}
+.modal-actions button:disabled kbd { background: none; }
 
 .boot { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 40px; text-align: center; }
 .boot h1 { margin: 0; font-size: var(--fs-hero); letter-spacing: 0.02em; }

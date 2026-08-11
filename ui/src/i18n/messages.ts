@@ -108,6 +108,7 @@ export const en = {
   /* --------------------------- shortcuts ------------------------------ */
   'keys.title': 'Keyboard shortcuts',
   'keys.jump': 'Jump to the session waiting on you',
+  'keys.last': 'Back to the session you were on before',
   'keys.palette': 'Command palette — sessions, cards, actions',
   'keys.cyclePanes': 'Focus the next / previous pane',
   'keys.moveCard': 'Move the focused board card — a column sideways, a slot up or down',
@@ -276,6 +277,8 @@ export const en = {
   // The interface says what a control does; the README says why. This is the
   // door to it — without one, shortening the interface loses the reason.
   'env.docs': 'Documentation',
+  'coach.replay': 'Replay the first-run walkthrough',
+  'coach.replayed': 'The walkthrough will teach again ✓',
   // 一台沒有任何 agent CLI 的機器:卡片照開,attempt 需要 CLI ——
   // 界線照實說,不假裝一切就緒,也不擋人建卡。
   'welcome.noAgents':
@@ -598,6 +601,7 @@ export const zhTW: Record<MessageKey, string> = {
   /* --------------------------- shortcuts ------------------------------ */
   'keys.title': '鍵盤快捷鍵',
   'keys.jump': '跳到正在等你的 session',
+  'keys.last': '回到剛才那個 session',
   'keys.palette': '命令面板 —— session、卡片、動作',
   'keys.cyclePanes': '聚焦下一個 / 上一個 pane',
   'keys.moveCard': '搬動聚焦的卡片 —— 左右換欄、上下換位',
@@ -754,6 +758,8 @@ export const zhTW: Record<MessageKey, string> = {
   'welcome.newSession': '先開個臨時 session',
   'welcome.reopen': '顯示歡迎面板',
   'env.docs': '說明文件',
+  'coach.replay': '重播首次導覽',
+  'coach.replayed': '導覽會重新教一次 ✓',
   'welcome.noAgents':
     '這個 shell 的 PATH 上找不到任何 agent CLI。卡片現在就能開；要開始 attempt，需要先安裝並登入 claude、codex、gemini 或 aider。',
   'welcome.probeAgain': '重新偵測',

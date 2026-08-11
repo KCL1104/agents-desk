@@ -51,3 +51,20 @@ export function markCoachSeen(id: CoachId): void {
     /* without storage the mark just shows again next run */
   }
 }
+
+/**
+ * Forget every mark, so the five moments teach again.
+ *
+ * The welcome panel can already be reopened, but that is the panel, not the
+ * walkthrough: the concepts that bite mid-task are taught by these marks, and
+ * until now the only way back to them was clearing site data. A tour worth
+ * showing once is worth showing again on request — especially now that the
+ * interface leans on them instead of repeating itself at every control.
+ */
+export function clearCoachSeen(): void {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    /* nothing stored means nothing to forget */
+  }
+}
