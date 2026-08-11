@@ -109,9 +109,20 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get install -y tmux
 
-      - name: Install tmux (macOS)
+      # Linked where a login shell looks, not merely installed. `hold_for`
+      # asks the *login-shell* environment for tmux, because that is the
+      # environment every session is spawned from — and on Apple Silicon
+      # Homebrew lives at /opt/homebrew/bin, which a login shell only sees if
+      # a profile put it there. Without the link the guard on the test (a
+      # plain `tmux -V` through the process PATH) says "tmux is here" while
+      # the product says "no tmux, do not hold", and the session comes back
+      # Saved. claude-detect.yml links claude for exactly this reason.
+      - name: Install tmux where a login shell looks (macOS)
         if: runner.os == 'macOS'
-        run: brew install tmux
+        run: |
+          brew install tmux
+          sudo mkdir -p /usr/local/bin
+          sudo ln -sf "$(command -v tmux)" /usr/local/bin/tmux
 
       # The SSH route is integration-tested against a real loopback sshd.
       # Linux only: the macOS runner's sshd needs a system-level Remote Login
@@ -151,10 +162,12 @@ jobs:
       # by running `sh -c`, so the integration tests are compiled rather than
       # run — which still catches the failure that actually happens here, a
       # `#[cfg]` arm rotting because nobody ever built it.
+      # `--bins`, not `--lib`: this crate has no library target, so the unit
+      # tests live in the binary's own modules.
       - name: Unit tests
         if: ${{ !matrix.unix }}
         working-directory: src-tauri
-        run: cargo test --locked --lib
+        run: cargo test --locked --bins
 
       - name: Integration tests compile
         if: ${{ !matrix.unix }}
