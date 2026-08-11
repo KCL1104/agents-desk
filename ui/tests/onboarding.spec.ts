@@ -327,7 +327,15 @@ test.describe('settings', () => {
   const open = async (page: Page) => {
     await page.addInitScript(installMock);
     await page.goto('/');
+    // Wait for the app to exist before typing at it. The chord is handled by
+    // a listener React installs on mount, so pressing it straight after
+    // `goto` is a race the test wins only on a fast machine — and loses on a
+    // slower one, where it then spends its whole timeout waiting for a panel
+    // nothing ever opened. Found by the macOS runner, where a different one
+    // of these tests lost the race on each run.
+    await expect(page.locator('.tab')).toHaveCount(1);
     await page.keyboard.press('ControlOrMeta+,');
+    await expect(page.getByTestId('settings-body')).toBeVisible();
   };
 
   test('⌘/Ctrl+, opens it, and the rail names what is in here', async ({ page }) => {

@@ -1001,6 +1001,14 @@ prompt".into()],
     /// The env pipeline checkpoints ride on: a variable set for one call is
     /// there for that call and gone for the next — `GIT_INDEX_FILE` must
     /// never bleed into a later command that touches the agent's real index.
+    ///
+    /// Unix-gated because the *test* needs a POSIX shell to ask its question,
+    /// not because the property is: it pins `PATH` to `/usr/bin:/bin` and
+    /// reads the variable back through `sh -c`. On Windows there is no `sh`
+    /// on a login-shell PATH, so this failed there for a reason that has
+    /// nothing to do with `run_ok_with_env`. Found the first time the unit
+    /// tests were ever run on Windows.
+    #[cfg(unix)]
     #[test]
     fn run_with_env_sets_the_variable_for_that_call_only() {
         let mut env = ShellEnv {

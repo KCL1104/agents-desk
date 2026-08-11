@@ -3,6 +3,17 @@ import { installMock } from './mock-tauri';
 
 const REPO = '/Users/test/picked-repo';
 
+/** Put the caret at the end of the document, in this platform's own words.
+ *
+ *  `Control+End` is the Windows and Linux chord; on macOS CodeMirror binds
+ *  `Cmd-ArrowDown` for it instead. The suite had encoded one platform's
+ *  keyboard for its whole life, so on a Mac the caret never moved, the text
+ *  landed in the middle of the file, and the assertions failed for a reason
+ *  that had nothing to do with saving. */
+async function toDocEnd(page: Page) {
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End');
+}
+
 const DIFF = [
   'diff --git a/src/auth.py b/src/auth.py',
   'index 1111111..2222222 100644',
@@ -75,7 +86,7 @@ test.describe('editable diff', () => {
     await expect(page.getByTestId('editor-save')).toBeDisabled();
 
     await page.locator('.file-editor .cm-content').click();
-    await page.keyboard.press('Control+End');
+    await toDocEnd(page);
     await page.keyboard.type('marker_one = 1');
     await expect(page.getByTestId('editor-save')).toBeEnabled();
     await page.getByTestId('editor-save').click();
@@ -91,12 +102,14 @@ test.describe('editable diff', () => {
     await expect(page.locator('.diff-file .diff-count.add')).toHaveText('+3');
     await expect(page.getByTestId('viewed-count')).toHaveCount(0);
 
-    // ⌘S is the same save. A second edit, saved by key alone.
+    // ⌘S is the same save. A second edit, saved by key alone — and pressed
+    // the way this platform's user presses it, since that is the half of the
+    // contract a Linux-only suite could never check.
     await page.locator('.file-editor .cm-content').click();
-    await page.keyboard.press('Control+End');
+    await toDocEnd(page);
     await page.keyboard.press('Enter');
     await page.keyboard.type('marker_two = 2');
-    await page.keyboard.press('Control+s');
+    await page.keyboard.press('ControlOrMeta+s');
     await expect
       .poll(() =>
         page.evaluate(() => window.__mock.files.get('k1-a1:src/auth.py')?.work ?? ''),
