@@ -3290,9 +3290,13 @@ impl Core {
     /// Sessions in worlds that hold nothing simply have no socket to find,
     /// so they stay `Saved` without needing to be asked about separately.
     fn mark_detached(&self) {
-        if self.env.which("tmux").is_none() {
-            return;
-        }
+        // The resolved path, not the bare name. The guard used to ask the
+        // login-shell PATH and the call then asked the *process* PATH, which
+        // is the Finder stub `shell_env` exists to work around: on a Mac
+        // whose tmux came from Homebrew, `which` finds it, the spawn fails
+        // ENOENT, and every held session comes back Saved — the exact lie
+        // this state was added to stop.
+        let Some(tmux) = self.env.which("tmux") else { return };
         let tag = self.desk_tag();
         let mut sessions = self.sessions.lock().unwrap();
         for (id, meta) in sessions.iter_mut() {
@@ -3300,12 +3304,7 @@ impl Core {
                 continue;
             }
             let sock = pty::hold_socket(&tag, id);
-            let alive = std::process::Command::new("tmux")
-                .args(["-L", &sock, "has-session", "-t", pty::HOLD_SESSION])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            if alive {
+            if tmux_has_session(&tmux, &sock) {
                 meta.status = Status::Detached;
             }
         }
@@ -3361,6 +3360,7 @@ impl Core {
     /// desk has forgotten still exists. Scoped by the desk tag, so a sweep
     /// can only ever reach this install's own leftovers.
     fn sweep_held_orphans(&self) {
+        let Some(tmux) = self.env.which("tmux") else { return };
         let Some(dir) = tmux_socket_dir() else { return };
         let prefix = format!("agentdesk-{}-", self.desk_tag());
         let known: std::collections::HashSet<String> = self
@@ -3376,13 +3376,24 @@ impl Core {
             if !name.starts_with(&prefix) || known.contains(&name) {
                 continue;
             }
-            let _ = std::process::Command::new("tmux")
-                .args(["-L", &name, "kill-server"])
-                .output();
+            if tmux_has_session(&tmux, &name) {
+                let _ = std::process::Command::new(&tmux)
+                    .args(["-L", &name, "kill-server"])
+                    .output();
+            }
             // tmux leaves the socket inode behind when a server exits, so a
             // dead socket looks exactly like a live one from here. Unlinking
             // is what stops the directory — and this sweep's work — growing
             // without bound across restarts.
+            //
+            // Asked again rather than assumed: unlinking the socket of a
+            // server that is still answering takes away the only name that
+            // agent has, and nothing could ever attach to it again. A socket
+            // is only rubbish once nothing replies on it.
+            if tmux_has_session(&tmux, &name) {
+                eprintln!("[core] {name} still answers after kill-server; left alone");
+                continue;
+            }
             let _ = std::fs::remove_file(e.path());
             eprintln!("[core] swept a held session with no card left: {name}");
         }
@@ -4084,6 +4095,20 @@ mod tests {
 /// name. Unix only, which costs nothing: the only worlds that hold sessions
 /// are the ones with tmux, and Windows has none.
 #[cfg(unix)]
+/// Is anything still answering on this socket?
+///
+/// The one question both the startup check and the sweep ask, so they cannot
+/// answer it differently. A failure to run tmux at all reads as "no" here,
+/// which is the safe direction for the check and, in the sweep, is why the
+/// unlink asks again rather than trusting a kill it may never have run.
+fn tmux_has_session(tmux: &std::path::Path, socket: &str) -> bool {
+    std::process::Command::new(tmux)
+        .args(["-L", socket, "has-session", "-t", pty::HOLD_SESSION])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 pub fn tmux_socket_dir() -> Option<std::path::PathBuf> {
     let base = std::env::var("TMUX_TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
     // SAFETY: getuid is always safe; it reads a process property and cannot fail.
