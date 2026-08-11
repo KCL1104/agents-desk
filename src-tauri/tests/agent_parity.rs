@@ -225,6 +225,9 @@ impl PtySink for Screen {
 /// point one while still reading point five. This is the cheapest possible
 /// check on that, and it needs no account: the sequence is in the first
 /// bytes either CLI writes, long before it has an opinion about who you are.
+/// Measured with an empty `HOME` as well as a signed-in one — both draw a
+/// screen you could paste into before they draw a screen you could work in,
+/// so a runner with no credentials still answers this honestly.
 #[test]
 fn both_clis_turn_bracketed_paste_on_so_a_review_arrives_as_one_message() {
     let env = resolve_env();

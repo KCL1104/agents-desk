@@ -176,10 +176,11 @@ jobs:
       # whole chain from its hooks to this app's listener. Unix only, and
       # for the same reason the rest of this repository's integration tests
       # are: the hook one-liner is run by whatever shell the platform hands
-      # it, `curl` has to be there to run, and a Windows leg failing on
-      # `cmd.exe` quoting would be reporting on something no user has asked
-      # this app to do yet. The `$MAROL_SESSION_ID` fallback that case needs
-      # is unit-tested instead.
+      # it, `curl` has to be there to run, and npm installs these CLIs on
+      # Windows as `.cmd` shims, so every argument would travel through
+      # `cmd.exe`'s quoting on the way in. A leg failing there would be
+      # reporting on something no user has asked this app to do yet. The
+      # `$MAROL_SESSION_ID` fallback that case needs is unit-tested instead.
       - name: Codex config, the hook pipeline, and bracketed paste
         if: matrix.unix
         working-directory: src-tauri
