@@ -908,9 +908,9 @@ pub struct HostEnv {
 /// twice — once to start or reattach, once to end — and both have to go
 /// through the world's doorway on the way out.
 struct HoldPlan {
-    /// `-L`. Carries the desk and the session, so two installs on one machine
-    /// cannot collect each other's sessions.
-    socket: String,
+    /// Which socket, and in which of the two shapes. Carries the desk and the
+    /// session, so two installs on one machine cannot collect each other's.
+    socket: pty::Socket,
     /// `-f`. Never the user's own `~/.tmux.conf`: their prefix key, their
     /// status line and their bindings belong to their terminal, not to a
     /// process this app is only babysitting.
@@ -3303,8 +3303,8 @@ impl Core {
             if meta.status != Status::Saved {
                 continue;
             }
-            let sock = pty::hold_socket(&tag, id);
-            if tmux_has_session(&tmux, &sock) {
+            let sock = pty::Socket::Named(pty::hold_socket(&tag, id));
+            if tmux_answers(&tmux, &sock) {
                 meta.status = Status::Detached;
             }
         }
@@ -3333,10 +3333,10 @@ impl Core {
         if std::fs::write(&conf, pty::HOLD_CONF).is_err() {
             return None;
         }
-        let socket = pty::hold_socket(&self.desk_tag(), session_id);
-        let socket_file = tmux_socket_dir().map(|d| d.join(&socket).to_string_lossy().to_string());
+        let name = pty::hold_socket(&self.desk_tag(), session_id);
+        let socket_file = tmux_socket_dir().map(|d| d.join(&name).to_string_lossy().to_string());
         Some(HoldPlan {
-            socket,
+            socket: pty::Socket::Named(name),
             conf: conf.to_string_lossy().to_string(),
             socket_file,
         })
@@ -3376,10 +3376,10 @@ impl Core {
             if !name.starts_with(&prefix) || known.contains(&name) {
                 continue;
             }
-            if tmux_has_session(&tmux, &name) {
-                let _ = std::process::Command::new(&tmux)
-                    .args(["-L", &name, "kill-server"])
-                    .output();
+            let sock = pty::Socket::Named(name.clone());
+            if tmux_answers(&tmux, &sock) {
+                let (_, args) = pty::hold_destroy(&sock);
+                let _ = std::process::Command::new(&tmux).args(&args).output();
             }
             // tmux leaves the socket inode behind when a server exits, so a
             // dead socket looks exactly like a live one from here. Unlinking
@@ -3390,7 +3390,7 @@ impl Core {
             // server that is still answering takes away the only name that
             // agent has, and nothing could ever attach to it again. A socket
             // is only rubbish once nothing replies on it.
-            if tmux_has_session(&tmux, &name) {
+            if tmux_answers(&tmux, &sock) {
                 eprintln!("[core] {name} still answers after kill-server; left alone");
                 continue;
             }
@@ -4101,9 +4101,10 @@ mod tests {
 /// answer it differently. A failure to run tmux at all reads as "no" here,
 /// which is the safe direction for the check and, in the sweep, is why the
 /// unlink asks again rather than trusting a kill it may never have run.
-fn tmux_has_session(tmux: &std::path::Path, socket: &str) -> bool {
+fn tmux_answers(tmux: &std::path::Path, socket: &pty::Socket) -> bool {
+    let (_, args) = pty::hold_alive(socket);
     std::process::Command::new(tmux)
-        .args(["-L", socket, "has-session", "-t", pty::HOLD_SESSION])
+        .args(&args)
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)

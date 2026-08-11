@@ -77,6 +77,39 @@ set -g destroy-unattached off
 unbind-key -a
 ";
 
+/// Which socket, and how tmux is told about it.
+///
+/// Two shapes because the question "where does tmux keep its sockets" has an
+/// answer on this machine and no answer anywhere else. `-L` lets tmux decide,
+/// which is right here: the directory is `$TMUX_TMPDIR/tmux-<uid>` and this
+/// process can read both halves. In another world both depend on a uid and a
+/// profile this side cannot see, and a sweep that guessed wrong would look
+/// into an empty directory and call every live agent gone. So there, the app
+/// names the path and tmux is told it.
+///
+/// Local stays `-L` rather than being unified onto `-S`: it works, it is
+/// tested, and moving it would strand every session a previous version left
+/// held — their sockets would still be there, still running, under a name
+/// nothing looks for any more.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Socket {
+    /// `-L <name>`, tmux's own directory. This machine only.
+    Named(String),
+    /// `-S <path>`, chosen by the app. Any world whose socket directory this
+    /// process cannot see.
+    Path(String),
+}
+
+impl Socket {
+    /// The two arguments that name it, whichever shape it is.
+    pub fn args(&self) -> [String; 2] {
+        match self {
+            Socket::Named(n) => ["-L".to_string(), n.clone()],
+            Socket::Path(p) => ["-S".to_string(), p.clone()],
+        }
+    }
+}
+
 /// The command that starts a held session, or reattaches to the one already
 /// running under this socket.
 ///
@@ -91,15 +124,14 @@ unbind-key -a
 /// `spawn`: a tmux line built at spawn time is a tmux line on this machine,
 /// and the worlds that need holding most are the other ones.
 pub fn hold_attach(
-    socket: &str,
+    socket: &Socket,
     conf: &str,
     cwd: Option<&str>,
     program: &str,
     args: &[String],
 ) -> (String, Vec<String>) {
-    let mut a = vec![
-        "-L".to_string(),
-        socket.to_string(),
+    let mut a = socket.args().to_vec();
+    a.extend([
         "-f".to_string(),
         conf.to_string(),
         "new-session".to_string(),
@@ -107,7 +139,7 @@ pub fn hold_attach(
         "-D".to_string(),
         "-s".to_string(),
         HOLD_SESSION.to_string(),
-    ];
+    ]);
     if let Some(dir) = cwd {
         a.push("-c".to_string());
         a.push(dir.to_string());
@@ -123,11 +155,22 @@ pub fn hold_attach(
 /// `kill-server`, not `kill-session`: this socket holds exactly one session,
 /// so ending it should not leave a server behind waiting for a session that
 /// will never come.
-pub fn hold_destroy(socket: &str) -> (String, Vec<String>) {
-    (
-        "tmux".to_string(),
-        vec!["-L".to_string(), socket.to_string(), "kill-server".to_string()],
-    )
+pub fn hold_destroy(socket: &Socket) -> (String, Vec<String>) {
+    let mut a = socket.args().to_vec();
+    a.push("kill-server".to_string());
+    ("tmux".to_string(), a)
+}
+
+/// Is anything answering on this socket? The one question the startup check
+/// and the orphan sweep both ask, in the form both can run.
+pub fn hold_alive(socket: &Socket) -> (String, Vec<String>) {
+    let mut a = socket.args().to_vec();
+    a.extend([
+        "has-session".to_string(),
+        "-t".to_string(),
+        HOLD_SESSION.to_string(),
+    ]);
+    ("tmux".to_string(), a)
 }
 
 /// The socket name for one session of one desk.
@@ -523,7 +566,7 @@ mod hold_tests {
     #[test]
     fn the_attach_line_is_create_or_attach_and_hands_the_agent_its_own_flags() {
         let (prog, args) = hold_attach(
-            "agentdesk-d-s1",
+            &Socket::Named("agentdesk-d-s1".to_string()),
             "/data/tmux.conf",
             Some("/wt/card-1"),
             "claude",
@@ -550,11 +593,44 @@ mod hold_tests {
     /// that is never coming back.
     #[test]
     fn ending_a_held_session_takes_its_server_with_it() {
-        let (prog, args) = hold_destroy("agentdesk-d-s1");
+        let (prog, args) = hold_destroy(&Socket::Named("agentdesk-d-s1".to_string()));
         assert_eq!(prog, "tmux");
         assert!(args.contains(&"kill-server".to_string()), "{args:?}");
         assert!(!args.contains(&"kill-session".to_string()));
         assert!(args.contains(&"agentdesk-d-s1".to_string()), "wrong socket: {args:?}");
+    }
+
+    /// Which flag names the socket is the whole difference between a world
+    /// this process shares a filesystem with and one it does not, and it has
+    /// to be the *same* difference in all three commands — attach, kill and
+    /// ask. Name a session with `-L` and ask after it with `-S` and tmux
+    /// answers about a socket nobody ever created: every held agent reads as
+    /// gone, and the sweep is then free to kill what it cannot see.
+    #[test]
+    fn every_command_names_the_socket_the_same_way() {
+        let named = Socket::Named("agentdesk-d-s1".to_string());
+        let path = Socket::Path("/home/me/.agentdesk/sockets/agentdesk-d-s1".to_string());
+        assert_eq!(named.args(), ["-L", "agentdesk-d-s1"]);
+        assert_eq!(
+            path.args(),
+            ["-S", "/home/me/.agentdesk/sockets/agentdesk-d-s1"]
+        );
+        for sock in [&named, &path] {
+            let head = sock.args();
+            for (_, args) in [
+                hold_attach(sock, "/c", None, "claude", &[]),
+                hold_destroy(sock),
+                hold_alive(sock),
+            ] {
+                assert_eq!(&args[..2], &head[..], "socket flags differ: {args:?}");
+            }
+        }
+        // Asking is a question, never an action: a `has-session` that could
+        // start one would make the sweep's "is this alive?" create the very
+        // thing it is deciding whether to kill.
+        let (_, args) = hold_alive(&named);
+        assert!(args.contains(&"has-session".to_string()), "{args:?}");
+        assert!(!args.iter().any(|a| a.starts_with("new-")), "{args:?}");
     }
 
     /// The reason there is a socket per session at all, stated as a test so
