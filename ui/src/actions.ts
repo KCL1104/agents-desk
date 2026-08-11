@@ -20,7 +20,7 @@ export type ActionId =
   | 'view-terminal'
   | 'view-board'
   | 'view-overview'
-  | 'open-env'
+  | 'open-settings'
   | 'open-keys'
   | 'show-welcome'
   | 'replay-coach';
@@ -66,7 +66,7 @@ export const ACTIONS: readonly ActionDef[] = [
   { id: 'view-terminal', title: 'view.terminal', keys: '⌘/Ctrl + 1' },
   { id: 'view-board', title: 'view.board', keys: '⌘/Ctrl + 2' },
   { id: 'view-overview', title: 'view.overview', keys: '⌘/Ctrl + 3' },
-  { id: 'open-env', title: 'common.env', keys: '⌘/Ctrl + ,' },
+  { id: 'open-settings', title: 'common.env', keys: '⌘/Ctrl + ,' },
   { id: 'open-keys', title: 'keys.title', keys: '⌘/Ctrl + /' },
   // 重看歡迎面板:偵測重跑、旗標不動 —— 給剛裝好 CLI 的人一條回門口的路。
   { id: 'show-welcome', title: 'welcome.reopen', keys: null },

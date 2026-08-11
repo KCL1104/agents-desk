@@ -16,7 +16,7 @@ interface Props {
   onClose: (id: string) => void;
   onArchive: (id: string) => void;
   onComplete: (id: string, completed: boolean) => void;
-  onShowEnv: () => void;
+  onShowSettings: () => void;
 }
 
 /** Blocked rows first: with many agents, "who is waiting on me" is the
@@ -32,7 +32,7 @@ export function SessionList({
   onClose,
   onArchive,
   onComplete,
-  onShowEnv,
+  onShowSettings,
 }: Props) {
   const t = useT();
   const display = useSections(sessions, activeId);
@@ -124,7 +124,7 @@ export function SessionList({
       {/* The desk's own corner: where new things open (the world), and
           how the desk is set (the environment). */}
       <WorldPicker />
-      <button className="sidebar-foot" onClick={onShowEnv}>
+      <button className="sidebar-foot" onClick={onShowSettings}>
         {t('common.env')}
       </button>
     </aside>

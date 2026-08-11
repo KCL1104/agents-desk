@@ -100,16 +100,18 @@ const LICENSES: readonly (readonly [string, string])[] = [
 ];
 
 /**
- * Shows what environment the agents actually get. A GUI process inherits a
- * stub PATH, so this is the panel to check when an MCP server or a toolchain
- * behaves differently here than in Terminal.app.
+ * Everything about how the desk itself is set up, as opposed to any one
+ * session: language and theme, the opening prompt, notifications, launch
+ * profiles — and diagnostics.
  *
- * The language picker lives here because this is already the panel about how
- * the app itself is set up, rather than about any one session. Profiles live
- * here for the same reason: a named way of launching an agent belongs to the
- * desk, not to any one card.
+ * It began as the diagnostics panel alone, which is what the old name
+ * `EnvPanel` recorded, and the settings grew into it until diagnostics were
+ * one section of seven. Worth keeping in view rather than tidying away: a GUI
+ * process inherits a stub PATH, so "what environment do the agents actually
+ * get" is still the question to bring here when an MCP server or a toolchain
+ * behaves differently than it does in Terminal.app.
  */
-export function EnvPanel({
+export function SettingsPanel({
   boot,
   onClose,
   onShowWelcome,

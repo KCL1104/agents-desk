@@ -48,7 +48,7 @@ import {
   type Zone,
 } from './layout';
 import { ColumnPicker } from './components/ColumnPicker';
-import { EnvPanel } from './components/EnvPanel';
+import { SettingsPanel } from './components/SettingsPanel';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { WelcomeDialog } from './components/WelcomeDialog';
 import { CoachMark } from './components/CoachMark';
@@ -103,7 +103,7 @@ export default function App() {
    *  point of having more than one. */
   const [renameTabId, setRenameTabId] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
-  const [showEnv, setShowEnv] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   /** Errors stack instead of overwriting: parallel agents fail in parallel,
    *  and the second failure must not eat the first. Good news dismisses
    *  itself; a problem waits to be read. */
@@ -831,7 +831,7 @@ export default function App() {
         // The platform's own settings chord. Not a letter, so the terminal
         // rule does not bite: Ctrl+comma is nobody's readline binding.
         e.preventDefault();
-        setShowEnv(true);
+        setShowSettings(true);
       }
     };
     // Capture phase: xterm stops propagation on keys it maps (modified
@@ -1098,8 +1098,8 @@ export default function App() {
         case 'view-overview':
           setView('overview');
           break;
-        case 'open-env':
-          setShowEnv(true);
+        case 'open-settings':
+          setShowSettings(true);
           break;
         case 'open-keys':
           setShowKeys(true);
@@ -1148,7 +1148,7 @@ export default function App() {
         onClose={(id) => void api.closeSession(id)}
         onArchive={(id) => void api.archiveSession(id)}
         onComplete={(id, completed) => void api.setCompleted(id, completed)}
-        onShowEnv={() => setShowEnv(true)}
+        onShowSettings={() => setShowSettings(true)}
       />
 
       <main className="main">
@@ -1561,14 +1561,14 @@ export default function App() {
           onStart={(agent, prompt, mode) => void onStartAttempt(starting, agent, prompt, mode)}
         />
       )}
-      {showEnv && (
-        <EnvPanel
+      {showSettings && (
+        <SettingsPanel
           boot={boot}
-          onClose={() => setShowEnv(false)}
+          onClose={() => setShowSettings(false)}
           // 從環境面板走去歡迎面板:先關這扇門再開那扇 —— 兩層 modal
           // 疊著,Esc 與焦點圈就說不清楚誰的了。
           onShowWelcome={() => {
-            setShowEnv(false);
+            setShowSettings(false);
             reopenWelcome();
           }}
           // 重播導覽不關面板:忘掉記號是瞬間的事,而下一課要等它自己

@@ -38,7 +38,7 @@ async function boot(page: Page, opts: { stored?: string; browserLang?: string } 
   await expect(page.locator('.sidebar')).toBeVisible();
 }
 
-const openEnvPanel = (page: Page) => page.getByRole('button', { name: /設定|Settings/ }).click();
+const openSettingsPanel = (page: Page) => page.getByRole('button', { name: /設定|Settings/ }).click();
 
 test.describe('language', () => {
   test('an English system with no stored choice opens in English', async ({ page }) => {
@@ -61,7 +61,7 @@ test.describe('language', () => {
     await boot(page, { stored: 'zh-TW' });
     await expect(page.getByRole('tab', { name: '看板' })).toBeVisible();
 
-    await openEnvPanel(page);
+    await openSettingsPanel(page);
     await page.getByTestId('locale-select').selectOption('en');
 
     // The panel itself is translated live, not only on the next mount.
@@ -76,7 +76,7 @@ test.describe('language', () => {
 
   test('the choice is pushed to the backend so native notifications match', async ({ page }) => {
     await boot(page, { stored: 'zh-TW' });
-    await openEnvPanel(page);
+    await openSettingsPanel(page);
     await page.getByTestId('locale-select').selectOption('en');
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
 
