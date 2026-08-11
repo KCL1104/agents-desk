@@ -210,14 +210,6 @@ impl Cli {
         out.dedup();
         out
     }
-
-    /// The subcommand a resume needs, for the same workflow to check that it
-    /// still exists.
-    pub fn resume_words(self) -> &'static [&'static str] {
-        match self.resume() {
-            Resume::Option(w) | Resume::Subcommand(w) => w,
-        }
-    }
 }
 
 /// Where a CLI keeps the instructions it reads before anyone types, as
@@ -333,7 +325,6 @@ mod tests {
                 assert!(f.starts_with('-'), "{f} is a value, not a flag");
             }
         }
-        assert_eq!(Cli::Codex.resume_words()[0], "resume");
     }
 
     /// The frontend keeps its own copy of this list, because half a dozen
