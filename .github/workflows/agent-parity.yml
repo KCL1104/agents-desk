@@ -180,14 +180,19 @@ jobs:
       # `cmd.exe` quoting would be reporting on something no user has asked
       # this app to do yet. The `$MAROL_SESSION_ID` fallback that case needs
       # is unit-tested instead.
-      - name: Codex config and the hook pipeline
+      - name: Codex config, the hook pipeline, and bracketed paste
         if: matrix.unix
         working-directory: src-tauri
         env:
+          MAROL_EXPECT_CLAUDE: "1"
           MAROL_EXPECT_CODEX: "1"
         run: |
           cargo test --locked --test agent_parity codex_loads_the_hook_config -- --nocapture
           cargo test --locked --test agent_parity a_real_codex_reports_through -- --nocapture
+          # The review loop's one assumption, on both CLIs: the TUI turns
+          # bracketed paste on, so a five-point review is one message rather
+          # than five. It needs a real PTY, which is why it sits on this leg.
+          cargo test --locked --test agent_parity both_clis_turn_bracketed_paste -- --nocapture
 
       # Windows compiles what it does not run, which still catches the
       # realistic failure here: a `#[cfg]` arm rotting because nobody ever

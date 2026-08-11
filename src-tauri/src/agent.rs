@@ -192,10 +192,13 @@ impl Cli {
         ] {
             out.extend(self.mode_args(mode).iter().filter(|a| a.starts_with('-')));
         }
-        match self.resume() {
-            Resume::Option(words) | Resume::Subcommand(words) => {
-                out.extend(words.iter().filter(|w| w.starts_with('-')))
-            }
+        // Only a resume that *is* an option. A subcommand's own flags live on
+        // its own help page, and looking for them on the front one passes
+        // today by luck — `codex --help` happens to mention `--last` in the
+        // sentence describing `resume` — and would fail the day that sentence
+        // is reworded, for no reason anybody could act on.
+        if let Resume::Option(words) = self.resume() {
+            out.extend(words.iter().filter(|w| w.starts_with('-')));
         }
         out.extend(match self {
             Self::Claude => ["--plugin-dir", "--name"].as_slice(),

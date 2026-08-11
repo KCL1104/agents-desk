@@ -81,7 +81,11 @@ pub fn delivery_for(agent: &str) -> Delivery {
 ///
 /// Only offered to CLIs whose conventions are measured (`delivery_for`),
 /// because a TUI that never enabled bracketed paste would see the markers as
-/// keystrokes and every newline as its own submission.
+/// keystrokes and every newline as its own submission — the agent acting on
+/// point one of a review while still reading point five. Both measured CLIs
+/// do enable it (`ESC [ ? 2004 h`, in the first frame either of them draws),
+/// which `tests/agent_parity.rs` holds them to on a schedule; it is the one
+/// assumption the whole review loop rests on, and it would not fail loudly.
 pub fn bracketed_followup(text: &str) -> String {
     // A trailing newline would sit invisibly inside the paste and turn into a
     // blank line in the input box, not a submit — trim it rather than send it.

@@ -23,11 +23,15 @@
 //!   * **the whole pipeline** — a real `codex` started with those arguments
 //!     has to reach this app's real listener, with the session id expanded
 //!     and the payload in the body
+//!   * **bracketed paste** — both TUIs have to turn it on, because it is the
+//!     only thing keeping a five-point review one message instead of five
 //!
-//! Nothing here needs credentials. The last one drives `codex exec`, whose
-//! `SessionStart` and `UserPromptSubmit` hooks both fire before the first
-//! request goes out; the request then fails on authentication, long after
-//! the part being measured.
+//! Nothing here needs credentials. The `codex exec` one works because
+//! `SessionStart` and `UserPromptSubmit` both fire before the first request
+//! goes out; the request then fails on authentication, long after the part
+//! being measured. The paste one works because `ESC [ ? 2004 h` is in the
+//! first bytes either CLI writes, before it has an opinion about who you
+//! are.
 //!
 //! Each test skips, loudly, when its CLI is not installed — unless
 //! `MAROL_EXPECT_CLAUDE` / `MAROL_EXPECT_CODEX` is set, which is CI saying
@@ -43,6 +47,8 @@ use std::time::{Duration, Instant};
 mod agent;
 #[path = "../src/hooks.rs"]
 mod hooks;
+#[path = "../src/pty.rs"]
+mod pty;
 #[path = "../src/shell_env.rs"]
 mod shell_env;
 #[path = "../src/store.rs"]
@@ -50,6 +56,7 @@ mod store;
 
 use crate::agent::{Cli, Resume};
 use crate::hooks::{HookHandler, HookReport, HookState};
+use crate::pty::{PtyRegistry, PtySink};
 use crate::store::PermissionMode;
 
 /// Whether this run is required to find `agent`, and where it is.
@@ -185,6 +192,87 @@ fn every_flag_this_app_passes_is_one_the_installed_cli_accepts() {
     if checked == 0 {
         eprintln!("skip: neither CLI is installed");
     }
+}
+
+/* ------------------------------------------------------------------ */
+/* The review loop's one assumption                                    */
+/* ------------------------------------------------------------------ */
+
+#[derive(Default)]
+struct Screen {
+    bytes: Mutex<Vec<u8>>,
+}
+
+impl PtySink for Screen {
+    fn on_output(&self, _id: &str, data: String, _seq: u64) {
+        use base64::Engine as _;
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(data.as_bytes())
+            .unwrap_or_default();
+        self.bytes.lock().unwrap().extend_from_slice(&decoded);
+    }
+    fn on_exit(&self, _id: &str, _status: String) {}
+}
+
+/// A follow-up goes in through the terminal wrapped in bracketed-paste
+/// markers, which is the only thing keeping a multi-line review **one**
+/// message rather than one message per line.
+///
+/// That works because the TUI turned bracketed paste on — `ESC [ ? 2004 h`,
+/// which it emits on startup. A TUI that stopped doing it would not fail
+/// loudly: the markers would arrive as literal keystrokes and every newline
+/// in a five-point review would submit, so the agent would start acting on
+/// point one while still reading point five. This is the cheapest possible
+/// check on that, and it needs no account: the sequence is in the first
+/// bytes either CLI writes, long before it has an opinion about who you are.
+#[test]
+fn both_clis_turn_bracketed_paste_on_so_a_review_arrives_as_one_message() {
+    let env = resolve_env();
+    let dir = std::env::temp_dir().join(format!("marol-paste-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+
+    for cli in [Cli::Claude, Cli::Codex] {
+        if require(&env, cli.name()).is_none() {
+            continue;
+        }
+        let screen = Arc::new(Screen::default());
+        let ptys = PtyRegistry::new();
+        let id = format!("paste-{}", cli.name());
+        ptys.spawn(
+            &id,
+            cli.name(),
+            &[],
+            Some(&dir.to_string_lossy()),
+            &env,
+            &[],
+            100,
+            30,
+            Arc::clone(&screen) as Arc<dyn PtySink>,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("spawning {}: {e:#}", cli.name()));
+
+        // The sequence comes with the first frame. Waiting on the property
+        // rather than on a fixed sleep keeps this quick when it passes and
+        // honest when it does not.
+        let saw = wait_until(Duration::from_secs(30), || {
+            let bytes = screen.bytes.lock().unwrap();
+            bytes
+                .windows(8)
+                .any(|w| w == b"\x1b[?2004h")
+        });
+        ptys.kill_all();
+
+        assert!(
+            saw,
+            "`{}` never enabled bracketed paste; a multi-line review sent into it \
+             would arrive as one message per line",
+            cli.name()
+        );
+        eprintln!("{}: bracketed paste on", cli.name());
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /* ------------------------------------------------------------------ */
