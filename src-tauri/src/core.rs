@@ -902,6 +902,23 @@ pub struct HostEnv {
     pub hook_plugin_dir: Option<String>,
 }
 
+/// What holding one session in one world takes.
+///
+/// Three strings rather than a command, because the command has to be built
+/// twice — once to start or reattach, once to end — and both have to go
+/// through the world's doorway on the way out.
+struct HoldPlan {
+    /// `-L`. Carries the desk and the session, so two installs on one machine
+    /// cannot collect each other's sessions.
+    socket: String,
+    /// `-f`. Never the user's own `~/.tmux.conf`: their prefix key, their
+    /// status line and their bindings belong to their terminal, not to a
+    /// process this app is only babysitting.
+    conf: String,
+    /// Where the socket file lands, when that is on this machine.
+    socket_file: Option<String>,
+}
+
 impl HostEnv {
     /// The pair of environments everything that executes needs.
     fn hr<'a>(&'a self, local: &'a ShellEnv) -> HostRef<'a> {
@@ -2997,6 +3014,22 @@ impl Core {
             None => (agent.to_string(), args),
         };
 
+        // Only the agent's own session is held. A run script and a worktree
+        // shell are things you started to watch; an agent is a thing you
+        // started to leave running, and that difference is the whole reason
+        // to involve tmux at all.
+        //
+        // Composed here, *before* the doorway, so the tmux that holds the
+        // process is the one belonging to the world the process runs in. Put
+        // it after the wrap and it could only ever be this machine's — which
+        // is useless for a WSL world, since a WSL world only exists on a
+        // Windows host and there is no native Windows tmux to be the holder.
+        let plan = self.hold_plan(&he.host, id);
+        let (program, args) = match &plan {
+            Some(p) => pty::hold_attach(&p.socket, &p.conf, Some(&loc.path), &program, &args),
+            None => (program, args),
+        };
+
         // Locally the PTY applies cwd and env natively; inside a host both
         // ride the wrapped argv, and the outer process is the doorway.
         let (program, args, outer_cwd, outer_env): (String, Vec<String>, Option<String>, Vec<(String, String)>) =
@@ -3009,11 +3042,24 @@ impl Core {
                 }
             };
 
-        // Only the agent's own session is held. A run script and a worktree
-        // shell are things you started to watch; an agent is a thing you
-        // started to leave running, and that difference is the whole reason
-        // to involve tmux at all.
-        let hold = self.hold_for(&he.host, id);
+        // Ending it travels the same road. A socket in another world is
+        // unlinked by the command that kills its server, since this process
+        // cannot reach that filesystem to do it afterwards.
+        let hold = plan.map(|p| {
+            let (dp, da) = pty::hold_destroy(&p.socket);
+            let (dp, da) = match &he.host {
+                Host::Local => (dp, da),
+                _ => {
+                    let (x, y, _) = he.host.wrap(&dp, &da, None, &[]);
+                    (x, y)
+                }
+            };
+            pty::Hold {
+                destroy: (dp, da),
+                socket_file: p.socket_file,
+            }
+        });
+
         self.ptys.spawn(
             id,
             &program,
@@ -3265,18 +3311,20 @@ impl Core {
         }
     }
 
-    /// Whether this world can hold a session past the app's own life.
+    /// Whether this world can hold a session past the app's own life, and
+    /// what it takes to.
     ///
     /// Persistence is a property of a **world**, not a premise of the app —
     /// the same ruling `worlds.md` already made about which machine a card
-    /// runs on. Local worlds with tmux get it; every other world keeps the
-    /// old behaviour, and the settings say which is which rather than
-    /// letting the difference go quiet.
+    /// runs on. A world with tmux gets it; a world without keeps the old
+    /// behaviour exactly.
     ///
-    /// Local only for now. The payoff is largest over SSH, where a dropped
-    /// link takes the agent with it — but that is somebody else's machine,
-    /// and "zero remote install" is a promise this desk has already made.
-    fn hold_for(&self, host: &Host, session_id: &str) -> Option<pty::Hold> {
+    /// Local only so far. What changed is where the tmux line is built: it
+    /// used to be built inside `PtyRegistry::spawn`, which could only ever
+    /// build a local one, and is now built here and handed through the same
+    /// doorway as everything else. That is the whole of what another world
+    /// needs from this side.
+    fn hold_plan(&self, host: &Host, session_id: &str) -> Option<HoldPlan> {
         if !matches!(host, Host::Local) || self.env.which("tmux").is_none() {
             return None;
         }
@@ -3288,7 +3336,7 @@ impl Core {
         }
         let socket = pty::hold_socket(&self.desk_tag(), session_id);
         let socket_file = tmux_socket_dir().map(|d| d.join(&socket).to_string_lossy().to_string());
-        Some(pty::Hold {
+        Some(HoldPlan {
             socket,
             conf: conf.to_string_lossy().to_string(),
             socket_file,

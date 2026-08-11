@@ -45,17 +45,20 @@ const READ_BUF: usize = 8 * 1024;
 /// and that is the one promise this app makes.
 #[derive(Debug, Clone)]
 pub struct Hold {
-    /// The socket, `-L`. Derived from the desk and the session, so two
-    /// installs on one machine cannot collect each other's sessions.
-    pub socket: String,
-    /// The config passed as `-f`. Never the user's `~/.tmux.conf`: their
-    /// prefix key, their status line and their bindings belong to their
-    /// terminal, not to a process this app is only babysitting.
-    pub conf: String,
-    /// The socket's file on disk. tmux leaves the inode behind when a server
-    /// exits, so closing a session would otherwise leave a dead file that
-    /// every later sweep has to look at. Known by the core, which is the
-    /// side that knows where tmux keeps its sockets.
+    /// The command that ends this session for good, already composed for the
+    /// world it runs in: `tmux -L … kill-server` on this machine, the same
+    /// thing behind a doorway anywhere else.
+    ///
+    /// Composed by the core rather than here. Which world a session lives in
+    /// is the core's knowledge — `pty` opens a terminal onto a command and
+    /// has never known whose machine that command lands on — and a hold that
+    /// built its own tmux line could only ever build a local one.
+    pub destroy: (String, Vec<String>),
+    /// The socket's file, when it is on *this* machine. tmux leaves the inode
+    /// behind when a server exits, so closing a session would otherwise leave
+    /// a dead file that every later sweep has to look at. `None` for a socket
+    /// in another world, whose filesystem this process cannot reach: the
+    /// destroy command unlinks it there.
     pub socket_file: Option<String>,
 }
 
@@ -73,6 +76,59 @@ set -ga terminal-overrides \",*:Tc\"
 set -g destroy-unattached off
 unbind-key -a
 ";
+
+/// The command that starts a held session, or reattaches to the one already
+/// running under this socket.
+///
+/// `new-session -A` is create-or-attach in one call, so a restart that finds
+/// its session alive takes the same path as the start that made it: one code
+/// path, and no window in which the two could disagree. `-D` detaches any
+/// other client, because two attached clients would fight over the pty's
+/// size.
+///
+/// Returned as a plain (program, args) pair so the caller can put it through
+/// a doorway. That is the whole reason it lives here rather than inside
+/// `spawn`: a tmux line built at spawn time is a tmux line on this machine,
+/// and the worlds that need holding most are the other ones.
+pub fn hold_attach(
+    socket: &str,
+    conf: &str,
+    cwd: Option<&str>,
+    program: &str,
+    args: &[String],
+) -> (String, Vec<String>) {
+    let mut a = vec![
+        "-L".to_string(),
+        socket.to_string(),
+        "-f".to_string(),
+        conf.to_string(),
+        "new-session".to_string(),
+        "-A".to_string(),
+        "-D".to_string(),
+        "-s".to_string(),
+        HOLD_SESSION.to_string(),
+    ];
+    if let Some(dir) = cwd {
+        a.push("-c".to_string());
+        a.push(dir.to_string());
+    }
+    a.push("--".to_string());
+    a.push(program.to_string());
+    a.extend(args.iter().cloned());
+    ("tmux".to_string(), a)
+}
+
+/// The command that ends one for good.
+///
+/// `kill-server`, not `kill-session`: this socket holds exactly one session,
+/// so ending it should not leave a server behind waiting for a session that
+/// will never come.
+pub fn hold_destroy(socket: &str) -> (String, Vec<String>) {
+    (
+        "tmux".to_string(),
+        vec!["-L".to_string(), socket.to_string(), "kill-server".to_string()],
+    )
+}
 
 /// The socket name for one session of one desk.
 ///
@@ -233,9 +289,10 @@ impl PtyRegistry {
         cols: u16,
         rows: u16,
         sink: Arc<dyn PtySink>,
-        // When set, the process is handed to tmux to hold, so it outlives
-        // this app. `None` runs it as a direct child, the way every world
-        // without tmux still does.
+        // When set, the command above is already a tmux line (see
+        // `hold_attach`) and this carries what it takes to end it. `None`
+        // runs the command as a direct child, the way every world without
+        // tmux still does.
         hold: Option<&Hold>,
     ) -> Result<()> {
         if self.sessions.lock().unwrap().contains_key(id) {
@@ -264,37 +321,7 @@ impl PtyRegistry {
             .extension()
             .and_then(|e| e.to_str())
             .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
-        let exe_tmux = hold.and(env.which("tmux"));
-        let mut cmd = if let Some(h) = hold {
-            // `new-session -A` is create-or-attach in one call, so a restart
-            // that finds its session alive takes the same path as the start
-            // that made it — one code path, and no window in which the two
-            // could disagree. `-D` detaches any other client, because two
-            // attached clients would fight over the pty's size.
-            let tmux = exe_tmux
-                .as_ref()
-                .ok_or_else(|| anyhow!("tmux went missing between the probe and the spawn"))?;
-            let mut c = CommandBuilder::new(tmux);
-            c.arg("-L");
-            c.arg(&h.socket);
-            c.arg("-f");
-            c.arg(&h.conf);
-            c.arg("new-session");
-            c.arg("-A");
-            c.arg("-D");
-            c.arg("-s");
-            c.arg(HOLD_SESSION);
-            if let Some(dir) = cwd {
-                c.arg("-c");
-                c.arg(dir);
-            }
-            c.arg("--");
-            c.arg(&exe);
-            for a in args {
-                c.arg(a);
-            }
-            c
-        } else if batch {
+        let mut cmd = if batch {
             let comspec = env
                 .vars
                 .get("COMSPEC")
@@ -379,15 +406,15 @@ impl PtyRegistry {
                 master: pair.master,
                 writer,
                 child,
-                // `kill-server`, not `kill-session`: this socket holds exactly
-                // one session, so ending it should not leave a server behind
-                // waiting for a session that will never come.
-                destroy: hold.map(|h| {
-                    (
-                        exe_tmux.clone().unwrap_or_default(),
-                        vec!["-L".into(), h.socket.clone(), "kill-server".into()],
-                        h.socket_file.clone(),
-                    )
+                // Resolved through the login-shell PATH, like every other
+                // program this app runs, rather than left as a bare name for
+                // `Command` to find on the process PATH. Those two disagree —
+                // a Homebrew tmux is on one and not the other — and a destroy
+                // that silently cannot find its tmux would leave the server
+                // running with nothing left to attach to it.
+                destroy: hold.and_then(|h| {
+                    env.which(&h.destroy.0)
+                        .map(|exe| (exe, h.destroy.1.clone(), h.socket_file.clone()))
                 }),
                 scrollback,
             },
@@ -482,6 +509,52 @@ mod hold_tests {
         assert!(a.ends_with("-s7"));
         // Stable across runs, or a restart would fail to find its own.
         assert_eq!(desk_tag("/home/me/.agentdesk"), desk_tag("/home/me/.agentdesk"));
+    }
+
+    /// The line that starts or reattaches, and the two things about it that
+    /// are load-bearing.
+    ///
+    /// `-A` is create-or-attach, so the first start and every later reattach
+    /// are the same call and cannot drift apart. `--` is what stops tmux
+    /// reading the agent's own flags: `claude --continue --permission-mode
+    /// acceptEdits` past a tmux that is still parsing options is a tmux that
+    /// eats them, and the agent then starts without the mode the person
+    /// approved.
+    #[test]
+    fn the_attach_line_is_create_or_attach_and_hands_the_agent_its_own_flags() {
+        let (prog, args) = hold_attach(
+            "agentdesk-d-s1",
+            "/data/tmux.conf",
+            Some("/wt/card-1"),
+            "claude",
+            &["--continue".to_string(), "--permission-mode".to_string(), "acceptEdits".to_string()],
+        );
+        // A pair, not a spawn: this is what lets the whole line go through a
+        // doorway into another world.
+        assert_eq!(prog, "tmux");
+        assert!(args.contains(&"-A".to_string()), "not create-or-attach: {args:?}");
+        assert!(args.contains(&"-D".to_string()), "two clients would fight over the size");
+
+        let sep = args.iter().position(|a| a == "--").expect("no -- separator");
+        let after: Vec<&String> = args[sep + 1..].iter().collect();
+        assert_eq!(after[0], "claude");
+        assert_eq!(after[1], "--continue");
+        assert_eq!(after[3], "acceptEdits");
+        // Everything tmux is meant to read is on tmux's side of it.
+        assert!(args[..sep].contains(&"/data/tmux.conf".to_string()));
+        assert!(args[..sep].contains(&"/wt/card-1".to_string()));
+    }
+
+    /// Ending it kills the server, not the session: this socket holds exactly
+    /// one, so a surviving server would be a daemon waiting for something
+    /// that is never coming back.
+    #[test]
+    fn ending_a_held_session_takes_its_server_with_it() {
+        let (prog, args) = hold_destroy("agentdesk-d-s1");
+        assert_eq!(prog, "tmux");
+        assert!(args.contains(&"kill-server".to_string()), "{args:?}");
+        assert!(!args.contains(&"kill-session".to_string()));
+        assert!(args.contains(&"agentdesk-d-s1".to_string()), "wrong socket: {args:?}");
     }
 
     /// The reason there is a socket per session at all, stated as a test so
