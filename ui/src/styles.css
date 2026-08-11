@@ -699,7 +699,12 @@ textarea { resize: vertical; }
   /* 180px is the floor a card stays readable at; below that the board
      scrolls rather than clipping 完成 off the world. */
   grid-template-columns: repeat(4, minmax(180px, 1fr));
-  min-height: 0;
+  /* No `min-height: 0` here, however much a flex child seems to want one.
+     It removes the min-content floor, so this grid is free to be squeezed
+     shorter than the cards inside it — and cards overflow visibly rather
+     than being clipped, which put a column's tail on top of the ad-hoc
+     panel below. Keeping the floor makes .board's own overflow do the
+     work: the page scrolls, and nothing is ever drawn over anything. */
 }
 
 .board-col {
