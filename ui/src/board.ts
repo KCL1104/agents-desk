@@ -22,7 +22,7 @@ export const OUTCOME_KEY: Record<string, MessageKey> = {
 };
 
 /** The mime type a dragged card carries, kept apart from the pane layout's. */
-export const TASK_MIME = 'application/x-agentdesk-task';
+export const TASK_MIME = 'application/x-marol-task';
 
 /**
  * The second axis, as one value the card can render.

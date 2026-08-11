@@ -568,7 +568,7 @@ export const sameIds = (a: readonly string[], b: readonly string[]) =>
 /** A session dragged from the sidebar, or a pane dragged from the grid. */
 export type DragPayload = { kind: 'session' | 'pane'; id: string };
 
-export const DRAG_MIME = 'application/x-agentdesk';
+export const DRAG_MIME = 'application/x-marol';
 
 export function encodeDrag(p: DragPayload): string {
   return JSON.stringify(p);

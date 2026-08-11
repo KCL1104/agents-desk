@@ -62,9 +62,9 @@ const INITIAL_COLS = 120;
 const INITIAL_ROWS = 32;
 
 type View = 'terminal' | 'board' | 'overview';
-const VIEW_KEY = 'agentdesk.view';
-const TAB_KEY = 'agentdesk.activeTab';
-const WELCOME_KEY = 'agentdesk.welcomed';
+const VIEW_KEY = 'marol.view';
+const TAB_KEY = 'marol.activeTab';
+const WELCOME_KEY = 'marol.welcomed';
 
 /** Centre-drop within auto mode: the two trade places in the running order. */
 function swapIds(ids: readonly string[], movingId: string, targetId: string): string[] {
@@ -406,7 +406,7 @@ export default function App() {
       const d = e.data as
         | { type?: unknown; component?: unknown; file?: unknown; line?: unknown }
         | null;
-      if (!d || d.type !== 'agentdesk:pick' || typeof d.file !== 'string') return;
+      if (!d || d.type !== 'marol:pick' || typeof d.file !== 'string') return;
       setPick({
         component: typeof d.component === 'string' ? d.component : '?',
         file: d.file,
@@ -798,7 +798,7 @@ export default function App() {
           e.target instanceof Element && e.target.closest('.inspector') !== null;
         if (view === 'terminal' && focusedId !== null && !inDrawer) {
           e.preventDefault();
-          window.dispatchEvent(new CustomEvent('agentdesk:find', { detail: focusedId }));
+          window.dispatchEvent(new CustomEvent('marol:find', { detail: focusedId }));
         }
       } else if ((e.key === 'i' || e.key === 'I') && !shellsOwn) {
         if (view === 'terminal' && (inspectId || activeAttemptId)) {

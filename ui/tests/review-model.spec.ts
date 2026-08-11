@@ -80,7 +80,7 @@ test.describe('the diff, read back into places feedback can point at', () => {
     ];
     const msg = composeReview(comments, zh);
 
-    expect(msg).toContain('[AgentDesk 檢視回饋]');
+    expect(msg).toContain('[Marol 檢視回饋]');
     expect(msg).toContain('1. src/auth.py:13');
     expect(msg).toContain('> +    if ok:');
     expect(msg).toContain('這裡少了 else');

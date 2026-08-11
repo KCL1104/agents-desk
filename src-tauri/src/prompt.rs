@@ -3,7 +3,7 @@
 //! The agent already has everything it can discover for itself: `CLAUDE.md`,
 //! skills, and MCP servers all load natively from the worktree, so repeating
 //! any of that here would only crowd out the part that matters. What it
-//! cannot discover is the situation AgentDesk has just put it in — that this
+//! cannot discover is the situation Marol has just put it in — that this
 //! directory is a worktree opened for one card, which branch it is on, and
 //! that the branch is what the diff and the merge will read. That, and the
 //! person's actual request, is all this template carries.
@@ -17,11 +17,11 @@ use std::path::{Path, PathBuf};
 /// Written in Chinese to match the prompts these cards carry. An agent
 /// answers in the language it was addressed in, and a bilingual first message
 /// makes it drift mid-session.
-pub const DEFAULT_TEMPLATE: &str = r#"[AgentDesk 任務] {title}
+pub const DEFAULT_TEMPLATE: &str = r#"[Marol 任務] {title}
 
 你在一個專為這張卡開的 git worktree：分支 {branch}，從 {base_branch} @ {base_sha_short} 開出。
 這個 worktree 只屬於這張卡，不要切換分支，也不要動 {base_branch}。
-完成時請把變更 commit 在這個分支上 —— AgentDesk 用它來做 diff 檢視與合併回 base。
+完成時請把變更 commit 在這個分支上 —— Marol 用它來做 diff 檢視與合併回 base。
 
 ---
 
@@ -175,7 +175,7 @@ mod tests {
     fn vars<'a>(prompt: &'a str) -> Vars<'a> {
         Vars {
             title: "修好登入",
-            branch: "agentdesk/login-2",
+            branch: "marol/login-2",
             base_branch: "main",
             base_sha: "2bc172c2deadbeefcafe",
             prompt,
@@ -186,7 +186,7 @@ mod tests {
     fn the_default_template_names_the_situation_the_agent_cannot_discover() {
         let out = render(DEFAULT_TEMPLATE, &vars("登入頁在 Safari 會白畫面"));
         assert!(out.contains("修好登入"));
-        assert!(out.contains("agentdesk/login-2"));
+        assert!(out.contains("marol/login-2"));
         assert!(out.contains("main"));
         assert!(out.contains("2bc172c2"), "the base commit is missing:\n{out}");
         assert!(out.contains("登入頁在 Safari 會白畫面"));
@@ -226,7 +226,7 @@ mod tests {
     /// nothing about the session would look wrong.
     #[test]
     fn a_template_that_lost_its_prompt_placeholder_still_sends_the_request() {
-        let out = render("[AgentDesk] {title}\n", &vars("修好登入頁"));
+        let out = render("[Marol] {title}\n", &vars("修好登入頁"));
         assert!(
             out.contains("修好登入頁"),
             "the card's actual request never reached the agent:\n{out}"
@@ -286,7 +286,7 @@ mod tests {
 
     #[test]
     fn an_edited_template_survives_the_next_launch() {
-        let dir = std::env::temp_dir().join(format!("agentdesk-tpl-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("marol-tpl-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
 
         let first = load_or_create(&dir).unwrap();

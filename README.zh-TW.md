@@ -1,4 +1,4 @@
-# AgentDesk
+# Marol
 
 [English](README.md) · **繁體中文**
 
@@ -135,7 +135,7 @@ review 迴圈最常見的收尾是一行小修，所以 diff 直接讓你修。`
   「送出」，跟首則 prompt 同一套誠實。合併某個 attempt 時，同卡其他還開著的
   attempt 自動標為已被取代，diff 凍結保留，方便事後比較兩個 agent 的做法
 - **Workspace scripts**：新開的 worktree 只是個 checkout，不是能跑的工作區。
-  `.agentdesk/config.json` 說明它怎麼長成一個（見下）
+  `.marol/config.json` 說明它怎麼長成一個（見下）
 - **權限模式**：每個 attempt 可以選 Claude Code 要照常詢問、自動接受檔案編輯
   （`--permission-mode acceptEdits`），或全自動不再詢問
   （`--dangerously-skip-permissions`）。安全論證就是 worktree，所以這個選項
@@ -145,16 +145,16 @@ review 迴圈最常見的收尾是一行小修，所以 diff 直接讓你修。`
   例如 `opus 版` 代表 `claude --model opus`。記錄與 resume 用的都是底下真正
   的 CLI，所以 prompt 遞送、狀態 hooks、權限模式全部照實際跑的東西判斷
 - **跨 session 互傳訊息，用卡片名字**：Claude Code v2.1.224+ 讓同一台機器上
-  的 session 可以互傳訊息，而 AgentDesk 的每個 session 都是真的 `claude`，
+  的 session 可以互傳訊息，而 Marol 的每個 session 都是真的 `claude`，
   所以卡片之間本來就通。桌面補上的是名字。CLI 自己會用 worktree 目錄名幫
-  session 取名，一串 slug 加編號，所以 AgentDesk 改用 `--name` 把 session
+  session 取名，一串 slug 加編號，所以 Marol 改用 `--name` 把 session
   命名成它自己的標題，於是一張卡的 agent 可以用「修好登入 #1」這種人會說出
   口的名字去找另一張卡的 agent。送出的訊息會落在活動時間軸上。啟動時探測
   一次 `claude --version` 做版本閘門，因為舊版 CLI 遇到不認識的 flag 會直接
   拒絕啟動
 - **活得比 app 久的 session**：agent 的 session 由 `tmux` 扛著，一個 session
   一個 socket，而且是在它自己所在的世界裡——本機、WSL distro、SSH host 都算。
-  關掉 AgentDesk 是斷開，不是殺掉。重開卡片會接回那個一直在跑的 agent（見下）
+  關掉 Marol 是斷開，不是殺掉。重開卡片會接回那個一直在跑的 agent（見下）
 - **WSL 橋接**：卡片的 repo 可以住在 WSL distro 裡，一切就在 repo 所在的
   世界執行
 - **SSH host**：同一道接縫，跨一條線，用的是你自己 `~/.ssh/config` 裡的
@@ -168,7 +168,7 @@ review 迴圈最常見的收尾是一行小修，所以 diff 直接讓你修。`
 
 ## 活得比 app 久的 session
 
-agent session 跑在 `tmux` 裡，一個 session 一個 socket。關掉 AgentDesk 只是
+agent session 跑在 `tmux` 裡，一個 session 一個 socket。關掉 Marol 只是
 斷開 client，agent 繼續跑。重開卡片接回的是那個從來沒停過的行程，包括做到
 一半的那一輪。
 
@@ -192,7 +192,7 @@ WSL distro 與 SSH host 也是同一回事，而唯一需要改的只有 socket 
 `-L <名字>` 是去問 `tmux`「你的 socket 目錄在哪」，而這個問題只有本機答得出來：
 在別的世界，那個目錄取決於一個這邊看不見的 uid 與 profile，於是一次猜錯的清掃
 會看進一個空目錄，然後判定所有還活著的 agent 都死了。所以在別的世界改由 app
-自己指定路徑——`~/.agentdesk/s/`——再用 `-S` 告訴 `tmux`。本機維持 `-L`，因為
+自己指定路徑——`~/.marol/s/`——再用 `-S` 告訴 `tmux`。本機維持 `-L`，因為
 換掉會讓舊版本留下、還在跑的每一個 session 卡在一個再也沒人會去找的名字底下。
 
 從這一個改動長出來的三件事：
@@ -227,7 +227,7 @@ hook，`url` 是一個死字串、後面沒有 shell，而 Claude Code 只在 se
 - **重新接上不等於啟動。** `new-session -A -D` 是接回正在跑的 agent，argv 直接
   丟掉，所以不會再有 `SessionStart`。在那裡宣稱「啟動中」，就是狀態標籤以前說
   過的同一個謊、從另一面再說一次，而且永遠不會自己修正。
-- **如果那個 port 被占走了**（另一個 AgentDesk，或任何別的程式），就換一個新
+- **如果那個 port 被占走了**（另一個 Marol，或任何別的程式），就換一個新
   的，而上一輪留下的 session 會安靜到它自己結束為止。那正是「還沒有記住
   endpoint」之前的狀態，所以它是降級，不是拒絕啟動。
 
@@ -267,14 +267,14 @@ SSH host 是透過反向隧道打回那個 listener 的，所以它還有第二�
 
 ## 讓 worktree 開箱能跑
 
-在 repo 放一個 `.agentdesk/config.json`，每個 attempt 的 worktree 就會自己
+在 repo 放一個 `.marol/config.json`，每個 attempt 的 worktree 就會自己
 準備好：
 
 ```json
 {
-  "setup": "npm install && cp \"$AGENTDESK_ROOT_PATH/.env\" .env",
+  "setup": "npm install && cp \"$MAROL_ROOT_PATH/.env\" .env",
   "run": [
-    { "name": "dev", "command": "npm run dev -- --port $AGENTDESK_PORT" },
+    { "name": "dev", "command": "npm run dev -- --port $MAROL_PORT" },
     { "name": "test", "command": "npm test -- --watch" }
   ],
   "archive": "docker compose down"
@@ -283,14 +283,19 @@ SSH host 是透過反向隧道打回那個 listener 的，所以它還有第二�
 
 `setup` 在 agent 起跑前執行，跑在同一個終端機裡，所以輸出跟失敗都在你正在
 看的地方。`run` 的每一項變成抽屜裡的 ▶ 按鈕，在該 attempt 自己的 worktree
-裡開 dev server 或 test watcher，`$AGENTDESK_PORT` 帶一個沒人占用的埠。
+裡開 dev server 或 test watcher，`$MAROL_PORT` 帶一個沒人占用的埠。
 `archive` 在 worktree 被收回之前執行。每個 script 都看得到
-`$AGENTDESK_ROOT_PATH`，也就是 worktree 是從哪個 repo 開出來的，`.env` 這類
+`$MAROL_ROOT_PATH`，也就是 worktree 是從哪個 repo 開出來的，`.env` 這類
 沒進版控但值得複製的檔案就在那。
 
 Script 都走 `sh -c`，寫法跟在終端機打一行一樣。檔案格式錯誤會讓 attempt 在
 對話框裡就開不起來，而不是安靜地什麼都不做：一個安靜失效的設定檔，跟一個
 壞掉的 worktree 從外面看是分不出來的。（目前僅支援 POSIX 平台。）
+
+`.agentdesk/config.json` 與 `$AGENTDESK_*` 仍然有效，而且會一直有效。這個檔案
+是這次改名唯一動到、但不屬於這個 app 的東西：它住在**你的** repo 裡，通常是進
+版控的，而你的協作者不一定在跑這張桌子。兩組變數名指向同一個值，所以你想什麼
+時候把 repo 換過來都行，不換也行。
 
 ---
 
@@ -351,7 +356,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
   等於沒有層次。
 - **Dev server 預覽。** ▶ run script 起的頁面直接掛在桌邊：iframe 顯示的就是
   server 送出的樣子，不代理、不注入。server 死了面板會說，不留白框。repo 自掛
-  inspect script（`docs/examples/agentdesk-inspect.js`）後，Alt+click 任何元件
+  inspect script（`docs/examples/marol-inspect.js`）後，Alt+click 任何元件
   就變成「{component} · {file}:{line}」，一鍵送進 agent 的終端機。
 - **Token 帳。** 每個 claude session 的花費與語境水位，每回合結束從它自己的
   transcript 讀一次（路徑由 hooks 遞來，回合中不輪詢）。檢視器顯示
@@ -457,7 +462,7 @@ session 的流程，以及 xterm 對**真實 PTY bytes** 的解碼與渲染。
 - `tests/worktree.rs`：對真的 git，兩個 attempt 看不到彼此的檔案、各自的
   base_sha 不會互相飄移、worktree 收得回來、分支留著
 - `tests/attempts.rs`：整條 core 流程，agent 用替身而不是真的模型。驗的是
-  AgentDesk 做了什麼（開哪個 worktree、命令列長什麼樣、記了什麼、還了什麼），
+  Marol 做了什麼（開哪個 worktree、命令列長什麼樣、記了什麼、還了什麼），
   這些都不需要模型回答。替身的 log 是 NUL 分隔的，因為用一行一個參數會分不出
   「一個含換行的參數」和「好幾個參數」，而那正是這裡要驗的東西
 - `tests/attempts.rs` 的時間軸段：完整鏈路 hook listener → router → channel →
@@ -492,7 +497,7 @@ session 的流程，以及 xterm 對**真實 PTY bytes** 的解碼與渲染。
 於是測試會把整個 timeout 燒完，只證明了這台機器沒登入。所以改成去讀 Claude
 Code 自己的 `~/.claude.json` 裡的 `hasCompletedOnboarding`。那個 key 哪天換了
 位置的話，這些測試會變成跳過而不是錯誤地通過，而且會在 stderr 說明原因。要
-強制跑就 `AGENTDESK_TEST_ASSUME_CLAUDE=1`。
+強制跑就 `MAROL_TEST_ASSUME_CLAUDE=1`。
 
 ### README 的圖與影片
 
@@ -526,7 +531,7 @@ node ui/scripts/readme-clips.mjs                         # docs/media/clips/**/*
 接著：建 draft release、四個平台平行 build、**全綠才把 release 轉正**。有平台
 掛掉就停在 draft，不會出半套。版本號 guard 仍守著手動路徑：推 tag（或 dispatch
 填明確的 `tag`）時，tag 跟 `tauri.conf.json` 不一致就直接失敗，免得 `v0.2.0`
-的 release 裡掛著一堆 `AgentDesk_0.1.0_*`。明確的 `tag` 也是失敗重跑的路徑，
+的 release 裡掛著一堆 `Marol_0.1.0_*`。明確的 `tag` 也是失敗重跑的路徑，
 因為 bump commit 已經落地但發佈失敗時，要用已經燒掉的那個 tag 重發，不是再
 bump 一次。
 
@@ -536,7 +541,7 @@ bump 一次。
 的滾動 prerelease，蓋掉上一份。所以 `main` 的最新版本永遠一個連結就拿得到，
 不用等誰去發版：
 
-    https://github.com/KCL1104/agents-desk/releases/tag/nightly
+    https://github.com/KCL1104/marol/releases/tag/nightly
 
 它是 prerelease，而且**永遠不會被標成 latest**，不會擠掉正式版在 repo 首頁與
 release API 上的位置。有平台失敗的話，那份 draft 會被丟掉、上一份 nightly
@@ -577,7 +582,7 @@ repo 裡沒有任何簽章金鑰，所以三個平台的產物都是未簽章的
   屬性：
 
   ```bash
-  xattr -dr com.apple.quarantine /Applications/AgentDesk.app
+  xattr -dr com.apple.quarantine /Applications/Marol.app
   ```
 
 - **Windows。** SmartScreen 藍色視窗，「更多資訊」→「仍要執行」
@@ -663,7 +668,7 @@ Code 自己回報，不是去解析畫面，因為解析 ANSI 會在 TUI 改版�
 
 App 啟動時做兩件事：在 loopback 開一個小 HTTP listener，以及把一份只含 hooks
 的 plugin 寫到資料目錄。每個 session 用 `--plugin-dir` 載入它，並注入
-`AGENTDESK_SESSION_ID` 與 `AGENTDESK_HOOK_URL`；hook 是一行 `curl`，把狀態
+`MAROL_SESSION_ID` 與 `MAROL_HOOK_URL`；hook 是一行 `curl`，把狀態
 回報回來。
 
 | Hook 事件 | 回報狀態 |
@@ -705,7 +710,7 @@ App 啟動時做兩件事：在 loopback 開一個小 HTTP listener，以及把�
 沿用 `store.rs` 既有的 `completed` 立場：`Stop` 只代表這一輪結束，不代表事情
 做完了，所以沒有任何 hook 能搬動卡片。
 
-worktree 放在 `~/.agentdesk/worktrees/<repo>-<hash>/<slug>-<n>/`，**不放在
+worktree 放在 `~/.marol/worktrees/<repo>-<hash>/<slug>-<n>/`，**不放在
 repo 旁邊**。repo 的上層目錄很常自己也是一個 repo（傘狀 workspace），worktree
 放進去就變成巢狀 repo，所有往上找 `.git` 的工具都會開始給出不一樣的答案。也
 不放在 application support 底下：這是人會想 `cd` 進去、用編輯器打開、在裡面
@@ -720,7 +725,7 @@ repo 旁邊**。repo 的上層目錄很常自己也是一個 repo（傘狀 works
    `AwaitingTrust`，它有資格這樣做，因為那個目錄是它前一刻自己建的。少了這個，
    徽章就會漏掉每個 attempt 的第一個狀態。prompt 本身能活過對話框，答完就
    送出。
-6. **`$SHELL -ilc` 會繼承 AgentDesk 自己的環境。** 從 Finder 啟動時那是乾淨
+6. **`$SHELL -ilc` 會繼承 Marol 自己的環境。** 從 Finder 啟動時那是乾淨
    的，從 Claude Code session 裡的終端機啟動就不是，因為
    `CLAUDE_CODE_CHILD_SESSION` 會關掉 transcript 儲存，於是 `--continue` 沒有
    東西可以接，重開 attempt 會無聲地從頭開始。`shell_env` 會把這類 session
@@ -817,10 +822,33 @@ SDK 版本的程式碼收在 `src-tauri/parked/`（Node 那半在 `sidecar/`）�
 - **設定 outcome 是終局動作**：worktree 會被移除，所以那個 attempt 不再有活的
   TUI。留下來的是時間軸與一份凍結的 diff。superseded 的 attempt 也一樣，
   「保留可回看」指的是唯讀回看，不是還能跳進去打字
-- 「活得比 app 久」目前只有本機。repo 在 WSL distro 或 SSH host 上的卡片，
-  app 一關還是會停，要按繼續。被扛住的 session 在它的 agent 送出下一個 hook
-  事件之前都顯示為 **執行中，尚未回報**；如果那個 agent 正停在提示符前等人，
-  那可能要等到你打字為止
+- 「活得比 app 久」在任何有 `tmux` 的世界都成立，也僅限於此。沒有 tmux 的
+  distro 或主機維持原本的行為：app 一關卡片就停，要按繼續。不會有任何東西
+  被替你裝上去
+- 被扛住的 session 在它的 agent 送出下一個 hook 事件之前都顯示為
+  **執行中，尚未回報**；如果那個 agent 正停在提示符前等人，那可能要等到你
+  打字為止
+- 一個所有卡片都被刪掉的世界，它的 socket 會留到你下次在那裡開卡片為止。
+  連上一台 SSH host 就是對它開一條連線，為了整理而開一條沒人要求的連線，
+  比在我們自己的目錄裡留幾個檔案更糟
+
+---
+
+## 從 AgentDesk 升上來
+
+這個 app 以前叫 AgentDesk。更新會把東西整批帶過來：
+
+- **看板跟著過來。** 狀態目錄在第一次啟動時改名——資料庫、機器 id、記住的
+  hook endpoint 與隧道 port。沒有任何外面的東西指進去，所以改名就只是改名。
+  如果新名字的目錄已經存在，那個贏，而且絕不會被蓋過去
+- **worktree 原地不動**，留在 `~/.agentdesk/worktrees`，而且只要那個目錄還在，
+  桌子就繼續用它。這些路徑同時寫在開出它們的 attempt 資料列裡**以及**各個 repo
+  自己的 git 管理檔裡；搬動會把兩端一起弄斷。新安裝拿到的是
+  `~/.marol/worktrees`，而這一台也會在最後一棵舊樹還回去之後自己換過去
+- **tmux 正扛著的 agent 繼續跑，而且是被接回去、不是被重開。** 它們的 socket
+  在舊名字底下；去要新名字會在同一個 worktree 裡開出第二個 agent
+- **`.agentdesk/config.json` 與 `$AGENTDESK_*` 繼續有效**——見
+  [讓 worktree 開箱能跑](#讓-worktree-開箱能跑)
 
 ---
 

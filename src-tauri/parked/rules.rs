@@ -2,7 +2,7 @@
 //!
 //! Sits in front of the UI prompt: every `canUseTool` request is evaluated
 //! here first. Deny rules win over allow rules, and anything unmatched falls
-//! through to the human. Rules live in AgentDesk's own store, never in the
+//! through to the human. Rules live in Marol's own store, never in the
 //! project's `.claude/settings.json`, so approving something here does not
 //! mutate a repo you share with other people.
 
@@ -66,7 +66,7 @@ impl RuleSet {
         // guardrail the user set earlier.
         if let Some(rule) = self.deny.iter().find(|r| r.matches(req)) {
             return Decision::Deny {
-                reason: format!("Blocked by AgentDesk rule: {}", rule.label),
+                reason: format!("Blocked by Marol rule: {}", rule.label),
                 rule: rule.label.clone(),
             };
         }

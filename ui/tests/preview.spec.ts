@@ -117,7 +117,7 @@ test.describe('dev server preview', () => {
       window.dispatchEvent(
         new MessageEvent('message', {
           origin: 'http://evil.example',
-          data: { type: 'agentdesk:pick', component: 'X', file: 'x.tsx', line: 1 },
+          data: { type: 'marol:pick', component: 'X', file: 'x.tsx', line: 1 },
         }),
       );
     });
@@ -128,7 +128,7 @@ test.describe('dev server preview', () => {
         new MessageEvent('message', {
           origin: 'http://localhost:4173',
           data: {
-            type: 'agentdesk:pick',
+            type: 'marol:pick',
             component: 'LoginForm',
             file: 'src/auth/LoginForm.tsx',
             line: 42,

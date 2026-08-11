@@ -21,7 +21,7 @@ export const LOCALE_NAME: Record<Locale, string> = {
   'zh-TW': '繁體中文',
 };
 
-const STORAGE_KEY = 'agentdesk.locale';
+const STORAGE_KEY = 'marol.locale';
 
 function isLocale(v: unknown): v is Locale {
   return v === 'en' || v === 'zh-TW';

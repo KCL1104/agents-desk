@@ -38,7 +38,7 @@ test('J1 · the first run, end to end', async ({ page }) => {
 
     // 歡迎面板浮著,端出探測的發現 —— 不是問卷,是報告。
     const modal = page.locator('.modal');
-    await expect(modal).toContainText('歡迎使用 AgentDesk');
+    await expect(modal).toContainText('歡迎使用 Marol');
     await expect(page.getByTestId('welcome-claude')).toContainText('✓ 2.1.226');
     await expect(page.getByTestId('welcome-codex')).toContainText('找不到');
     // 心智模型的三點軌:三列、借看板的點語彙。
@@ -109,7 +109,7 @@ test('J1 · the first run, end to end', async ({ page }) => {
       page.getByTestId('attempt-mode').locator('option:checked'),
     ).toHaveText('照常詢問');
     await expect(page.getByTestId('attempt-prompt')).toHaveValue(
-      new RegExp(`AgentDesk 任務.*${FIRST_LINE}`, 's'),
+      new RegExp(`Marol 任務.*${FIRST_LINE}`, 's'),
     );
     // (a) 對話框自己拿了鍵盤:第一個控件(agent 選單)持著焦點。
     await expect(page.getByTestId('attempt-agent')).toBeFocused();
@@ -327,7 +327,7 @@ test('J1 · the first run, end to end', async ({ page }) => {
 
     // (c) 招呼過就不再招呼:旗標還在,面板不再浮起。
     await expect(page.locator('.modal')).toHaveCount(0);
-    expect(await page.evaluate(() => localStorage.getItem('agentdesk.welcomed'))).toBe('1');
+    expect(await page.evaluate(() => localStorage.getItem('marol.welcomed'))).toBe('1');
     // 看板是上次離開的視圖,完成欄裡的卡片還戴著合併的邊。
     await expect(page.getByTestId('board')).toBeVisible();
     await expect(page.locator('[data-testid="col-done"] [data-testid="task-k1"]')).toBeVisible();

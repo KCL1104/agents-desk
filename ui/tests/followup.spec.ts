@@ -44,7 +44,7 @@ async function reviewMidTurn(page: Page) {
 }
 
 /**
- * VK's queue-a-follow-up, AgentDesk-shaped: mid-turn, the review batch
+ * VK's queue-a-follow-up, Marol-shaped: mid-turn, the review batch
  * holds for Stop instead of steering the turn it reviews — and arrives as
  * the next one, about a diff that has stopped moving.
  */

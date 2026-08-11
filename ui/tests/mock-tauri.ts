@@ -18,7 +18,7 @@ export interface MockSession {
   last_active_at: number;
   live: boolean;
   reports_status: boolean;
-  /** The $AGENTDESK_PORT a run script was handed, when reachable. */
+  /** The $MAROL_PORT a run script was handed, when reachable. */
   preview_port: number | null;
   /** The conversation's token account — tests seed it, the core computes it. */
   usage?: {
@@ -107,7 +107,7 @@ declare global {
       pendingStarts: Map<string, { agent: string; prompt: string; mode: string }>;
       /** Attempts whose worktree has uncommitted work, so merge must refuse. */
       dirtyWorktrees: Set<string>;
-      /** The repo's `.agentdesk/config.json` run script names. */
+      /** The repo's `.marol/config.json` run script names. */
       runScripts: string[];
       /** Each attempt's worktree shell, while one is live — the core's cache. */
       shells: Map<string, string>;
@@ -169,18 +169,18 @@ export function installMock(): void {
     // Only when nothing has been chosen: this script re-runs on every load,
     // including reloads, so setting it unconditionally would overwrite a
     // language the test just switched to and make persistence untestable.
-    if (localStorage.getItem('agentdesk.locale') === null) {
-      localStorage.setItem('agentdesk.locale', 'zh-TW');
+    if (localStorage.getItem('marol.locale') === null) {
+      localStorage.setItem('marol.locale', 'zh-TW');
     }
     // Pre-answer the one-shot surfaces the same way: a suite about the
     // board must not fight a welcome dialog or a coaching card. The specs
     // about those surfaces remove these keys in their own init script.
-    if (localStorage.getItem('agentdesk.welcomed') === null) {
-      localStorage.setItem('agentdesk.welcomed', '1');
+    if (localStorage.getItem('marol.welcomed') === null) {
+      localStorage.setItem('marol.welcomed', '1');
     }
-    if (localStorage.getItem('agentdesk.coach') === null) {
+    if (localStorage.getItem('marol.coach') === null) {
       localStorage.setItem(
-        'agentdesk.coach',
+        'marol.coach',
         JSON.stringify({ attempt: true, mode: true, finish: true, terminal: true, waiting: true }),
       );
     }
@@ -398,9 +398,9 @@ export function installMock(): void {
         { name: 'aider', path: null },
       ],
       messaging: true,
-      db: '/tmp/agentdesk.db',
+      db: '/tmp/marol.db',
       hookUrl: 'http://127.0.0.1:1/h/tok',
-      promptTemplate: '/tmp/agentdesk/prompt-template.md',
+      promptTemplate: '/tmp/marol/prompt-template.md',
     }),
 
     list_sessions: () => mock.sorted(),
@@ -583,8 +583,8 @@ export function installMock(): void {
       const seq = (t?.attempts.length ?? 0) + 1;
       return {
         prompt:
-          `[AgentDesk 任務] ${t?.title ?? ''}\n\n` +
-          `你在一個專為這張卡開的 git worktree：分支 agentdesk/card-${seq}，` +
+          `[Marol 任務] ${t?.title ?? ''}\n\n` +
+          `你在一個專為這張卡開的 git worktree：分支 marol/card-${seq}，` +
           `從 ${t?.base_branch ?? 'main'} @ abcd1234 開出。\n\n---\n\n${t?.prompt ?? ''}\n`,
         // Only Claude Code's argument conventions have been measured. A
         // profile resolves to the CLI underneath before the question is
@@ -685,7 +685,7 @@ export function installMock(): void {
         seq,
         agent,
         worktree_path: session.cwd,
-        branch: `agentdesk/card-${seq}`,
+        branch: `marol/card-${seq}`,
         base_sha: 'abcd1234deadbeef',
         mode,
         outcome: null,
@@ -703,7 +703,7 @@ export function installMock(): void {
       return {
         attempt_id: attemptId,
         session_id: session.id,
-        branch: `agentdesk/card-${seq}`,
+        branch: `marol/card-${seq}`,
         worktree_path: session.cwd,
         prompt,
         prompt_sent: agent === 'claude',

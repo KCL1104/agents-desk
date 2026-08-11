@@ -5,7 +5,7 @@
 
 ## 問題
 
-一張桌子的容量是有限的:併發槽有上限、每個 worktree 佔一份磁碟、側邊欄與看板的每一列都在收注意力稅。但「現在不做」和「不做了」是兩件事——今天 AgentDesk 只有後者(終局:merge / discard / supersede,worktree 收回、diff 凍結、不可逆)。缺中間態的代價:一個等 code review 回覆、等外部 API 開通、等明天再說的 attempt,要嘛繼續佔著一個槽和一份磁碟,要嘛被迫終局、之後用新 attempt 從頭來——對話丟了,這正是 checkpoints 文件說過的最貴的東西。
+一張桌子的容量是有限的:併發槽有上限、每個 worktree 佔一份磁碟、側邊欄與看板的每一列都在收注意力稅。但「現在不做」和「不做了」是兩件事——今天 Marol 只有後者(終局:merge / discard / supersede,worktree 收回、diff 凍結、不可逆)。缺中間態的代價:一個等 code review 回覆、等外部 API 開通、等明天再說的 attempt,要嘛繼續佔著一個槽和一份磁碟,要嘛被迫終局、之後用新 attempt 從頭來——對話丟了,這正是 checkpoints 文件說過的最貴的東西。
 
 Parked 是那個中間態:**工作留著、對話留著、資源還回去**。
 

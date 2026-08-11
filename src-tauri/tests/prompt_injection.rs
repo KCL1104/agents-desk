@@ -36,9 +36,9 @@ use crate::pty::{PtyRegistry, PtySink};
 /// those were treated as a submit, this would arrive as several messages.
 fn probe_prompt(base_sha: &str) -> String {
     format!(
-        "[AgentDesk 任務] 探針測試\n\
+        "[Marol 任務] 探針測試\n\
          \n\
-         你在一個專為這張卡開的 git worktree：分支 agentdesk/probe-1，從 main @ {} 開出。\n\
+         你在一個專為這張卡開的 git worktree：分支 marol/probe-1，從 main @ {} 開出。\n\
          這個 worktree 只屬於這張卡，不要切換分支。\n\
          \n\
          ---\n\
@@ -163,7 +163,7 @@ fn write_probe_plugin(dir: &Path, url: &str) {
     std::fs::write(
         manifest_dir.join("plugin.json"),
         serde_json::json!({
-            "name": "agentdesk-probe",
+            "name": "marol-probe",
             "version": "0.0.0",
             "description": "Measures how a task prompt reaches a session."
         })
@@ -260,15 +260,15 @@ fn a_multi_line_prompt_reaches_a_fresh_worktree_as_one_message() {
         return;
     }
 
-    let root = std::env::temp_dir().join(format!("agentdesk-prompt-probe-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("marol-prompt-probe-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let repo = root.join("repo");
     let wt = root.join("wt");
     std::fs::create_dir_all(&repo).unwrap();
 
     git(&repo, &["init", "-b", "main", "-q"]);
-    git(&repo, &["config", "user.email", "probe@agentdesk.test"]);
-    git(&repo, &["config", "user.name", "AgentDesk Probe"]);
+    git(&repo, &["config", "user.email", "probe@marol.test"]);
+    git(&repo, &["config", "user.name", "Marol Probe"]);
     std::fs::write(repo.join("README.md"), "probe\n").unwrap();
     git(&repo, &["add", "-A"]);
     git(&repo, &["commit", "-qm", "init"]);
@@ -282,7 +282,7 @@ fn a_multi_line_prompt_reaches_a_fresh_worktree_as_one_message() {
             "add",
             "-q",
             "-b",
-            "agentdesk/probe-1",
+            "marol/probe-1",
             &wt.to_string_lossy(),
             "main",
         ],
@@ -313,7 +313,7 @@ fn a_multi_line_prompt_reaches_a_fresh_worktree_as_one_message() {
         ],
         Some(&wt.to_string_lossy().to_string()),
         &env,
-        &[("AGENTDESK_SESSION_ID".to_string(), sid.to_string())],
+        &[("MAROL_SESSION_ID".to_string(), sid.to_string())],
         100,
         30,
         Arc::clone(&cap) as Arc<dyn PtySink>,
@@ -373,7 +373,7 @@ fn a_multi_line_prompt_reaches_a_fresh_worktree_as_one_message() {
         .and_then(|v| v.as_str())
         .unwrap_or_default();
     assert!(
-        seen.contains("[AgentDesk 任務] 探針測試") && seen.contains("請只回覆 PROBE-OK"),
+        seen.contains("[Marol 任務] 探針測試") && seen.contains("請只回覆 PROBE-OK"),
         "the prompt was truncated on the way in. First 400 bytes of what arrived:\n{}",
         &seen.chars().take(400).collect::<String>()
     );

@@ -5,13 +5,13 @@
 
 ## 問題
 
-改前端的 attempt,驗收的最後一步永遠是「打開看」。今天這一步要離開桌子:▶ dev 起了 server、`$AGENTDESK_PORT` 給了埠,然後你得自己開瀏覽器、自己記埠號、自己在兩個視窗之間對照 diff 和畫面。回饋迴圈的最後一哩是斷的——而 inspect(點畫面上的元件、直接變成給 agent 的話)是那一哩上最值錢的一段。
+改前端的 attempt,驗收的最後一步永遠是「打開看」。今天這一步要離開桌子:▶ dev 起了 server、`$MAROL_PORT` 給了埠,然後你得自己開瀏覽器、自己記埠號、自己在兩個視窗之間對照 diff 和畫面。回饋迴圈的最後一哩是斷的——而 inspect(點畫面上的元件、直接變成給 agent 的話)是那一哩上最值錢的一段。
 
 ## 已經存在的東西(不要重做)
 
 | 機制 | 涵蓋 | 缺口 |
 |---|---|---|
-| M6 run scripts | ▶ 起 dev server、輸出進自己的終端機、`$AGENTDESK_PORT` 帶一個 kernel 配發的空埠 | **埠沒有記錄在任何地方**——env 注入後就丟了,面板無從知道該開哪個 URL |
+| M6 run scripts | ▶ 起 dev server、輸出進自己的終端機、`$MAROL_PORT` 帶一個 kernel 配發的空埠 | **埠沒有記錄在任何地方**——env 注入後就丟了,面板無從知道該開哪個 URL |
 | Tauri webview,`csp: null`(已查證 tauri.conf.json) | app 內 `<iframe src="http://localhost:PORT">` 不被 CSP 擋 | dev server 自己送 `X-Frame-Options` 的少數例外要誠實報錯 |
 | 看板 peek(`term-area.as-preview`) | 「主畫面旁邊掛一塊即時面板」的版面先例 | — |
 | 佇列 follow-up / bracketed paste | 把一段話送進 claude 終端機的既有路 | 只對 claude 量測過(維持既有誠實) |
@@ -40,7 +40,7 @@ run_script 當下把埠寫進該 ad-hoc session 的 meta(`preview_port: Option<u
 拆成兩半看:
 
 - **VK 式做法**(轉述):代理 dev server、在回應裡注入 inspect script。**否決注入**——修改受測頁面的 bytes,等於讓「你在看的東西」不再是「server 送出的東西」;這對一個以「不重繪、不重新詮釋」立身的 app 是根本性的矛盾,而且 proxy 引入的差異(header、websocket、HMR)每一項都是新的謊言來源。
-- **採用:repo 自己掛一小段 dev-only script**(`.agentdesk/config.json` 的世界觀:workspace 的事 repo 自己說)。script 在頁面裡監聽 Alt+click,把 `{file, line, component}`(React dev mode 的 `_debugSource`,或 Vue 的 `__file`)用 `postMessage` 丟出來;app 這側 `window.addEventListener('message')` 收,驗 origin 是預覽的 origin,組成一句「使用者指著 {file}:{line} 的 {component}」走既有 bracketed-paste 進 claude。送不送由人——與 restore 的預組訊息同一條規則。
+- **採用:repo 自己掛一小段 dev-only script**(`.marol/config.json` 的世界觀:workspace 的事 repo 自己說)。script 在頁面裡監聽 Alt+click,把 `{file, line, component}`(React dev mode 的 `_debugSource`,或 Vue 的 `__file`)用 `postMessage` 丟出來;app 這側 `window.addEventListener('message')` 收,驗 origin 是預覽的 origin,組成一句「使用者指著 {file}:{line} 的 {component}」走既有 bracketed-paste 進 claude。送不送由人——與 restore 的預組訊息同一條規則。
 - Opt-in 的代價是「不裝就沒有 inspect」;換來的是零注入、零代理、頁面行為與真實瀏覽器完全一致。這個取捨值得。
 
 ### 不做的
@@ -63,5 +63,5 @@ run_script 當下把埠寫進該 ad-hoc session 的 meta(`preview_port: Option<u
 ## 未決 → 已拍板(v1 依建議採納)
 
 1. **槽位**:同一塊地,明確的開啟壓過 hover 驅動的 peek——預覽開著時 peek 讓位,關掉就還回去(hover 不構成「後開」;兩個都要就進外部瀏覽器)。
-2. **inspect script**:docs 範例(`docs/examples/agentdesk-inspect.js`,React `_debugSource` + Vue `__file`),等第三個人要再發套件。
+2. **inspect script**:docs 範例(`docs/examples/marol-inspect.js`,React `_debugSource` + Vue `__file`),等第三個人要再發套件。
 3. **VK 機制標註**:維持轉述標註。

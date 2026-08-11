@@ -9,7 +9,7 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 pub struct Store {
@@ -219,10 +219,51 @@ pub struct AttemptEvent {
 }
 
 pub fn default_path() -> PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("AgentDesk")
-        .join("agentdesk.db")
+    let base = dirs::data_dir().unwrap_or_else(std::env::temp_dir);
+    adopt_former_name(&base);
+    base.join("Marol").join("marol.db")
+}
+
+/// The directory this app kept its state in before it was called Marol.
+///
+/// Everything in here is ours alone and nothing outside points into it — the
+/// database, the machine id, the remembered hook endpoint and tunnel ports,
+/// the tmux config, the prompt template. So the rename is a rename: one
+/// `fs::rename`, atomic within a filesystem, and the desk comes back with its
+/// board intact.
+///
+/// Only ever when there is nothing under the new name. A directory already
+/// there is a Marol that has run, and its state is the state — never
+/// overwritten by an older desk's leftovers.
+///
+/// The worktrees are *not* here and are deliberately not moved with it; see
+/// `Worktrees::default_root`.
+fn adopt_former_name(base: &Path) {
+    let (old, new) = (base.join("AgentDesk"), base.join("Marol"));
+    if new.exists() || !old.exists() {
+        return;
+    }
+    match std::fs::rename(&old, &new) {
+        Ok(()) => {
+            let db = new.join("agentdesk.db");
+            if db.exists() {
+                for suffix in ["", "-wal", "-shm"] {
+                    let from = new.join(format!("agentdesk.db{suffix}"));
+                    let to = new.join(format!("marol.db{suffix}"));
+                    let _ = std::fs::rename(from, to);
+                }
+            }
+            eprintln!("[store] carried the desk over from AgentDesk to Marol");
+        }
+        // A cross-device rename, or a permission the installer changed.
+        // Saying so is the whole of the handling: the app starts fresh, and
+        // the old directory is still there to be moved by hand.
+        Err(e) => eprintln!(
+            "[store] could not carry {} over to {}: {e}",
+            old.display(),
+            new.display()
+        ),
+    }
 }
 
 fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
@@ -435,7 +476,7 @@ impl Store {
         if version > Self::SCHEMA_VERSION {
             return Err(anyhow::anyhow!(
                 "database is at schema version {version}, but this build understands {}. \
-                 It was written by a newer AgentDesk.",
+                 It was written by a newer Marol.",
                 Self::SCHEMA_VERSION
             ));
         }
@@ -1061,7 +1102,7 @@ mod tests {
 
     fn scratch(name: &str) -> PathBuf {
         let p = std::env::temp_dir().join(format!(
-            "agentdesk-store-{}-{name}.db",
+            "marol-store-{}-{name}.db",
             std::process::id()
         ));
         let _ = std::fs::remove_file(&p);
@@ -1175,7 +1216,7 @@ mod tests {
             .unwrap();
             conn.execute(
                 "INSERT INTO attempts (id, task_id, seq, agent, worktree_path, branch, base_sha, created_at) \
-                 VALUES ('a1', 't1', 1, 'claude', '/wt/a1', 'agentdesk/login-1', 'abc', 1000)",
+                 VALUES ('a1', 't1', 1, 'claude', '/wt/a1', 'marol/login-1', 'abc', 1000)",
                 [],
             )
             .unwrap();
@@ -1192,6 +1233,67 @@ mod tests {
         assert!(store.queue().unwrap().is_empty());
         assert_eq!(store.setting("max_concurrent").unwrap(), None);
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// The desk comes over with its name.
+    ///
+    /// Unlike the worktrees, everything in this directory is ours alone and
+    /// nothing outside points into it — the database, the machine id, the
+    /// remembered hook endpoint and tunnel ports. So the rename is a rename,
+    /// and a person who updates gets their board back rather than an empty
+    /// one beside a directory they have to find and move themselves.
+    ///
+    /// The second half is the one that would hurt if it were wrong: a Marol
+    /// that has already run owns its state, and an older desk's leftovers
+    /// must never be laid over the top of it.
+    #[test]
+    fn the_desk_comes_over_from_the_old_name_but_never_lands_on_a_newer_one() {
+        let base = std::env::temp_dir().join(format!("marol-adopt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+
+        // A desk from before the rename, mid-session: WAL and all.
+        std::fs::create_dir_all(base.join("AgentDesk")).unwrap();
+        for (name, body) in [
+            ("agentdesk.db", "the board"),
+            ("agentdesk.db-wal", "a turn in flight"),
+            ("machine-id", "abc"),
+        ] {
+            std::fs::write(base.join("AgentDesk").join(name), body).unwrap();
+        }
+
+        adopt_former_name(&base);
+        assert_eq!(
+            std::fs::read_to_string(base.join("Marol").join("marol.db")).unwrap(),
+            "the board"
+        );
+        // The write-ahead log carries turns the database has not absorbed yet.
+        // Left behind, it is not merely lost — SQLite would find a database
+        // whose tail is missing.
+        assert_eq!(
+            std::fs::read_to_string(base.join("Marol").join("marol.db-wal")).unwrap(),
+            "a turn in flight"
+        );
+        // The machine id rides along, or every session this desk holds on a
+        // remote host becomes another desk's to sweep.
+        assert_eq!(
+            std::fs::read_to_string(base.join("Marol").join("machine-id")).unwrap(),
+            "abc"
+        );
+        assert!(!base.join("AgentDesk").exists(), "the old directory is still there");
+
+        // Now the dangerous case: both names present. The newer one wins and
+        // is not touched.
+        std::fs::create_dir_all(base.join("AgentDesk")).unwrap();
+        std::fs::write(base.join("AgentDesk").join("agentdesk.db"), "stale").unwrap();
+        adopt_former_name(&base);
+        assert_eq!(
+            std::fs::read_to_string(base.join("Marol").join("marol.db")).unwrap(),
+            "the board",
+            "an older desk's leftovers were laid over a Marol that had already run",
+        );
+        assert!(base.join("AgentDesk").exists(), "and the old one is left alone");
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -1234,7 +1336,7 @@ mod tests {
             Err(e) => e,
         };
         assert!(
-            err.to_string().contains("newer AgentDesk"),
+            err.to_string().contains("newer Marol"),
             "unhelpful error: {err}"
         );
         let _ = std::fs::remove_file(&path);
@@ -1262,7 +1364,7 @@ mod tests {
             seq,
             agent: "claude".into(),
             worktree_path: format!("/tmp/wt/{id}"),
-            branch: format!("agentdesk/login-{seq}"),
+            branch: format!("marol/login-{seq}"),
             base_sha: "2bc172c2deadbeef".into(),
             mode: PermissionMode::default(),
             outcome: None,
@@ -1333,7 +1435,7 @@ mod tests {
         s.insert_attempt(&attempt("a1", "t1", 1)).unwrap();
         s.finish_attempt("a1", Outcome::Superseded, None).unwrap();
 
-        // `agentdesk/login-1` still exists in git even though its worktree is
+        // `marol/login-1` still exists in git even though its worktree is
         // gone, so counting live attempts here would collide with it.
         assert_eq!(s.next_attempt_seq("t1").unwrap(), 2);
     }
@@ -1383,7 +1485,7 @@ mod tests {
             conn.pragma_update(None, "user_version", 3i64).unwrap();
             conn.execute(
                 "INSERT INTO attempts (id, task_id, seq, agent, worktree_path, branch, base_sha, created_at) \
-                 VALUES ('a1', 't1', 1, 'claude', '/wt/a1', 'agentdesk/x-1', 'abc', 1000)",
+                 VALUES ('a1', 't1', 1, 'claude', '/wt/a1', 'marol/x-1', 'abc', 1000)",
                 [],
             )
             .unwrap();

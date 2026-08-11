@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AgentDesk",
+  "productName": "Marol",
   "version": "0.3.1",
-  "identifier": "dev.agentdesk.app",
+  "identifier": "dev.marol.app",
   "build": {
     "frontendDist": "../ui/dist",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "AgentDesk",
+        "title": "Marol",
         "width": 1280,
         "height": 820,
         "minWidth": 900,
@@ -32,11 +32,11 @@
       "icons/icon.ico"
     ],
     "category": "DeveloperTool",
-    "publisher": "AgentDesk",
-    "homepage": "https://github.com/kcl1104/agents-desk",
-    "copyright": "Copyright (c) 2026 AgentDesk contributors",
+    "publisher": "Marol",
+    "homepage": "https://github.com/kcl1104/marol",
+    "copyright": "Copyright (c) 2026 Marol contributors",
     "shortDescription": "Desktop cockpit for multiple coding agent sessions",
-    "longDescription": "AgentDesk is a local-first desktop console for running and supervising multiple coding agent sessions, with git worktree isolation, lifecycle hooks and native notifications.",
+    "longDescription": "Marol is a local-first desktop console for running and supervising multiple coding agent sessions, with git worktree isolation, lifecycle hooks and native notifications.",
     "linux": {
       "deb": {
         "depends": ["git"],

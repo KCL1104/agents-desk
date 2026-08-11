@@ -2,14 +2,14 @@
 
 > 2026-08 · 研究對象:Vibe Kanban(原始碼)、Claude Squad(原始碼)、Conductor(公開資料)、
 > Crystal / opcode / emdash / Happy Coder / Omnara(原始碼與公開資料),
-> 並以 impeccable 設計準則對 AgentDesk 現有前端做了誠實審查。
+> 並以 impeccable 設計準則對 Marol 現有前端做了誠實審查。
 > 所有 `file:line` 引用以研究當日的 main / 各 repo 預設分支為準。
 
 ---
 
 ## 一、先畫線:哲學邊界
 
-AgentDesk 的核心承諾是「每個 session 都是真終端,絕不重繪或重新詮釋」。整份研究的每個建議都先過這條線。明確定義如下:
+Marol 的核心承諾是「每個 session 都是真終端,絕不重繪或重新詮釋」。整份研究的每個建議都先過這條線。明確定義如下:
 
 **安全(可以放心採用)**
 - Claude Code hooks(`UserPromptSubmit` / `PreToolUse` / `Notification` / `Stop` / `SessionEnd`)——現有機制,`hooks.rs` 已實作。
@@ -23,10 +23,10 @@ AgentDesk 的核心承諾是「每個 session 都是真終端,絕不重繪或重
 **違反(看到也不能抄)**
 - 把 agent 輸出重繪成聊天泡泡(Vibe Kanban、Conductor、Crystal、opcode、Happy、emdash——五分之四的市場都這麼做,`src-tauri/parked/` 就是量測後拒絕它的證據)。
 - Magic-string 螢幕比對(Claude Squad 用「No, and tell Claude what to do differently」等字串偵測授權提示——CLI 改個字就靜默壞掉)。
-- 鍵擊注入式自動同意(Claude Squad 的 AutoYes daemon)——AgentDesk 的 per-attempt `--permission-mode` 是誠實的等價物。
+- 鍵擊注入式自動同意(Claude Squad 的 AutoYes daemon)——Marol 的 per-attempt `--permission-mode` 是誠實的等價物。
 - 每則訊息的 token 計量 UI(Conductor)——需要 SDK 層存取,PTY app 做不到且不該做。
 
-**市場給的最大訊號**:Conductor 是反方向的收斂證據——它從 SDK-chat 起家,最後被使用者逼著長出「Big Terminal Mode」(HN:「There's a "feel" to the way Claude Code outputs the text… this is lost with conductor」)。**AgentDesk 的核心賭注是對的,不用動搖;要補的是賭注周圍的體驗。**
+**市場給的最大訊號**:Conductor 是反方向的收斂證據——它從 SDK-chat 起家,最後被使用者逼著長出「Big Terminal Mode」(HN:「There's a "feel" to the way Claude Code outputs the text… this is lost with conductor」)。**Marol 的核心賭注是對的,不用動搖;要補的是賭注周圍的體驗。**
 
 ---
 
@@ -35,20 +35,20 @@ AgentDesk 的核心承諾是「每個 session 都是真終端,絕不重繪或重
 | 工具 | 形態 | 一句話 | 最值得學的一件事 |
 |---|---|---|---|
 | **Vibe Kanban**(BloopAI,已宣布 sunset) | React SPA + Rust | 看板規劃 + workspace 執行的雙表面 IA,agent 輸出重繪為 chat | 單一 action registry(1,565 行)同時餵 Cmd+K、快捷鍵、選單;五種 glyph 的狀態語言 |
-| **Claude Squad**(smtg-ai) | Go TUI + tmux | 唯一與 AgentDesk 同陣營(真終端)的工具 | 一次性情境教學(bitmask 記錄);graded-cost 輪詢;attempt 專屬 shell 分頁 |
+| **Claude Squad**(smtg-ai) | Go TUI + tmux | 唯一與 Marol 同陣營(真終端)的工具 | 一次性情境教學(bitmask 記錄);graded-cost 輪詢;attempt 專屬 shell 分頁 |
 | **Conductor**(Melty,閉源 Mac) | Tauri + React,SDK-chat | 公認設計最好;$22M A 輪 | 「建議下一步動作」——從 git 狀態推導單一 CTA,把 N 個終端變成一條決策佇列 |
-| **Crystal → Nimbalyst**(stravu) | Electron → 新 MIT 桌面 app | 架構最接近 AgentDesk(worktree 平行 session) | `completed_unviewed`:「在你沒看的時候做完了」是獨立狀態 |
+| **Crystal → Nimbalyst**(stravu) | Electron → 新 MIT 桌面 app | 架構最接近 Marol(worktree 平行 session) | `completed_unviewed`:「在你沒看的時候做完了」是獨立狀態 |
 | **opcode / emdash / Happy** | Tauri / Electron / RN | 各自一招 | opcode:checkpoint 時間軸;emdash:命令面板兼注意力收件匣;Happy:blocked 才推播 |
 
-全類別收斂的共識:**worktree-per-task、側欄 session 清單 + 詳情面板、diff 就在對話旁邊、只在 blocked 時通知、約五態的狀態字彙**。AgentDesk 的 hook 狀態軸(running / waiting-permission / waiting-you / awaiting-trust / idle / ended)比多數對手更豐富——缺的是下面配對表裡的東西。
+全類別收斂的共識:**worktree-per-task、側欄 session 清單 + 詳情面板、diff 就在對話旁邊、只在 blocked 時通知、約五態的狀態字彙**。Marol 的 hook 狀態軸(running / waiting-permission / waiting-you / awaiting-trust / idle / ended)比多數對手更豐富——缺的是下面配對表裡的東西。
 
 ---
 
 ## 三、模式 → 缺口配對表
 
-競品已驗證的模式,對上審查在 AgentDesk 找到的具體缺口:
+競品已驗證的模式,對上審查在 Marol 找到的具體缺口:
 
-| # | 競品模式(出處) | AgentDesk 現況缺口 | 嚴重度 |
+| # | 競品模式(出處) | Marol 現況缺口 | 嚴重度 |
 |---|---|---|---|
 | 1 | `completed_unviewed` 未讀狀態(Crystal `StatusIndicator.tsx:80-90`;VK `has_unseen_turns`) | 只有「等你」有注意力系統;「趁你不在時做完了」不存在——完成的工作靜默腐爛 | **缺口清單漏掉的最大項** |
 | 2 | 草稿留言持久化(emdash `draft-comments-store.ts`) | review 留言存在 `AttemptInspector.tsx:67` 的 local state,⌘I、切 pane、換 attempt 都會**無預警清空半寫的批次**(`App.tsx:827`、`AttemptInspector.tsx:106-109`)——旗艦功能的文字保護比任何對話框都弱 | P1 |
@@ -76,7 +76,7 @@ AgentDesk 的核心承諾是「每個 session 都是真終端,絕不重繪或重
 7. **Diff 標頭列**:「N 檔 · +A −D · 擷取於 HH:MM ↻」——資料已逐 section 算好(`AttemptInspector.tsx:485-507`),加總即可,同時解掉過期 diff 問題。timeline 抓取失敗也要顯示錯誤,而不是偽裝成「尚無活動」(`AttemptInspector.tsx:92-95`)。
 8. **一次性教學(coach marks)**,學 Claude Squad 的 bitmask:四個時刻各教一次——首次啟動 attempt(worktree 是什麼、trust 提示為何出現)、首次 Finish(merge 會凍結 diff 收回 worktree)、首次 ⚡ 啟動、首次進入終端 pane(哪些鍵離開、Ctrl+字母屬於 shell)。錨定 popover,不用 modal。
 9. **通知偏好 + 測試按鈕**(Crystal `NotificationSettings.tsx`):授權 / 等輸入 / 完成三事件各自開關,加「送測試通知」。放進現有 EnvPanel。另外學 VK:啟動時先吞掉既有 backlog 再開始通知,避免重啟通知風暴。
-10. **首次啟動偵測面板**(opcode 模式):AgentDesk 已經 probe login-shell env、`claude --version`、WSL distros——把 probing 結果做成第一畫面「找到 claude 2.1.x ✓ / codex ✗ / 2 個 WSL distro」,誠實且全是現成資料。
+10. **首次啟動偵測面板**(opcode 模式):Marol 已經 probe login-shell env、`claude --version`、WSL distros——把 probing 結果做成第一畫面「找到 claude 2.1.x ✓ / codex ✗ / 2 個 WSL distro」,誠實且全是現成資料。
 11. **對話框收尾**:Create/Start 加 in-flight disabled(防雙擊開兩個 worktree;Finish footer 已有正確示範)、`.modal` 加 `max-height: 90vh; overflow-y: auto`、單行輸入 Enter 送出、`NewSessionDialog.tsx:82` 硬編碼的 `Agent` label 改用 `t()`。
 12. **等待 banner 改為循環**(`SessionList.tsx:64` 永遠開 `waiting[0]`,與 ⌘E 行為分歧——重用 cycle 邏輯)。
 13. **側欄依「等你 / 執行中 / 閒置」分組**(VK Needs Attention accordion),並解決「idle 被歸進『等你』區但不算進 ⚠ 徽章」的自相矛盾(`sections.ts:54` vs `types.ts:20-24`)。
@@ -97,9 +97,9 @@ AgentDesk 的核心承諾是「每個 session 都是真終端,絕不重繪或重
 
 ### Tier 3 — 大型功能(L,先決策再投入)
 
-25. **Checkpoints**。機制用 Conductor 的(標示:閉源、機制為第三方轉述推斷):UserPromptSubmit hook 已逐輪觸發,每輪前 commit 到 `refs/agentdesk/checkpoints/<attempt>/<n>`,working branch 歷史保持乾淨;UI 錨定在 Activity 時間軸(「還原 worktree 到此 prompt 之前」),**只還原程式碼、永不動對話**(Conductor 會刪訊息——那是要避開的半邊)。Claude Code 自身已有 /rewind,但 checkpoints 仍涵蓋非輪次對齊的狀態與非 Claude agent。
+25. **Checkpoints**。機制用 Conductor 的(標示:閉源、機制為第三方轉述推斷):UserPromptSubmit hook 已逐輪觸發,每輪前 commit 到 `refs/marol/checkpoints/<attempt>/<n>`,working branch 歷史保持乾淨;UI 錨定在 Activity 時間軸(「還原 worktree 到此 prompt 之前」),**只還原程式碼、永不動對話**(Conductor 會刪訊息——那是要避開的半邊)。Claude Code 自身已有 /rewind,但 checkpoints 仍涵蓋非輪次對齊的狀態與非 Claude agent。
 26. **暫停/parked 狀態**(Claude Squad pause/checkout + Conductor archive 的合體):凍結 session、保留分支、釋放 worktree 與併發槽、隱藏出預設看板;之後 `--continue` 在重建的 worktree 恢復。填補「活著 vs 終局」之間的重要中間態,也是「換我自己改一下」這個最常見人類需求的正名。Claude Squad 的細節:pause 時把分支名複製進剪貼簿——下一個要打的字正是 `git checkout <branch>`。
-27. **內嵌 dev-server 預覽**(VK 的殺手級功能,哲學相容——預覽的是**你的 app**,不是 agent):M6 已經替每個 worktree 起 dev server 配 `$AGENTDESK_PORT`,只是從沒顯示過。加 iframe/webview 面板;進階版是 inspect mode——點預覽裡的元素,抽出 component/file/line,經 bracketed paste 送進 TUI(「把這顆按鈕改大」附機器可讀座標)。
+27. **內嵌 dev-server 預覽**(VK 的殺手級功能,哲學相容——預覽的是**你的 app**,不是 agent):M6 已經替每個 worktree 起 dev server 配 `$MAROL_PORT`,只是從沒顯示過。加 iframe/webview 面板;進階版是 inspect mode——點預覽裡的元素,抽出 component/file/line,經 bracketed paste 送進 TUI(「把這顆按鈕改大」附機器可讀座標)。
 28. **可編輯 diff**(Crystal/emdash):一半的 review 意見是瑣事(改名、錯字),來回一輪 agent 太貴;讓 Changes 抽屜的 working-tree 側可直接編輯(凍結 diff 維持唯讀)。實作建議 CodeMirror 6 merge view,Monaco 對手寫 CSS 的精簡技術棧太重。
 29. **Cost / context 顯示**(hooks 沒有 token 資料——來源只能是 `~/.claude/projects/` transcript JSONL,讀 agent 自己的磁碟紀錄,哲學上站得住):Activity 抽屜給每 attempt 一行 cost/context;VK 的 20px 放射狀 context gauge(50/75/90% 變色)是好參考。**不做**即時終端 token ticker(需要串流解析)。反面教材:Crystal 把 Sonnet 單價寫死在 UI 裡算成本——永遠從 transcript 記錄取,不要內建價目表。
 
@@ -115,12 +115,12 @@ AgentDesk 的核心承諾是「每個 session 都是真終端,絕不重繪或重
 - **型階與間距階**:目前 10–20px 七種字級、2–22px 任意間距(`styles.css` 全域),只有顏色/radius/mono 被 token 化。學 VK:一張 6 檔尺寸表推導字級、icon、radius、間距——「精緻感」多半來自這種一致性。
 - **圖示**:⚠ ✕ ▸ ⤢ ↻ ⎇ ▶ ＋ ⚡ ✎ 是 unicode 字形,粗細與 metrics 隨平台字型漂移(同 codebase 裡 ＋ 與 + 並存:`Board.tsx:161` vs `SessionList.tsx:59`)。換一套內嵌 SVG(Phosphor/Lucide 風格,只挑用到的十幾顆)。
 - **動效字彙**:只保留兩種語意——「現在活著」(執行中卡片的 border 微光,VK border-flash 的 mask-composite 技巧)與「你的下一步」(空看板時 New card 微光)。兩者都要掛 `prefers-reduced-motion`(VK 忘了掛在 chat-box 上——抄 guard,別抄疏漏)。抽屜開合目前是硬切且瞬間 reflow 所有終端,值得一個 150ms 的 width transition。
-- **招牌元素**:呼吸中的 needs-you 卡片已是候選——命名它、強化它,讓它成為 AgentDesk 的識別,如同 Conductor 的城市護照。溫暖、克制、一個記憶點,是 Conductor 設計獲讚的全部配方。
+- **招牌元素**:呼吸中的 needs-you 卡片已是候選——命名它、強化它,讓它成為 Marol 的識別,如同 Conductor 的城市護照。溫暖、克制、一個記憶點,是 Conductor 設計獲讚的全部配方。
 - **Merged 專色**:VK 給 merged 狀態獨立紫色 token——Finish 三態(merged/discarded/superseded)值得色彩區分。
 
 ---
 
-## 五、AgentDesk 審查摘要(impeccable 準則)
+## 五、Marol 審查摘要(impeccable 準則)
 
 **做得好、且多數競品沒做到的**:多通道「等你」注意力系統(banner + 呼吸卡 + tab 徽章 + aria-live + ⌘E + dock badge);「door」模式讓可點卡片保持合法 ARIA;後果成比例的 armed 二擊確認;STATUS_KEY 單一事實來源;11-token 主題系統含即時 WCAG 對比;錯誤哲學(toast 堆疊不驅逐、FriendlyError 原文一鍵展開、merge 拒絕全文顯示);i18n 編譯期完整性保證。
 
@@ -147,7 +147,7 @@ AgentDesk 的核心承諾是「每個 session 都是真終端,絕不重繪或重
 
 - **Conductor 全部二手**(閉源):HN 創辦人發言、官方 docs/changelog、performance.dev 改寫報導。其 checkpoint 機制(hook → private ref)為第三方轉述,採用前需自行驗證。
 - **Crystal 已於 2026-02 廢棄**,接替者 [Nimbalyst](https://github.com/nimbalyst/nimbalyst)(MIT,Crystal 全功能 + session kanban + markdown/mockup 視覺編輯器 + iOS/Android companion)本研究只做了概況確認,未深讀原始碼。
-- 「側欄才是收斂 IA、看板不是」的論斷樣本太薄(五工具中一個叫 vibe-KANBAN、兩個已轉向/收攤),當假設看待即可——何況 Nimbalyst 又把 kanban 加了回來。AgentDesk 的雙軸看板(欄位=人放的、燈=agent 報的)本就比類別的混淆版更好,結論是「終端牆與 overview 要當共同一等公民投資」,不是「棄板」。
+- 「側欄才是收斂 IA、看板不是」的論斷樣本太薄(五工具中一個叫 vibe-KANBAN、兩個已轉向/收攤),當假設看待即可——何況 Nimbalyst 又把 kanban 加了回來。Marol 的雙軸看板(欄位=人放的、燈=agent 報的)本就比類別的混淆版更好,結論是「終端牆與 overview 要當共同一等公民投資」,不是「棄板」。
 - Happy(23k stars)證明的類別最大未滿足需求是**遠端解鎖 blocked agent**;`UiSink` trait 的架構註解已預留這條 seam,列為長期方向,非近期前端工作。
 - 星數為研究當日快照,僅作聲量參考。
 

@@ -28,7 +28,7 @@ const FF = '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux';
 const FPS = 8;
 const WIDTH = 960;
 
-const frames = mkdtempSync(join(tmpdir(), 'agentdesk-gif-'));
+const frames = mkdtempSync(join(tmpdir(), 'marol-gif-'));
 try {
   // This ffmpeg is Playwright's minimal build: scale is the only filter
   // it ships, so the frame rate is set at the output (-r) instead of a

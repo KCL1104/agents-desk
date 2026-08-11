@@ -148,7 +148,7 @@ test.describe('the diff viewer', () => {
     await expect(page.getByTestId('diff-body')).not.toHaveClass(/wrap/);
     await page.getByTestId('diff-wrap').click();
     await expect(page.getByTestId('diff-body')).toHaveClass(/wrap/);
-    const stored = await page.evaluate(() => localStorage.getItem('agentdesk.diffWrap'));
+    const stored = await page.evaluate(() => localStorage.getItem('marol.diffWrap'));
     expect(stored).toBe('1');
   });
 
@@ -193,7 +193,7 @@ test.describe('the diff viewer', () => {
     expect((after?.width ?? 0) - (before?.width ?? 0)).toBe(48);
 
     const stored = await page.evaluate(() =>
-      Number(localStorage.getItem('agentdesk.inspectorWidth')),
+      Number(localStorage.getItem('marol.inspectorWidth')),
     );
     expect(stored).toBe(Math.round(after?.width ?? 0));
   });

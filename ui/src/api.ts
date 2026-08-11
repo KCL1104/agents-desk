@@ -215,7 +215,7 @@ export const api = {
   /** Replace the profiles wholesale; the backend validates the set. */
   saveProfiles: (profiles: Profile[]) => invoke<void>('save_profiles', { profiles }),
 
-  /** The repository's run scripts (`.agentdesk/config.json`), by name. */
+  /** The repository's run scripts (`.marol/config.json`), by name. */
   listRunScripts: (attemptId: string) =>
     invoke<string[]>('list_run_scripts', { attemptId }),
   /** Start a run script in the attempt's worktree, in a terminal of its own.

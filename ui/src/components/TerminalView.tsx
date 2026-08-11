@@ -86,7 +86,7 @@ export function TerminalView({
     const onTheme = () => {
       term.options.theme = xtermTheme();
     };
-    window.addEventListener('agentdesk:theme', onTheme);
+    window.addEventListener('marol:theme', onTheme);
 
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -172,7 +172,7 @@ export function TerminalView({
     return () => {
       disposed = true;
       clearTimeout(settle);
-      window.removeEventListener('agentdesk:theme', onTheme);
+      window.removeEventListener('marol:theme', onTheme);
       observer.disconnect();
       onData.dispose();
       onWrote.dispose();
@@ -271,8 +271,8 @@ export function TerminalView({
       // Already open: the chord means "put the caret back in the box".
       findInputRef.current?.focus();
     };
-    window.addEventListener('agentdesk:find', onFind);
-    return () => window.removeEventListener('agentdesk:find', onFind);
+    window.addEventListener('marol:find', onFind);
+    return () => window.removeEventListener('marol:find', onFind);
   }, [id]);
 
   useEffect(() => {

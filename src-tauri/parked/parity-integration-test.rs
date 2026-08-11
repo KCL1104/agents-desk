@@ -2,7 +2,7 @@
 //! Rust core -> Node sidecar -> Agent SDK -> real `claude` process.
 //!
 //! Asserts the property the whole app rests on: a session opened by
-//! AgentDesk loads the same project configuration a terminal session would.
+//! Marol loads the same project configuration a terminal session would.
 //!
 //! Costs a real (small) API call, so it is ignored by default:
 //!
@@ -36,10 +36,10 @@ impl UiSink for Collector {
 
 /// Build a throwaway project with a CLAUDE.md and a project-scoped skill.
 fn fixture() -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("agentdesk-parity-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("marol-parity-{}", std::process::id()));
     let skill = dir.join(".claude/skills/parity-probe");
     std::fs::create_dir_all(&skill).expect("mkdir fixture");
-    std::fs::write(dir.join("CLAUDE.md"), "Project marker: AGENTDESK_PARITY_OK\n").unwrap();
+    std::fs::write(dir.join("CLAUDE.md"), "Project marker: MAROL_PARITY_OK\n").unwrap();
     std::fs::write(dir.join("NOTE.md"), "The secret word is PANGOLIN.\n").unwrap();
     std::fs::write(
         skill.join("SKILL.md"),

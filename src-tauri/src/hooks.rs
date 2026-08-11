@@ -14,7 +14,7 @@
 //!   * Most events use the **`http`** hook type: no subprocess per tool call,
 //!     and the request body carries the full payload including `tool_name`
 //!     and `tool_input`. Session identity rides in a header, expanded from
-//!     `AGENTDESK_SESSION_ID` via `allowedEnvVars`.
+//!     `MAROL_SESSION_ID` via `allowedEnvVars`.
 //!   * **`SessionStart` is the exception** — an `http` hook on it never
 //!     fires, while a `command` hook does. It runs once per session, so the
 //!     one subprocess costs nothing.
@@ -174,7 +174,7 @@ async fn bind_preferring(port: Option<u16>) -> Result<TcpListener> {
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
         if let Some(e) = last {
-            // Somebody else has it for good: a second AgentDesk install, or an
+            // Somebody else has it for good: a second Marol install, or an
             // unrelated program. Taking a fresh port loses the reports from
             // sessions the previous run left running, which is exactly where
             // this was before any of it was remembered — so it degrades to the
@@ -292,7 +292,14 @@ async fn read_request(
         };
         let value = value.trim();
         match name.trim().to_ascii_lowercase().as_str() {
-            "x-agentdesk-session" => session_id = Some(value.to_string()),
+            // Both spellings. A session this desk held through the rename is
+            // still running against the plugin config it was started with,
+            // and that file is a photograph: Claude Code read it once, when
+            // the app was still called AgentDesk. Refusing its header would
+            // make every agent that survived the rename go dark for the rest
+            // of its life — the same failure the stable endpoint exists to
+            // prevent, caused by us instead of by a port.
+            "x-marol-session" | "x-agentdesk-session" => session_id = Some(value.to_string()),
             "content-length" => content_length = value.parse().unwrap_or(0),
             _ => {}
         }
@@ -403,8 +410,8 @@ fn http_reporter(url: &str, state: &str) -> serde_json::Value {
     serde_json::json!({
         "type": "http",
         "url": format!("{url}?state={state}"),
-        "headers": { "X-AgentDesk-Session": "$AGENTDESK_SESSION_ID" },
-        "allowedEnvVars": ["AGENTDESK_SESSION_ID"],
+        "headers": { "X-Marol-Session": "$MAROL_SESSION_ID" },
+        "allowedEnvVars": ["MAROL_SESSION_ID"],
         // Short: an unreachable listener should cost the agent no more than a
         // blink, and a refused connection fails instantly anyway.
         "timeout": 2
@@ -418,7 +425,7 @@ fn http_reporter(url: &str, state: &str) -> serde_json::Value {
 fn command_reporter(url: &str, state: &str) -> serde_json::Value {
     let cmd = format!(
         "curl -sS --max-time 2 -X POST \
-         \"{url}?sid=$AGENTDESK_SESSION_ID&state={state}\" -o /dev/null || true"
+         \"{url}?sid=$MAROL_SESSION_ID&state={state}\" -o /dev/null || true"
     );
     serde_json::json!({
         "type": "command",
@@ -457,9 +464,9 @@ fn hooks_json(url: &str) -> serde_json::Value {
 /// that points back through the reverse tunnel.
 pub fn plugin_files(url: &str) -> Vec<(&'static str, String)> {
     let manifest = serde_json::json!({
-        "name": "agentdesk-status",
+        "name": "marol-status",
         "version": env!("CARGO_PKG_VERSION"),
-        "description": "Reports session status to the AgentDesk window. Adds no tools and changes no behaviour."
+        "description": "Reports session status to the Marol window. Adds no tools and changes no behaviour."
     });
     vec![
         (
@@ -518,7 +525,7 @@ mod tests {
     /// changes what the server is listening for.
     #[test]
     fn a_remembered_token_that_is_not_a_token_is_refused() {
-        let dir = std::env::temp_dir().join(format!("agentdesk-hooks-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("marol-hooks-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -572,11 +579,11 @@ mod tests {
     #[test]
     fn http_hooks_carry_the_session_id_and_allow_its_expansion() {
         for hook in all_hooks().iter().filter(|h| h["type"] == "http") {
-            assert_eq!(hook["headers"]["X-AgentDesk-Session"], "$AGENTDESK_SESSION_ID");
+            assert_eq!(hook["headers"]["X-Marol-Session"], "$MAROL_SESSION_ID");
             // Without the allowlist the header is sent literally and every
             // report lands on a session that does not exist.
             let allowed = hook["allowedEnvVars"].as_array().unwrap();
-            assert!(allowed.iter().any(|v| v == "AGENTDESK_SESSION_ID"));
+            assert!(allowed.iter().any(|v| v == "MAROL_SESSION_ID"));
         }
     }
 
@@ -688,14 +695,14 @@ mod tests {
 
     #[test]
     fn writes_a_plugin_claude_code_can_load() {
-        let dir = std::env::temp_dir().join(format!("agentdesk-plugin-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("marol-plugin-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         write_plugin(&dir, URL).unwrap();
 
         let manifest: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join(".claude-plugin/plugin.json")).unwrap())
                 .unwrap();
-        assert_eq!(manifest["name"], "agentdesk-status");
+        assert_eq!(manifest["name"], "marol-status");
 
         let hooks: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("hooks/hooks.json")).unwrap())

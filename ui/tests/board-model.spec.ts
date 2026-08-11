@@ -19,7 +19,7 @@ function attempt(over: Partial<Attempt> & { id: string; seq: number }): Attempt 
     task_id: 'k1',
     agent: 'claude',
     worktree_path: `/wt/${over.id}`,
-    branch: `agentdesk/card-${over.seq}`,
+    branch: `marol/card-${over.seq}`,
     base_sha: 'abcd1234',
     outcome: null,
     frozen_diff: null,
@@ -210,8 +210,8 @@ test('a column is ordered by position, not by arrival', () => {
 /** Cards from different repositories share one board, so each must be able
     to say which codebase it is about. */
 test('a card names its repository by basename', () => {
-  expect(repoName('/Users/me/code/agents-desk')).toBe('agents-desk');
-  expect(repoName('/Users/me/code/agents-desk/')).toBe('agents-desk');
+  expect(repoName('/Users/me/code/marol')).toBe('marol');
+  expect(repoName('/Users/me/code/marol/')).toBe('marol');
   expect(repoName('weird')).toBe('weird');
 });
 

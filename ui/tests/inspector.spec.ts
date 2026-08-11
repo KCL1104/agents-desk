@@ -68,7 +68,7 @@ test.describe('attempt inspector', () => {
     await page.getByTestId('inspector-timeline-tab').click();
     const rows = page.locator('.tl-row');
     await expect(rows).toHaveCount(4);
-    await expect(rows.nth(0)).toContainText('[AgentDesk 任務]');
+    await expect(rows.nth(0)).toContainText('[Marol 任務]');
     await expect(rows.nth(1)).toContainText('pytest tests/test_auth.py -v');
     await expect(rows.nth(2)).toContainText('/repo/src/auth.py');
     await expect(rows.nth(3)).toContainText('待命');
@@ -161,7 +161,7 @@ test.describe('attempt inspector', () => {
 
     // And its record of what it did survives too.
     await page.getByTestId('inspector-timeline-tab').click();
-    await expect(page.locator('.tl-row')).toContainText(['[AgentDesk 任務]', 'cargo test']);
+    await expect(page.locator('.tl-row')).toContainText(['[Marol 任務]', 'cargo test']);
   });
 
   /**

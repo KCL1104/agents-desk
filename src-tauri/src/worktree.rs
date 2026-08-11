@@ -18,7 +18,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::host::{Host, HostRef};
 
@@ -44,7 +44,7 @@ pub struct Worktrees {
 /// Turn a card title into something that can be a branch name and a directory.
 ///
 /// Titles here are commonly Chinese, and a title with no ASCII in it at all
-/// slugifies to nothing — `agentdesk/-1` is not a valid branch and `-1` is a
+/// slugifies to nothing — `marol/-1` is not a valid branch and `-1` is a
 /// directory name that reads as a flag to half the tools that would touch it.
 /// So an empty result falls back to the task id, which is always usable and
 /// still identifies the card.
@@ -127,7 +127,7 @@ impl Worktrees {
         Self { root }
     }
 
-    /// `~/.agentdesk/worktrees`.
+    /// `~/.marol/worktrees`.
     ///
     /// Not beside the repository, which is where this obviously belongs until
     /// you notice that a repository's parent directory is very often itself a
@@ -138,11 +138,30 @@ impl Worktrees {
     /// Not in the application support directory either: these are working
     /// trees a person will want to `cd` into, open in an editor, and run
     /// builds from. A path they can type is worth more than tidiness.
+    ///
+    /// **The old root wins when it is there.** Unlike the state directory,
+    /// these paths are not ours alone to move: each one is written into the
+    /// attempt row that opened it, and registered inside its repository's
+    /// `.git/worktrees/<id>/gitdir` with the worktree's own `.git` file
+    /// pointing back. Moving the directory would break both ends of that and
+    /// leave every open attempt pointing at nothing — a rename that reaches
+    /// into the person's repositories to fix itself is not a rename any more.
+    ///
+    /// So a desk that has one goes on using it, under the name it was made
+    /// with, for as long as it exists. Nothing is stranded and nothing is
+    /// touched. New installs get `~/.marol/worktrees`, and so does this one
+    /// once the last of the old trees is handed back.
     pub fn default_root() -> PathBuf {
-        dirs::home_dir()
-            .unwrap_or_else(std::env::temp_dir)
-            .join(".agentdesk")
-            .join("worktrees")
+        Self::default_root_in(&dirs::home_dir().unwrap_or_else(std::env::temp_dir))
+    }
+
+    /// The same choice, against a named home, so it can be asked without one.
+    pub fn default_root_in(home: &Path) -> PathBuf {
+        let former = home.join(".agentdesk").join("worktrees");
+        if former.is_dir() {
+            return former;
+        }
+        home.join(".marol").join("worktrees")
     }
 
     /// This app machine's own worktree root. A non-local host keeps its
@@ -207,7 +226,7 @@ impl Worktrees {
             if seq > start_seq + 1000 {
                 return Err(anyhow!("no free attempt number for `{slug}` after 1000 tries"));
             }
-            let branch = format!("agentdesk/{slug}-{seq}");
+            let branch = format!("marol/{slug}-{seq}");
             let path = hr.join(&dir, &format!("{slug}-{seq}"));
             if !branch_exists(hr, repo, &branch) && !hr.exists(&path) {
                 break (path, branch);
@@ -348,7 +367,7 @@ impl Worktrees {
                 "merge",
                 "--no-ff",
                 "-m",
-                &format!("Merge {branch} (AgentDesk attempt)"),
+                &format!("Merge {branch} (Marol attempt)"),
                 branch,
             ],
         )?;
@@ -595,7 +614,7 @@ impl Worktrees {
     /// the agent sees. A temporary index (`GIT_INDEX_FILE`) takes the `add
     /// -A`, `write-tree` turns it into a tree, `commit-tree` parents it on
     /// the previous checkpoint (or the attempt's base), and a ref under
-    /// `refs/agentdesk/checkpoints/<attempt>/<n>` keeps it alive. Worktree,
+    /// `refs/marol/checkpoints/<attempt>/<n>` keeps it alive. Worktree,
     /// index, branch, reflog: all exactly as the agent left them — the same
     /// discipline that keeps `stat` away from `add -N`.
     ///
@@ -610,7 +629,7 @@ impl Worktrees {
         base_sha: &str,
     ) -> Result<Option<Checkpoint>> {
         let gitdir = git(hr, worktree, &["rev-parse", "--absolute-git-dir"])?;
-        let index = format!("{}/agentdesk-checkpoint.index", gitdir.trim_end_matches('/'));
+        let index = format!("{}/marol-checkpoint.index", gitdir.trim_end_matches('/'));
         let snap_env = [("GIT_INDEX_FILE".to_string(), index)];
         hr.run_ok_with_env("git", &["add", "-A"], Some(worktree), &snap_env)?;
         let tree = hr.run_ok_with_env("git", &["write-tree"], Some(worktree), &snap_env)?;
@@ -627,14 +646,14 @@ impl Worktrees {
         // Its own identity, so a repo (or host) with no user.name configured
         // can still snapshot — and no checkpoint ever wears the user's name.
         let id_env = [
-            ("GIT_AUTHOR_NAME".to_string(), "AgentDesk".to_string()),
-            ("GIT_AUTHOR_EMAIL".to_string(), "checkpoint@agentdesk.local".to_string()),
-            ("GIT_COMMITTER_NAME".to_string(), "AgentDesk".to_string()),
-            ("GIT_COMMITTER_EMAIL".to_string(), "checkpoint@agentdesk.local".to_string()),
+            ("GIT_AUTHOR_NAME".to_string(), "Marol".to_string()),
+            ("GIT_AUTHOR_EMAIL".to_string(), "checkpoint@marol.local".to_string()),
+            ("GIT_COMMITTER_NAME".to_string(), "Marol".to_string()),
+            ("GIT_COMMITTER_EMAIL".to_string(), "checkpoint@marol.local".to_string()),
         ];
         let sha = hr.run_ok_with_env(
             "git",
-            &["commit-tree", &tree, "-p", parent, "-m", &format!("agentdesk checkpoint {n}")],
+            &["commit-tree", &tree, "-p", parent, "-m", &format!("marol checkpoint {n}")],
             Some(worktree),
             &id_env,
         )?;
@@ -708,12 +727,12 @@ impl Worktrees {
         let raw = git(
             hr,
             repo,
-            &["for-each-ref", "--format=%(refname)", "refs/agentdesk/checkpoints"],
+            &["for-each-ref", "--format=%(refname)", "refs/marol/checkpoints"],
         )?;
         let mut swept = 0;
         for r in raw.lines().map(str::trim).filter(|r| !r.is_empty()) {
             let attempt = r
-                .strip_prefix("refs/agentdesk/checkpoints/")
+                .strip_prefix("refs/marol/checkpoints/")
                 .and_then(|rest| rest.split('/').next());
             if let Some(id) = attempt {
                 if !live_attempts.contains(id) {
@@ -739,7 +758,7 @@ pub struct Checkpoint {
 }
 
 fn checkpoint_prefix(attempt_id: &str) -> String {
-    format!("refs/agentdesk/checkpoints/{attempt_id}")
+    format!("refs/marol/checkpoints/{attempt_id}")
 }
 
 /// Full refnames into offerable branch names: `refs/heads/x` and
@@ -874,7 +893,7 @@ mod tests {
         assert_eq!(slug("修好登入 bug", "abc123"), "bug");
     }
 
-    /// The one that would produce `agentdesk/-1` and a directory called `-1`.
+    /// The one that would produce `marol/-1` and a directory called `-1`.
     #[test]
     fn a_title_with_no_ascii_falls_back_to_the_task_id() {
         assert_eq!(slug("修好登入頁面", "9f8e7d6c-1111"), "task-9f8e7d6c");
@@ -930,9 +949,9 @@ mod tests {
         let host = Host::Wsl {
             distro: "Ubuntu".into(),
         };
-        let dir = dir_for(&host, "/home/me/.agentdesk/worktrees", "/home/me/code/api");
+        let dir = dir_for(&host, "/home/me/.marol/worktrees", "/home/me/code/api");
         assert!(
-            dir.starts_with("/home/me/.agentdesk/worktrees/api-"),
+            dir.starts_with("/home/me/.marol/worktrees/api-"),
             "{dir}"
         );
         assert!(!dir.contains('\\'));
@@ -944,6 +963,45 @@ mod tests {
     fn the_default_root_is_not_beside_the_repository() {
         let root = Worktrees::default_root();
         assert!(root.ends_with("worktrees"));
-        assert!(root.to_string_lossy().contains(".agentdesk"));
+        let s = root.to_string_lossy().to_string();
+        assert!(s.contains(".marol") || s.contains(".agentdesk"), "{s}");
+    }
+
+    /// A desk that already has worktrees keeps them where they are.
+    ///
+    /// Everything else the rename touched was ours alone to move. These are
+    /// not: each path is written into the attempt row that opened it, and
+    /// registered inside its repository's `.git/worktrees/<id>/gitdir` with
+    /// the tree's own `.git` file pointing back. Moving the directory breaks
+    /// both ends and leaves every open attempt pointing at nothing — a rename
+    /// that reaches into somebody's repositories to repair itself has stopped
+    /// being a rename.
+    #[test]
+    fn worktrees_from_before_the_rename_are_left_exactly_where_they_are() {
+        let home = std::env::temp_dir().join(format!("marol-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+
+        // A fresh machine has neither, and gets the new name.
+        std::fs::create_dir_all(&home).unwrap();
+        assert_eq!(
+            Worktrees::default_root_in(&home),
+            home.join(".marol").join("worktrees")
+        );
+
+        // One with trees from before goes on using them, under the old name,
+        // for as long as they are there.
+        std::fs::create_dir_all(home.join(".agentdesk").join("worktrees")).unwrap();
+        assert_eq!(
+            Worktrees::default_root_in(&home),
+            home.join(".agentdesk").join("worktrees"),
+        );
+
+        // And moves on by itself once the last one is handed back.
+        std::fs::remove_dir_all(home.join(".agentdesk")).unwrap();
+        assert_eq!(
+            Worktrees::default_root_in(&home),
+            home.join(".marol").join("worktrees")
+        );
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

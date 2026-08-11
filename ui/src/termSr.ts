@@ -9,10 +9,10 @@
  * 預設關閉：這是拿 GPU 效能換可及性的誠實交換，由使用者自己決定，
  * 而且設定的提示文字直說代價。
  */
-const KEY = 'agentdesk.termSr';
+const KEY = 'marol.termSr';
 
 /** 事件名沿用主題切換的先例：已掛載的終端機不在 prop 鏈上，靠廣播到達。 */
-export const TERM_SR_EVENT = 'agentdesk:termsr';
+export const TERM_SR_EVENT = 'marol:termsr';
 
 export function termSrEnabled(): boolean {
   return localStorage.getItem(KEY) === '1';

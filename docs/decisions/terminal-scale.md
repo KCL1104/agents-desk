@@ -11,7 +11,7 @@
 - 500ms 後只有 **16 個活著**;第 0–23 個(**最舊的**)收到 `webglcontextlost`。
 - 結論:超額時瀏覽器**無聲地踢掉最舊的** context。錯誤處理接不到「第 17 個開不了」,只接得到「第 1 個死了」。
 
-**對 AgentDesk 的意義**:每個 live session 的終端機都常駐(藏起來保 scrollback)——藏著的 pane 也持有 WebGL context。第 17 個 session 一掛載,被踢的是最舊的 context,**很可能正是螢幕上看著的那個 pane**;而現行程式在 context 丟失時 dispose addon,一路 DOM renderer 到底,不會復原。
+**對 Marol 的意義**:每個 live session 的終端機都常駐(藏起來保 scrollback)——藏著的 pane 也持有 WebGL context。第 17 個 session 一掛載,被踢的是最舊的 context,**很可能正是螢幕上看著的那個 pane**;而現行程式在 context 丟失時 dispose addon,一路 DOM renderer 到底,不會復原。
 
 **scrollback 記憶體**:容器 headless Chromium 的 `performance.memory` 不可用,精確數字沒測到。已知結構成本(xterm 每 cell 以 typed array 存,估算非量測):10k 行 × 200 欄約在每終端機十幾 MB 的量級。現行 `scrollback: 10_000` 的上限維持——這是「有界」與「無界」的差別,不是要調的數字。
 

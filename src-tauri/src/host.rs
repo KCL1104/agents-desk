@@ -1,7 +1,7 @@
 //! Where a repository — and everything that runs against it — actually lives.
 //!
 //! The app runs *here*; a repository can live *somewhere else that can run
-//! commands*: a WSL distro today, an SSH host next. Everything AgentDesk does
+//! commands*: a WSL distro today, an SSH host next. Everything Marol does
 //! with an environment reduces to three acts — spawn a PTY, run a command and
 //! read its output, receive a hook callback — so a host is exactly the thing
 //! that wraps the first two. (The third degrades gracefully by design: status
@@ -40,7 +40,7 @@ pub enum Host {
     Wsl { distro: String },
     /// A host from the user's own `~/.ssh/config`, named by its alias there.
     /// The alias is the whole configuration: user, port, key, jump hosts —
-    /// AgentDesk invents no connection settings of its own.
+    /// Marol invents no connection settings of its own.
     Ssh { host: String },
 }
 
@@ -338,11 +338,11 @@ fn remote_command(
     cmd
 }
 
-/// Where this machine keeps its SSH control sockets: `~/.agentdesk/ssh/%C`,
+/// Where this machine keeps its SSH control sockets: `~/.marol/ssh/%C`,
 /// `%C` being ssh's own short hash of the connection — short, because a unix
 /// socket path has ~100 bytes to live in.
 pub fn ssh_control_path() -> Option<String> {
-    let dir = dirs::home_dir()?.join(".agentdesk").join("ssh");
+    let dir = dirs::home_dir()?.join(".marol").join("ssh");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir.join("%C").to_string_lossy().to_string())
 }
@@ -791,14 +791,14 @@ pub fn pty_env(env: &ShellEnv, extra: &[(String, String)]) -> Vec<(String, Strin
 mod tests {
     use super::*;
 
-    /// CI 守門的 WSL 半場:AGENTDESK_EXPECT_WSL_CLAUDE=1 表示某個 distro
+    /// CI 守門的 WSL 半場:MAROL_EXPECT_WSL_CLAUDE=1 表示某個 distro
     /// 裡真的裝了 claude —— 那 app 的整條真實路徑(wsl.exe -l -q 的
     /// UTF-16LE 列舉 → --shell-type login 的環境探測 → distro 內的 PATH
     /// 行走)就必須走得通。這正是使用者機器上 wsl:// 世界的每一步。
     #[test]
     fn a_promised_wsl_claude_is_reached_through_the_real_doorway() {
-        if std::env::var("AGENTDESK_EXPECT_WSL_CLAUDE").as_deref() != Ok("1") {
-            eprintln!("skip: AGENTDESK_EXPECT_WSL_CLAUDE != 1");
+        if std::env::var("MAROL_EXPECT_WSL_CLAUDE").as_deref() != Ok("1") {
+            eprintln!("skip: MAROL_EXPECT_WSL_CLAUDE != 1");
             return;
         }
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
@@ -933,11 +933,11 @@ prompt'");
             &["--continue".into(), "it's
 done".into()],
             Some("/home/me/wt"),
-            &[("AGENTDESK_SESSION_ID".into(), "s1".into())],
+            &[("MAROL_SESSION_ID".into(), "s1".into())],
         );
         assert_eq!(
             cmd,
-            r"cd '/home/me/wt' && exec env 'AGENTDESK_SESSION_ID=s1' 'claude' '--continue' 'it'\''s
+            r"cd '/home/me/wt' && exec env 'MAROL_SESSION_ID=s1' 'claude' '--continue' 'it'\''s
 done'"
         );
     }
@@ -977,7 +977,7 @@ prompt".into()],
             "claude",
             &["--plugin-dir".into(), "/mnt/c/p".into(), "多行\nprompt".into()],
             Some("/home/me/wt"),
-            &[("AGENTDESK_SESSION_ID".into(), "s1".into())],
+            &[("MAROL_SESSION_ID".into(), "s1".into())],
         );
         assert_eq!(prog, "wsl.exe");
         assert_eq!(
@@ -989,7 +989,7 @@ prompt".into()],
                 "/home/me/wt",
                 "-e",
                 "env",
-                "AGENTDESK_SESSION_ID=s1",
+                "MAROL_SESSION_ID=s1",
                 "claude",
                 "--plugin-dir",
                 "/mnt/c/p",
@@ -1018,8 +1018,8 @@ prompt".into()],
     #[test]
     fn a_windows_path_translates_to_its_mnt_mount() {
         assert_eq!(
-            win_path_for_wsl(r"C:\Users\me\AppData\AgentDesk\plugin"),
-            "/mnt/c/Users/me/AppData/AgentDesk/plugin"
+            win_path_for_wsl(r"C:\Users\me\AppData\Marol\plugin"),
+            "/mnt/c/Users/me/AppData/Marol/plugin"
         );
         assert_eq!(win_path_for_wsl("D:/code/x"), "/mnt/d/code/x");
         // Already-POSIX paths pass through — tests and shared filesystems.
@@ -1063,13 +1063,13 @@ prompt".into()],
             local: &env,
             env: &env,
         };
-        let extra = [("AGENTDESK_PROBE".to_string(), "set".to_string())];
+        let extra = [("MAROL_PROBE".to_string(), "set".to_string())];
         let with = hr
-            .run_ok_with_env("sh", &["-c", "printf %s \"${AGENTDESK_PROBE:-unset}\""], None, &extra)
+            .run_ok_with_env("sh", &["-c", "printf %s \"${MAROL_PROBE:-unset}\""], None, &extra)
             .unwrap();
         assert_eq!(with, "set");
         let without = hr
-            .run_ok("sh", &["-c", "printf %s \"${AGENTDESK_PROBE:-unset}\""], None)
+            .run_ok("sh", &["-c", "printf %s \"${MAROL_PROBE:-unset}\""], None)
             .unwrap();
         assert_eq!(without, "unset");
     }

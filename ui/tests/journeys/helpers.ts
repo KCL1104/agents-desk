@@ -23,8 +23,8 @@ export async function coldStart(page: Page): Promise<void> {
   await page.addInitScript(() => {
     if (sessionStorage.getItem('__rearmedOnce') === null) {
       sessionStorage.setItem('__rearmedOnce', '1');
-      localStorage.removeItem('agentdesk.welcomed');
-      localStorage.removeItem('agentdesk.coach');
+      localStorage.removeItem('marol.welcomed');
+      localStorage.removeItem('marol.coach');
     }
   });
   await page.goto('/');
@@ -77,7 +77,7 @@ export function attemptShape(
     seq,
     agent: 'claude',
     worktree_path: `/Users/test/worktrees/card-${seq}`,
-    branch: `agentdesk/card-${seq}`,
+    branch: `marol/card-${seq}`,
     base_sha: 'abcd1234deadbeef',
     mode: 'normal',
     outcome: null,

@@ -103,7 +103,7 @@ jobs:
       - name: Detection through the app's own resolution
         working-directory: src-tauri
         env:
-          AGENTDESK_EXPECT_CLAUDE: "1"
+          MAROL_EXPECT_CLAUDE: "1"
         run: cargo test promised_real_claude -- --nocapture
 
   # ---------------------------------------------------------------------------
@@ -148,5 +148,5 @@ jobs:
       - name: Detection through the real doorway
         working-directory: src-tauri
         env:
-          AGENTDESK_EXPECT_WSL_CLAUDE: "1"
+          MAROL_EXPECT_WSL_CLAUDE: "1"
         run: cargo test promised_wsl_claude -- --nocapture

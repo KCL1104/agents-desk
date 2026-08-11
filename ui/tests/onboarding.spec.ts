@@ -26,8 +26,8 @@ async function bootFresh(page: Page) {
   await page.addInitScript(() => {
     if (sessionStorage.getItem('__rearmedOnce') === null) {
       sessionStorage.setItem('__rearmedOnce', '1');
-      localStorage.removeItem('agentdesk.welcomed');
-      localStorage.removeItem('agentdesk.coach');
+      localStorage.removeItem('marol.welcomed');
+      localStorage.removeItem('marol.coach');
     }
   });
   await land(page);
@@ -47,7 +47,7 @@ test.describe('the first-run panel', () => {
     await bootFresh(page);
 
     const modal = page.locator('.modal');
-    await expect(modal).toContainText('歡迎使用 AgentDesk');
+    await expect(modal).toContainText('歡迎使用 Marol');
     // The detection report is the probe the app already ran, shown.
     await expect(page.getByTestId('welcome-claude')).toContainText('✓ 2.1.226');
     await expect(page.getByTestId('welcome-codex')).toContainText('找不到');
@@ -134,11 +134,11 @@ test.describe('the first-run panel', () => {
     await land(page);
     await page.getByRole('button', { name: '設定' }).click();
     await page.getByTestId('show-welcome').click();
-    await expect(page.locator('.modal')).toContainText('歡迎使用 AgentDesk');
+    await expect(page.locator('.modal')).toContainText('歡迎使用 Marol');
 
     // 重看不是重來:旗標留著,重新整理不會再被招呼。
     await page.locator('.modal button', { hasText: '關閉' }).click();
-    const flag = await page.evaluate(() => localStorage.getItem('agentdesk.welcomed'));
+    const flag = await page.evaluate(() => localStorage.getItem('marol.welcomed'));
     expect(flag).toBe('1');
     await page.reload();
     await expect(page.locator('.modal')).toHaveCount(0);
@@ -169,13 +169,13 @@ test.describe('the first-run panel', () => {
   test('the walkthrough can be replayed from the environment panel', async ({ page }) => {
     await page.addInitScript(installMock);
     await page.addInitScript(() =>
-      localStorage.setItem('agentdesk.coach', JSON.stringify({ attempt: true, finish: true })),
+      localStorage.setItem('marol.coach', JSON.stringify({ attempt: true, finish: true })),
     );
     await land(page);
     await page.getByRole('button', { name: '設定' }).click();
     await page.getByTestId('replay-coach').click();
     await expect(page.locator('.toast')).toContainText('重新教');
-    const marks = await page.evaluate(() => localStorage.getItem('agentdesk.coach'));
+    const marks = await page.evaluate(() => localStorage.getItem('marol.coach'));
     expect(marks).toBeNull();
   });
 
@@ -185,7 +185,7 @@ test.describe('the first-run panel', () => {
     await page.keyboard.press('ControlOrMeta+K');
     await page.getByTestId('palette-input').fill('歡迎');
     await page.getByTestId('pal-action-show-welcome').click();
-    await expect(page.locator('.modal')).toContainText('歡迎使用 AgentDesk');
+    await expect(page.locator('.modal')).toContainText('歡迎使用 Marol');
   });
 
   test('a desk already in use is never greeted', async ({ page }) => {
@@ -208,7 +208,7 @@ test.describe('the first-run panel', () => {
     // Re-armed after the mock installs — the mock pre-answers it, and a
     // pre-answered welcome would make this test prove nothing.
     await page.addInitScript(() => {
-      localStorage.removeItem('agentdesk.welcomed');
+      localStorage.removeItem('marol.welcomed');
     });
     await land(page);
 

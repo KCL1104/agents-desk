@@ -89,7 +89,7 @@ fn a_pty_session_reports_its_status_back_through_the_plugin() {
     }
 
     let rec = Arc::new(Recorder::default());
-    let data_dir = std::env::temp_dir().join(format!("agentdesk-hooktest-{}", std::process::id()));
+    let data_dir = std::env::temp_dir().join(format!("marol-hooktest-{}", std::process::id()));
     let cwd = data_dir.join("work");
     std::fs::create_dir_all(&cwd).unwrap();
 
@@ -114,8 +114,8 @@ fn a_pty_session_reports_its_status_back_through_the_plugin() {
         Some(&cwd.to_string_lossy().to_string()),
         &env,
         &[
-            ("AGENTDESK_SESSION_ID".to_string(), sid.to_string()),
-            ("AGENTDESK_HOOK_URL".to_string(), server.url()),
+            ("MAROL_SESSION_ID".to_string(), sid.to_string()),
+            ("MAROL_HOOK_URL".to_string(), server.url()),
         ],
         100,
         30,
@@ -191,7 +191,7 @@ fn the_listener_reads_both_hook_shapes() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let rec = Arc::new(Recorder::default());
-    let dir = std::env::temp_dir().join(format!("agentdesk-listener-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("marol-listener-{}", std::process::id()));
 
     let server = rt
         .block_on(hooks::start(&dir, rec.clone() as Arc<dyn HookHandler>))
@@ -216,7 +216,7 @@ fn the_listener_reads_both_hook_shapes() {
     // An `http` hook: identity in a header, payload in the body.
     post(
         format!("{path}?state=running"),
-        "X-AgentDesk-Session: sess-http\r\n".to_string(),
+        "X-Marol-Session: sess-http\r\n".to_string(),
         serde_json::json!({
             "hook_event_name": "PreToolUse",
             "tool_name": "Bash",
@@ -237,7 +237,7 @@ fn the_listener_reads_both_hook_shapes() {
     // or the agent would stall waiting to finish its write.
     post(
         format!("{path}?state=running"),
-        "X-AgentDesk-Session: sess-big\r\n".to_string(),
+        "X-Marol-Session: sess-big\r\n".to_string(),
         serde_json::json!({
             "tool_name": "Write",
             "tool_input": { "file_path": "/repo/big.txt", "content": "z".repeat(200_000) }

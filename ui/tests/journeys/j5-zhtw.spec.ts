@@ -36,7 +36,7 @@ const TITLE =
  * 中文系統的冷啟。
  *
  * helpers 的 coldStart 只重新武裝一次性表面；這裡多做一件事：把 mock
- * 預釘的 agentdesk.locale 也撤掉，讓語言走真正的偵測路徑（儲存選擇
+ * 預釘的 marol.locale 也撤掉，讓語言走真正的偵測路徑（儲存選擇
  * 優先，否則 navigator 是 zh* 就中文）—— i18n.spec 的 boot 同一份寫法。
  * 撤除只做一次（sentinel 守著）：reload 時 mock 會重釘 zh-TW，那正是
  * 「儲存選擇獲勝」的持久化語意，尾聲靠它證明中文活過重新整理。
@@ -48,9 +48,9 @@ async function coldStartZhSystem(page: Page): Promise<void> {
   await page.addInitScript(() => {
     if (sessionStorage.getItem('__j5FreshOnce') === null) {
       sessionStorage.setItem('__j5FreshOnce', '1');
-      localStorage.removeItem('agentdesk.welcomed');
-      localStorage.removeItem('agentdesk.coach');
-      localStorage.removeItem('agentdesk.locale');
+      localStorage.removeItem('marol.welcomed');
+      localStorage.removeItem('marol.coach');
+      localStorage.removeItem('marol.locale');
     }
     const opts = { configurable: true };
     Object.defineProperty(navigator, 'languages', { ...opts, get: () => ['zh-TW'] });
@@ -258,7 +258,7 @@ test('J5 · the zh-TW journey, end to end', async ({ page }) => {
       zh('mode.normal'),
     );
     await expect(page.getByTestId('attempt-prompt')).toHaveValue(
-      new RegExp(`AgentDesk 任務.*${TITLE}`, 's'),
+      new RegExp(`Marol 任務.*${TITLE}`, 's'),
     );
     // (a) 對話框自己拿了鍵盤：第一個控件持著焦點。
     await expect(page.getByTestId('attempt-agent')).toBeFocused();
@@ -435,7 +435,7 @@ test('J5 · the zh-TW journey, end to end', async ({ page }) => {
 
     // (c) 招呼過就不再招呼；語言活過重新整理 —— 分頁、CTA、判決全是中文。
     await expect(page.locator('.modal')).toHaveCount(0);
-    expect(await page.evaluate(() => localStorage.getItem('agentdesk.welcomed'))).toBe('1');
+    expect(await page.evaluate(() => localStorage.getItem('marol.welcomed'))).toBe('1');
     await expect(page.getByRole('tab', { name: zh('view.board') })).toBeVisible();
     await expect
       .poll(() => page.evaluate(() => document.documentElement.lang))

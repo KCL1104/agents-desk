@@ -17,9 +17,9 @@
 /// private file: if the key ever moves, these tests start skipping rather than
 /// start passing wrongly, and the skip says so on stderr.
 ///
-/// Set `AGENTDESK_TEST_ASSUME_CLAUDE=1` to override and run them anyway.
+/// Set `MAROL_TEST_ASSUME_CLAUDE=1` to override and run them anyway.
 pub fn claude_is_signed_in() -> bool {
-    if std::env::var("AGENTDESK_TEST_ASSUME_CLAUDE").is_ok_and(|v| !v.is_empty() && v != "0") {
+    if std::env::var("MAROL_TEST_ASSUME_CLAUDE").is_ok_and(|v| !v.is_empty() && v != "0") {
         return true;
     }
     let Some(home) = dirs::home_dir() else {
@@ -50,7 +50,7 @@ pub fn require_claude(found_on_path: bool) -> bool {
         eprintln!(
             "claude is installed but not signed in — it would sit on its welcome \
              screen and never start a session; skipping. \
-             Set AGENTDESK_TEST_ASSUME_CLAUDE=1 to run it anyway."
+             Set MAROL_TEST_ASSUME_CLAUDE=1 to run it anyway."
         );
         return false;
     }

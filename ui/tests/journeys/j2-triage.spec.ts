@@ -90,7 +90,7 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
           attemptShape(`k${n}`, 1, {
             session_id: `s9${n}`,
             worktree_path: `/Users/test/worktrees/k${n}-a1`,
-            branch: `agentdesk/k${n}`,
+            branch: `marol/k${n}`,
           }),
         ],
       });
@@ -353,7 +353,7 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
           '--- a/README.md',
           '+++ b/README.md',
           '@@ -1,2 +1,3 @@',
-          ' # AgentDesk',
+          ' # Marol',
           '+一句話說清楚這是什麼：一張給 agent 的桌子。',
         ].join('\n'),
       );
@@ -427,7 +427,7 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
     // ok toast 撞上 strict mode。
     const parkToast = page.locator('.toast.ok').filter({ hasText: '已暫停' });
     await expect(parkToast).toBeVisible();
-    await expect(parkToast).toContainText('agentdesk/k4');
+    await expect(parkToast).toContainText('marol/k4');
     await expect(page.locator('[data-testid^="confirm-"]')).toHaveCount(0);
 
     // (c) 卡片睡著了：parked 的邊、「已暫停」的狀態行、「繼續」候著；

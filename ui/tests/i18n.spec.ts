@@ -21,8 +21,8 @@ async function boot(page: Page, opts: { stored?: string; browserLang?: string } 
       // language every load and quietly undo the switch under test.
       if (!sessionStorage.getItem('__localePinned')) {
         sessionStorage.setItem('__localePinned', '1');
-        if (stored === undefined) localStorage.removeItem('agentdesk.locale');
-        else localStorage.setItem('agentdesk.locale', stored);
+        if (stored === undefined) localStorage.removeItem('marol.locale');
+        else localStorage.setItem('marol.locale', stored);
       }
       if (browserLang) {
         // Configurable, so a test that boots twice can redefine it instead of

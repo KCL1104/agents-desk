@@ -22,8 +22,8 @@ import {
 /** The written-down half of the product, one per interface language. The
  *  READMEs are the documentation — this is the app admitting where they are. */
 const DOCS_URL: Record<Locale, string> = {
-  en: 'https://github.com/KCL1104/agents-desk#readme',
-  'zh-TW': 'https://github.com/KCL1104/agents-desk/blob/main/README.zh-TW.md',
+  en: 'https://github.com/KCL1104/marol#readme',
+  'zh-TW': 'https://github.com/KCL1104/marol/blob/main/README.zh-TW.md',
 };
 
 type SectionId =

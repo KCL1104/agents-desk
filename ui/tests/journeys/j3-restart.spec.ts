@@ -49,7 +49,7 @@ function stoppedCard(n: number): MockTask {
     attempts: [
       attemptShape(`k${n}`, 1, {
         worktree_path: `/Users/test/worktrees/card-k${n}`,
-        branch: `agentdesk/card-k${n}`,
+        branch: `marol/card-k${n}`,
         session_id: `s9${n}`,
       }),
     ],
@@ -91,7 +91,7 @@ async function seedRestartDeskOnce(page: Page): Promise<void> {
         attempts: [
           attemptShape('k5', 1, {
             worktree_path: PARKED_PATH,
-            branch: 'agentdesk/card-k5',
+            branch: 'marol/card-k5',
             parked_at: 5000,
             session_id: null,
           }),
@@ -104,7 +104,7 @@ async function seedRestartDeskOnce(page: Page): Promise<void> {
         attempts: [
           attemptShape('k6', 1, {
             worktree_path: '/Users/test/worktrees/card-k6',
-            branch: 'agentdesk/card-k6',
+            branch: 'marol/card-k6',
             outcome: 'merged',
             frozen_diff: FROZEN_DIFF,
             session_id: null,

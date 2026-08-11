@@ -12,7 +12,7 @@ interface Props {
   onCreate: (cwd: string, agent: string, args: string[]) => void;
 }
 
-const RECENT_KEY = 'agentdesk.recentCwds';
+const RECENT_KEY = 'marol.recentCwds';
 
 function recents(): string[] {
   try {

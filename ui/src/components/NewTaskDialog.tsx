@@ -18,7 +18,7 @@ interface Props {
   goal?: string;
 }
 
-const RECENT_KEY = 'agentdesk.recentRepos';
+const RECENT_KEY = 'marol.recentRepos';
 
 function recents(): string[] {
   try {

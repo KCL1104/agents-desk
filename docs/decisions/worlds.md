@@ -22,7 +22,7 @@ WSL 與 SSH 支援今天是隱形的:唯一的入口是在 repo 欄手打 `wsl:/
 
 ### 核心判定:世界是「卡片的屬性」,不是「視窗的模式」
 
-VS Code 的整窗綁定是它單 workspace 模型的產物。AgentDesk 的看板**本來就多世界同桌**——本機卡、WSL 卡、SSH 卡各戴徽章排在一起,這是比 VS Code 好的地方,不是要修的地方。所以選擇器的語義是:
+VS Code 的整窗綁定是它單 workspace 模型的產物。Marol 的看板**本來就多世界同桌**——本機卡、WSL 卡、SSH 卡各戴徽章排在一起,這是比 VS Code 好的地方,不是要修的地方。所以選擇器的語義是:
 
 - **左下角的世界鈕 = 「新東西預設開在哪」+ 世界健康總覽**,不是全域過濾器。
 - 點開選單:本機 / WSL: 每個 distro / SSH: 每個別名,選了就記住(存 settings),鈕上顯示目前預設(如「⊕ WSL: Ubuntu」)。
@@ -46,7 +46,7 @@ VS Code 的整窗綁定是它單 workspace 模型的產物。AgentDesk 的看板
 - **不做全域世界切換**(上詳,會倒退)。
 - **不掃描 known_hosts 或發明 SSH 設定**。
 - **不在啟動時探測任何遠端**。
-- **不做 VS Code 式的「在遠端裝 server」**——AgentDesk 本來就不需要:一切經 `wsl.exe`/`ssh` 過境,遠端零安裝。
+- **不做 VS Code 式的「在遠端裝 server」**——Marol 本來就不需要:一切經 `wsl.exe`/`ssh` 過境,遠端零安裝。
 
 ## 成本
 

@@ -1,4 +1,4 @@
-//! Per-repository configuration: `.agentdesk/config.json`.
+//! Per-repository configuration: `.marol/config.json`.
 //!
 //! A fresh worktree is a checkout, not a workspace — no `node_modules`, no
 //! `.env`, nothing built. The agent can install its own dependencies, but it
@@ -8,9 +8,9 @@
 //!
 //! ```json
 //! {
-//!   "setup": "npm install && cp \"$AGENTDESK_ROOT_PATH/.env\" .env",
+//!   "setup": "npm install && cp \"$MAROL_ROOT_PATH/.env\" .env",
 //!   "run": [
-//!     { "name": "dev", "command": "npm run dev -- --port $AGENTDESK_PORT" }
+//!     { "name": "dev", "command": "npm run dev -- --port $MAROL_PORT" }
 //!   ],
 //!   "archive": "docker compose down"
 //! }
@@ -20,11 +20,11 @@
 //!   terminal, so what it prints is on the session's scrollback and a failure
 //!   is visible where the person is already looking.
 //! * `run` entries become buttons: each starts its own terminal in the
-//!   attempt's worktree, with a free port in `AGENTDESK_PORT`.
+//!   attempt's worktree, with a free port in `MAROL_PORT`.
 //! * `archive` runs just before the worktree is taken back — the place to
 //!   stop containers or return anything the setup borrowed.
 //!
-//! Every script sees `AGENTDESK_ROOT_PATH`: the repository the worktree was
+//! Every script sees `MAROL_ROOT_PATH`: the repository the worktree was
 //! opened from, which is where untracked files worth copying (`.env`) live.
 //!
 //! Scripts run through `sh -c`, so they are written exactly like a line in a
@@ -36,7 +36,17 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::path::Path;
 
-pub const FILE: &str = ".agentdesk/config.json";
+pub const FILE: &str = ".marol/config.json";
+
+/// The names a repository's config may wear, the one we write about first.
+///
+/// `.agentdesk/config.json` is still read, and not out of nostalgia: unlike
+/// everything else this app renamed, that file is not ours. It lives inside
+/// the person's repository, it is usually committed, and it is shared with
+/// collaborators who may not run this desk at all. Renaming our own things
+/// does not give us the right to break theirs, so the old name goes on
+/// working and nothing has to be edited on our account.
+pub const FILES: [&str; 2] = [FILE, ".agentdesk/config.json"];
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -75,13 +85,15 @@ pub fn parse(text: &str, what: &str) -> Result<RepoConfig> {
 /// The core reads non-local repositories through their host and calls
 /// `parse` itself; this is the local convenience the tests use.
 pub fn load(repo: &Path) -> Result<Option<RepoConfig>> {
-    let path = repo.join(FILE);
-    let text = match std::fs::read_to_string(&path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
-    };
-    Ok(Some(parse(&text, &path.display().to_string())?))
+    for name in FILES {
+        let path = repo.join(name);
+        match std::fs::read_to_string(&path) {
+            Ok(t) => return Ok(Some(parse(&t, &path.display().to_string())?)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -89,18 +101,49 @@ mod tests {
     use super::*;
 
     fn dir(name: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("agentdesk-cfg-{}-{name}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("marol-cfg-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(d.join(".agentdesk")).unwrap();
+        std::fs::create_dir_all(d.join(".marol")).unwrap();
         d
     }
 
     #[test]
     fn a_repo_without_a_config_is_simply_none() {
-        let d = std::env::temp_dir().join(format!("agentdesk-cfg-none-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("marol-cfg-none-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         assert_eq!(load(&d).unwrap(), None);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A repository that still says `.agentdesk/config.json` goes on working.
+    ///
+    /// This file is the one thing the rename touched that is not ours. It sits
+    /// inside the person's repository, it is usually committed, and their
+    /// colleagues may not run this desk at all. Our name changing is not a
+    /// reason for their setup script to stop running — and a setup that
+    /// silently stopped would present as "the worktree is mysteriously
+    /// broken", the exact confusion this file exists to remove.
+    #[test]
+    fn a_repository_still_using_the_old_config_name_is_read() {
+        let d = std::env::temp_dir().join(format!("marol-cfg-old-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join(".agentdesk")).unwrap();
+        std::fs::write(
+            d.join(".agentdesk/config.json"),
+            r#"{"setup": "npm install"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            load(&d).unwrap().unwrap().setup.as_deref(),
+            Some("npm install"),
+        );
+
+        // A repository carrying both is one that has been brought forward.
+        // The new name is the one it means.
+        std::fs::create_dir_all(d.join(".marol")).unwrap();
+        std::fs::write(d.join(".marol/config.json"), r#"{"setup": "pnpm i"}"#).unwrap();
+        assert_eq!(load(&d).unwrap().unwrap().setup.as_deref(), Some("pnpm i"));
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -111,7 +154,7 @@ mod tests {
             d.join(FILE),
             r#"{
               "setup": "npm install",
-              "run": [{ "name": "dev", "command": "npm run dev -- --port $AGENTDESK_PORT" }],
+              "run": [{ "name": "dev", "command": "npm run dev -- --port $MAROL_PORT" }],
               "archive": "docker compose down"
             }"#,
         )

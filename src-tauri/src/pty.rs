@@ -34,7 +34,7 @@ const READ_BUF: usize = 8 * 1024;
 /// **One server per session, never a shared one.** A tmux session inherits
 /// the environment of the *server*, not of the client that asked for it, so
 /// on a shared server every session after the first would be handed the
-/// first one's `AGENTDESK_SESSION_ID` — measured, not feared: the second
+/// first one's `MAROL_SESSION_ID` — measured, not feared: the second
 /// session read back the first session's id. Cards would light up for the
 /// wrong agent. A socket per session makes the environment right by
 /// construction rather than by hope, and costs one idle process each.
@@ -202,6 +202,22 @@ pub fn hold_alive(socket: &Socket) -> (String, Vec<String>) {
 /// orphan sweep would happily kill another's live agents, and the tests
 /// would do it to each other.
 pub fn hold_socket(desk: &str, session_id: &str) -> String {
+    format!("marol-{desk}-{session_id}")
+}
+
+/// The same socket, under the name this app used before it was called Marol.
+///
+/// Local sockets live in tmux's own shared directory, so their name has to
+/// say whose they are — which means the app's rename reaches them, unlike the
+/// remote ones, which sit in a directory of ours and are named for the desk
+/// alone.
+///
+/// This exists because a held agent is the one thing a rename cannot simply
+/// leave behind. Its server is answering on the old name; a `new-session -A`
+/// against the new one would not find it and would cheerfully start a *second*
+/// agent on the same worktree — the precise accident holding sessions was
+/// built to prevent, arranged by us.
+pub fn hold_socket_former(desk: &str, session_id: &str) -> String {
     format!("agentdesk-{desk}-{session_id}")
 }
 
@@ -216,7 +232,7 @@ pub const SOCKET_PATH_LIMIT: usize = 104;
 /// directory this process cannot see.
 ///
 /// Shorter than the local name, and not out of taste: see `SOCKET_PATH_LIMIT`.
-/// A 36-character session id already spends a third of it. The `agentdesk-`
+/// A 36-character session id already spends a third of it. The `marol-`
 /// the local name wears is what keeps it apart from the person's own sockets
 /// in tmux's shared directory; this directory belongs to us, so the prefix
 /// would be ten bytes of saying so twice.
@@ -241,8 +257,16 @@ pub fn hold_prefix(desk: &str, remote: bool) -> String {
     if remote {
         format!("{desk}-")
     } else {
-        format!("agentdesk-{desk}-")
+        format!("marol-{desk}-")
     }
+}
+
+/// Both prefixes a local socket of this desk may wear. The sweep reads a
+/// directory listing, and a leftover under the old name is exactly the kind
+/// of thing a sweep is for — it would otherwise be an agent nobody has a card
+/// for and nothing left alive can name.
+pub fn hold_prefixes(desk: &str) -> [String; 2] {
+    [hold_prefix(desk, false), format!("agentdesk-{desk}-")]
 }
 
 /// A short, stable tag for a desk, from wherever it keeps its data.
@@ -608,13 +632,13 @@ mod hold_tests {
     /// tests running at once would do it to each other.
     #[test]
     fn a_socket_belongs_to_one_desk_and_one_session() {
-        let a = hold_socket(&desk_tag("/home/me/.agentdesk"), "s7");
-        let b = hold_socket(&desk_tag("/home/me/.agentdesk-beta"), "s7");
+        let a = hold_socket(&desk_tag("/home/me/.marol"), "s7");
+        let b = hold_socket(&desk_tag("/home/me/.marol-beta"), "s7");
         assert_ne!(a, b);
-        assert!(a.starts_with("agentdesk-"));
+        assert!(a.starts_with("marol-"));
         assert!(a.ends_with("-s7"));
         // Stable across runs, or a restart would fail to find its own.
-        assert_eq!(desk_tag("/home/me/.agentdesk"), desk_tag("/home/me/.agentdesk"));
+        assert_eq!(desk_tag("/home/me/.marol"), desk_tag("/home/me/.marol"));
     }
 
     /// The line that starts or reattaches, and the two things about it that
@@ -629,7 +653,7 @@ mod hold_tests {
     #[test]
     fn the_attach_line_is_create_or_attach_and_hands_the_agent_its_own_flags() {
         let (prog, args) = hold_attach(
-            &Socket::Named("agentdesk-d-s1".to_string()),
+            &Socket::Named("marol-d-s1".to_string()),
             "/data/tmux.conf",
             Some("/wt/card-1"),
             "claude",
@@ -656,11 +680,11 @@ mod hold_tests {
     /// that is never coming back.
     #[test]
     fn ending_a_held_session_takes_its_server_with_it() {
-        let (prog, args) = hold_destroy(&Socket::Named("agentdesk-d-s1".to_string()));
+        let (prog, args) = hold_destroy(&Socket::Named("marol-d-s1".to_string()));
         assert_eq!(prog, "tmux");
         assert!(args.contains(&"kill-server".to_string()), "{args:?}");
         assert!(!args.contains(&"kill-session".to_string()));
-        assert!(args.contains(&"agentdesk-d-s1".to_string()), "wrong socket: {args:?}");
+        assert!(args.contains(&"marol-d-s1".to_string()), "wrong socket: {args:?}");
     }
 
     /// Which flag names the socket is the whole difference between a world
@@ -671,12 +695,12 @@ mod hold_tests {
     /// gone, and the sweep is then free to kill what it cannot see.
     #[test]
     fn every_command_names_the_socket_the_same_way() {
-        let named = Socket::Named("agentdesk-d-s1".to_string());
-        let path = Socket::Path("/home/me/.agentdesk/sockets/agentdesk-d-s1".to_string());
-        assert_eq!(named.args(), ["-L", "agentdesk-d-s1"]);
+        let named = Socket::Named("marol-d-s1".to_string());
+        let path = Socket::Path("/home/me/.marol/sockets/marol-d-s1".to_string());
+        assert_eq!(named.args(), ["-L", "marol-d-s1"]);
         assert_eq!(
             path.args(),
-            ["-S", "/home/me/.agentdesk/sockets/agentdesk-d-s1"]
+            ["-S", "/home/me/.marol/sockets/marol-d-s1"]
         );
         for sock in [&named, &path] {
             let head = sock.args();
@@ -704,7 +728,7 @@ mod hold_tests {
     /// sweep has to open each one to find out it is nothing.
     #[test]
     fn ending_a_session_in_another_world_takes_its_socket_file_too() {
-        let p = "/home/me/.agentdesk/s/1a2b-s1";
+        let p = "/home/me/.marol/s/1a2b-s1";
         let (prog, args) = hold_destroy(&Socket::Path(p.to_string()));
         assert_eq!(prog, "sh");
         let line = &args[1];
@@ -731,8 +755,8 @@ mod hold_tests {
         // one put this at 135 bytes, over the limit, where every session in
         // that world failed to start with nothing to read about it.
         let p = hold_socket_path(
-            "/tmp/agentdesk-4294967295",
-            &desk_tag("/Users/someone/Library/Application Support/agentdesk"),
+            "/tmp/marol-4294967295",
+            &desk_tag("/Users/someone/Library/Application Support/marol"),
             "550e8400-e29b-41d4-a716-446655440000",
         );
         assert!(p.len() < SOCKET_PATH_LIMIT, "{} bytes: {p}", p.len());
@@ -746,7 +770,7 @@ mod hold_tests {
         );
         assert!(hold_socket_path("/d", "aaaa", "s1").starts_with("/d/aaaa-"));
         assert_eq!(hold_prefix("aaaa", true), "aaaa-");
-        assert_eq!(hold_prefix("aaaa", false), "agentdesk-aaaa-");
+        assert_eq!(hold_prefix("aaaa", false), "marol-aaaa-");
     }
 
     /// The reason there is a socket per session at all, stated as a test so

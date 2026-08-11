@@ -134,8 +134,8 @@ the agents tmux is holding; it does not end them.
 
 pub fn tray_show(locale: Locale) -> &'static str {
     match locale {
-        Locale::En => "Open AgentDesk",
-        Locale::ZhTw => "打開 AgentDesk",
+        Locale::En => "Open Marol",
+        Locale::ZhTw => "打開 Marol",
     }
 }
 
@@ -165,11 +165,11 @@ pub fn tray_title(waiting: usize) -> String {
 /// whole message there, and it says it in words rather than a glyph.
 pub fn tray_tooltip(locale: Locale, waiting: usize) -> String {
     if waiting == 0 {
-        return "AgentDesk".to_string();
+        return "Marol".to_string();
     }
     match locale {
-        Locale::En => format!("AgentDesk: {waiting} waiting on you"),
-        Locale::ZhTw => format!("AgentDesk：{waiting} 個等你"),
+        Locale::En => format!("Marol: {waiting} waiting on you"),
+        Locale::ZhTw => format!("Marol：{waiting} 個等你"),
     }
 }
 
@@ -209,9 +209,9 @@ mod tests {
         // The tooltip carries the whole message on Windows, where there is
         // no label beside the icon at all, so it never goes empty.
         for locale in [Locale::En, Locale::ZhTw] {
-            assert_eq!(tray_tooltip(locale, 0), "AgentDesk");
+            assert_eq!(tray_tooltip(locale, 0), "Marol");
             assert!(tray_tooltip(locale, 3).contains('3'));
-            assert!(tray_tooltip(locale, 3).contains("AgentDesk"));
+            assert!(tray_tooltip(locale, 3).contains("Marol"));
         }
         // Two languages, two menus. A tray built once in English and never
         // rebuilt is the failure this pins.

@@ -137,7 +137,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get install -y openssh-server
-          echo "AGENTDESK_SSH_TEST=1" >> "$GITHUB_ENV"
+          echo "MAROL_SSH_TEST=1" >> "$GITHUB_ENV"
 
       # The crate's default features include `custom-protocol`, which embeds
       # the frontend at compile time. Without ../ui/dist present, tauri-build

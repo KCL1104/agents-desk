@@ -86,7 +86,7 @@ test.describe('README media', () => {
       const page = await mediaPage(browser, locale, { width: 1500, height: 640 }, 1);
       // Two ad-hoc sessions through the real dialog — selectors are
       // locale-free (classes, not names).
-      for (const cwd of ['/Users/dev/agents-desk', '/Users/dev/webapp']) {
+      for (const cwd of ['/Users/dev/marol', '/Users/dev/webapp']) {
         await page.locator('.sidebar-head button.icon').click();
         await page.locator('.modal input.mono').first().fill(cwd);
         await page.locator('.modal button.primary').click();

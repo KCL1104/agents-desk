@@ -127,7 +127,7 @@ pub struct SessionMeta {
     /// A message is queued to go in when this turn ends. Transient, like
     /// the PTY it waits on — never stored, false on every restore.
     pub has_followup: bool,
-    /// The `$AGENTDESK_PORT` a run script was handed, when the app can
+    /// The `$MAROL_PORT` a run script was handed, when the app can
     /// reach it (local and WSL; an SSH host's port lives on the remote).
     /// Transient like the followup flag: the server dies with the PTY, and
     /// a persisted port would be a column that lies after every restart.
@@ -380,7 +380,7 @@ fn parse_claude_version(s: &str) -> Option<(u64, u64, u64)> {
 struct SetupWrap {
     script: String,
     /// The repository the worktree was opened from — where untracked files
-    /// worth copying (`.env`) live. Exposed as `AGENTDESK_ROOT_PATH`.
+    /// worth copying (`.env`) live. Exposed as `MAROL_ROOT_PATH`.
     root_path: String,
 }
 
@@ -401,7 +401,7 @@ fn ensure_worktree_relative(path: &str) -> Result<()> {
     Ok(())
 }
 
-/// A port nothing is listening on right now, for `AGENTDESK_PORT`.
+/// A port nothing is listening on right now, for `MAROL_PORT`.
 ///
 /// Asked of the kernel rather than counted up from a base, so two attempts'
 /// dev servers never fight over 3000. The listener is dropped before the
@@ -433,6 +433,7 @@ fn run_archive(hr: &HostRef, script: &str, worktree: &str, root: &str) {
             c.args(["-c", script])
                 .current_dir(worktree)
                 .envs(&hr.env.vars)
+                .env("MAROL_ROOT_PATH", root)
                 .env("AGENTDESK_ROOT_PATH", root);
             c
         }
@@ -441,7 +442,7 @@ fn run_archive(hr: &HostRef, script: &str, worktree: &str, root: &str) {
         _ => {
             let envs = host::pty_env(
                 hr.env,
-                &[("AGENTDESK_ROOT_PATH".to_string(), root.to_string())],
+                &under_both_names(vec![("MAROL_ROOT_PATH".to_string(), root.to_string())]),
             );
             let (outer, args, _) = hr.host.wrap(
                 "sh",
@@ -895,7 +896,7 @@ pub struct HostEnv {
     pub host: Host,
     pub env: ShellEnv,
     pub claude_version: Option<(u64, u64, u64)>,
-    /// `~/.agentdesk/worktrees` *inside the host* — a worktree lives in the
+    /// `~/.marol/worktrees` *inside the host* — a worktree lives in the
     /// same filesystem as its repository, never across a boundary.
     pub worktree_root: String,
     /// Where this host's claude finds the status plugin: the app's own dir
@@ -1202,7 +1203,7 @@ impl Core {
                         self.remember_tunnel(host, remote_port);
                         let url =
                             format!("http://127.0.0.1:{remote_port}/h/{}", server.token);
-                        let dir = format!("{home}/.agentdesk/plugin");
+                        let dir = format!("{home}/.marol/plugin");
                         for (rel, contents) in hooks::plugin_files(&url) {
                             if let Err(e) = hr.write_file(&format!("{dir}/{rel}"), &contents) {
                                 eprintln!("[core] provisioning hooks on `{host}` failed: {e:#}");
@@ -1217,7 +1218,7 @@ impl Core {
                     host: h.clone(),
                     env,
                     claude_version,
-                    worktree_root: format!("{home}/.agentdesk/worktrees"),
+                    worktree_root: format!("{home}/.marol/worktrees"),
                     hook_plugin_dir,
                     hold,
                 }
@@ -1615,17 +1616,13 @@ impl Core {
         // The repository's own word on how a worktree becomes runnable. A
         // malformed file fails the start here, in the dialog, rather than
         // producing a worktree that is mysteriously not set up.
-        let config_path = he.host.join(&loc.path, config::FILE);
-        let setup = he
-            .hr(&self.env)
-            .read_to_string(&config_path)?
-            .map(|text| config::parse(&text, &config_path))
-            .transpose()?
+        let setup = self
+            .repo_config(&he, &loc.path)?
             .unwrap_or_default()
             .setup
             .map(|script| SetupWrap {
                 script,
-                // The path scripts see is the host's own: `$AGENTDESK_ROOT_PATH`
+                // The path scripts see is the host's own: `$MAROL_ROOT_PATH`
                 // is for `cp`, and `cp` runs inside.
                 root_path: loc.path.clone(),
             });
@@ -1936,11 +1933,7 @@ impl Core {
             // exists — the place to stop containers or give back whatever
             // setup borrowed.
             if hr.is_dir(&wt_loc.path) {
-                let config_path = he.host.join(&repo_loc.path, config::FILE);
-                match hr
-                    .read_to_string(&config_path)
-                    .and_then(|t| t.map(|t| config::parse(&t, &config_path)).transpose())
-                {
+                match self.repo_config(&he, &repo_loc.path) {
                     Ok(Some(cfg)) => {
                         if let Some(script) = cfg.archive {
                             run_archive(&hr, &script, &wt_loc.path, &repo_loc.path);
@@ -2038,17 +2031,28 @@ impl Core {
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         let task = self.task(&attempt.task_id)?;
         let (loc, he) = self.located(&task.repo_path)?;
-        let config_path = he.host.join(&loc.path, config::FILE);
-        Ok(he
-            .hr(&self.env)
-            .read_to_string(&config_path)?
-            .map(|t| config::parse(&t, &config_path))
-            .transpose()?
+        Ok(self
+            .repo_config(&he, &loc.path)?
             .unwrap_or_default()
             .run
             .into_iter()
             .map(|r| r.name)
             .collect())
+    }
+
+    /// The repository's own word on how a worktree becomes runnable, under
+    /// whichever of its two names it wears — see `config::FILES`. Reads
+    /// through the host, so a `wsl://` or `ssh://` repository answers the same
+    /// way a local one does.
+    fn repo_config(&self, he: &HostEnv, repo: &str) -> Result<Option<config::RepoConfig>> {
+        let hr = he.hr(&self.env);
+        for name in config::FILES {
+            let path = he.host.join(repo, name);
+            if let Some(text) = hr.read_to_string(&path)? {
+                return Ok(Some(config::parse(&text, &path)?));
+            }
+        }
+        Ok(None)
     }
 
     /// Start one of the repository's run scripts in the attempt's worktree.
@@ -2057,7 +2061,7 @@ impl Core {
     /// thing to watch, and watching is what this app does. The session is
     /// ad-hoc on purpose: it has no lifecycle and takes no slot, because the
     /// quota rations agents (attention), and a dev server asks for none.
-    /// `AGENTDESK_PORT` carries a port nothing else is on, so two attempts'
+    /// `MAROL_PORT` carries a port nothing else is on, so two attempts'
     /// servers never fight over 3000.
     pub fn run_script(
         &self,
@@ -2132,10 +2136,10 @@ impl Core {
             transcript_path: None,
         };
 
-        let script_env = [
-            ("AGENTDESK_PORT".to_string(), port.to_string()),
-            ("AGENTDESK_ROOT_PATH".to_string(), repo_loc.path.clone()),
-        ];
+        let script_env = under_both_names(vec![
+            ("MAROL_PORT".to_string(), port.to_string()),
+            ("MAROL_ROOT_PATH".to_string(), repo_loc.path.clone()),
+        ]);
         let (program, args, outer_cwd, outer_env): (String, Vec<String>, Option<String>, Vec<(String, String)>) =
             match &he.host {
                 Host::Local => (
@@ -2254,10 +2258,10 @@ impl Core {
         // The same variable the scripts see, because the same need exists:
         // the repository the worktree was opened from is where untracked
         // things worth reaching (.env) live.
-        let shell_env = [(
-            "AGENTDESK_ROOT_PATH".to_string(),
+        let shell_env = under_both_names(vec![(
+            "MAROL_ROOT_PATH".to_string(),
             repo_loc.path.clone(),
-        )];
+        )]);
         let (program, args, outer_cwd, outer_env): (
             String,
             Vec<String>,
@@ -2641,7 +2645,7 @@ impl Core {
                             .head_of(&he.hr(&self.env), &loc.path, &task.base_branch)
                     })
                     .unwrap_or_default();
-                (format!("agentdesk/{slug}-{seq}"), sha)
+                (format!("marol/{slug}-{seq}"), sha)
             }
         };
         Ok(prompt::render(
@@ -2813,7 +2817,7 @@ impl Core {
         let task = self.task(&attempt.task_id)?;
 
         let body = format!(
-            "AgentDesk attempt #{} ({}), from `{}` @ {}.\n\n---\n\n{}",
+            "Marol attempt #{} ({}), from `{}` @ {}.\n\n---\n\n{}",
             attempt.seq,
             attempt.agent,
             task.base_branch,
@@ -3015,12 +3019,12 @@ impl Core {
         // identity is per-launch.
         let plugin_dir = he.hook_plugin_dir.clone();
         if plugin_dir.is_some() {
-            session_env.push(("AGENTDESK_SESSION_ID".to_string(), id.to_string()));
+            session_env.push(("MAROL_SESSION_ID".to_string(), id.to_string()));
         }
 
         // Cross-session messaging addresses a session by name, and left to
         // itself the CLI derives one from the worktree's directory — a slug
-        // with a counter. AgentDesk knows the card, so a claude session is
+        // with a counter. Marol knows the card, so a claude session is
         // named what its own list calls it: 「修好登入 #1」, reachable by the
         // name a person would actually say. Version-gated on the claude that
         // will actually run — the host's — because an older CLI refuses to
@@ -3040,7 +3044,10 @@ impl Core {
         let posix = cfg!(unix) || !matches!(he.host, Host::Local);
         let (program, args) = match setup {
             Some(wrap) if posix => {
-                session_env.push(("AGENTDESK_ROOT_PATH".to_string(), wrap.root_path.clone()));
+                session_env.extend(under_both_names(vec![(
+                "MAROL_ROOT_PATH".to_string(),
+                wrap.root_path.clone(),
+            )]));
                 // `set -e` so a failed setup stops in front of the person,
                 // in the terminal, instead of starting an agent in a
                 // half-made workspace.
@@ -3353,8 +3360,13 @@ impl Core {
             if meta.status != Status::Saved || !is_local(&meta.cwd) {
                 continue;
             }
-            let sock = pty::Socket::Named(pty::hold_socket(&tag, id));
-            if tmux_answers(&tmux, &sock) {
+            // Both names: a session held across the app's rename is running
+            // under the old one, and a board that called it closed would be
+            // the very lie this pass exists to stop.
+            let held = [pty::hold_socket(&tag, id), pty::hold_socket_former(&tag, id)]
+                .into_iter()
+                .any(|n| tmux_answers(&tmux, &pty::Socket::Named(n)));
+            if held {
                 meta.status = Status::Detached;
             }
         }
@@ -3390,7 +3402,7 @@ impl Core {
         let world = he.hold.as_ref()?;
         let (socket, socket_file) = match &world.socket_dir {
             None => {
-                let name = pty::hold_socket(&self.desk_tag(), session_id);
+                let name = self.local_hold_socket(session_id);
                 let file =
                     tmux_socket_dir().map(|d| d.join(&name).to_string_lossy().to_string());
                 (pty::Socket::Named(name), file)
@@ -3418,6 +3430,35 @@ impl Core {
             conf: world.conf.clone(),
             socket_file,
         })
+    }
+
+    /// Which local socket holds this session — the new name, unless a server
+    /// under the old one is still answering for it.
+    ///
+    /// A held agent is the one thing the app's rename cannot leave behind. Its
+    /// tmux is bound to `agentdesk-…`, and asking `new-session -A` for
+    /// `marol-…` would not reattach to it: it would start a second agent in
+    /// the same worktree, which is exactly the accident holding sessions was
+    /// built to prevent.
+    ///
+    /// Guarded by the socket file's existence, so this is a `stat` in the
+    /// common case and asks tmux only when there is genuinely something there.
+    /// Once the last session from before the rename is closed, no file is left
+    /// and the question stops being asked at all.
+    fn local_hold_socket(&self, session_id: &str) -> String {
+        let tag = self.desk_tag();
+        let name = pty::hold_socket(&tag, session_id);
+        let (Some(dir), Some(tmux)) = (tmux_socket_dir(), self.env.which("tmux")) else {
+            return name;
+        };
+        let former = pty::hold_socket_former(&tag, session_id);
+        if dir.join(&former).exists()
+            && tmux_answers(&tmux, &pty::Socket::Named(former.clone()))
+        {
+            eprintln!("[core] reattaching to {former}, held from before the rename");
+            return former;
+        }
+        name
     }
 
     /// This desk's tag, from where it keeps its data — so two installs on
@@ -3540,18 +3581,26 @@ impl Core {
     fn sweep_held_orphans(&self) {
         let Some(tmux) = self.env.which("tmux") else { return };
         let Some(dir) = tmux_socket_dir() else { return };
-        let prefix = pty::hold_prefix(&self.desk_tag(), false);
+        // Both prefixes, and every card claims both of its possible names: a
+        // socket left over from before the rename is still this desk's to
+        // sweep, and a card still holding one is still this desk's to spare.
+        let prefixes = pty::hold_prefixes(&self.desk_tag());
         let known: std::collections::HashSet<String> = self
             .sessions
             .lock()
             .unwrap()
             .keys()
-            .map(|id| pty::hold_socket(&self.desk_tag(), id))
+            .flat_map(|id| {
+                [
+                    pty::hold_socket(&self.desk_tag(), id),
+                    pty::hold_socket_former(&self.desk_tag(), id),
+                ]
+            })
             .collect();
         let Ok(entries) = std::fs::read_dir(&dir) else { return };
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
-            if !name.starts_with(&prefix) || known.contains(&name) {
+            if !prefixes.iter().any(|p| name.starts_with(p)) || known.contains(&name) {
                 continue;
             }
             let sock = pty::Socket::Named(name.clone());
@@ -4167,11 +4216,11 @@ mod tests {
 
     /// CI 守門的第二半:找到的 claude 要真的答得出 `--version`,而且版本
     /// 字串解析得出來 ——「偵測到」不是檔案存在,是問得到話。跟著
-    /// shell_env 的守門測試一起,由 AGENTDESK_EXPECT_CLAUDE=1 啟用。
+    /// shell_env 的守門測試一起,由 MAROL_EXPECT_CLAUDE=1 啟用。
     #[test]
     fn a_promised_real_claude_answers_the_version_probe() {
-        if std::env::var("AGENTDESK_EXPECT_CLAUDE").as_deref() != Ok("1") {
-            eprintln!("skip: AGENTDESK_EXPECT_CLAUDE != 1");
+        if std::env::var("MAROL_EXPECT_CLAUDE").as_deref() != Ok("1") {
+            eprintln!("skip: MAROL_EXPECT_CLAUDE != 1");
             return;
         }
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
@@ -4192,6 +4241,45 @@ mod tests {
     /// the *remote* side and two laptops reaching one server would otherwise
     /// ask it for the same one — the second silently getting no tunnel. And
     /// what worked last time has to win over what would be derived today, or
+    /// A script written against the old variable names still gets its values.
+    ///
+    /// `$MAROL_ROOT_PATH` and `$MAROL_PORT` are not internal plumbing: they
+    /// are read by shell lines the *person* wrote, in a config file inside
+    /// their own repository. This app deciding to change its name is not a
+    /// reason for `cp "$AGENTDESK_ROOT_PATH/.env" .env` to start copying from
+    /// nowhere — and a setup script that silently stopped working would look
+    /// exactly like a worktree that is mysteriously broken.
+    #[test]
+    fn scripts_written_against_the_old_variable_names_still_get_their_values() {
+        let vars = under_both_names(vec![
+            ("MAROL_PORT".to_string(), "5173".to_string()),
+            ("MAROL_ROOT_PATH".to_string(), "/repo".to_string()),
+        ]);
+        let get = |k: &str| {
+            vars.iter()
+                .find(|(n, _)| n == k)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_else(|| panic!("{k} is not set: {vars:?}"))
+        };
+        // Both names, the same value: the two name one thing, so a repository
+        // half-brought-forward reads the same either way.
+        assert_eq!(get("MAROL_PORT"), "5173");
+        assert_eq!(get("AGENTDESK_PORT"), "5173");
+        assert_eq!(get("MAROL_ROOT_PATH"), "/repo");
+        assert_eq!(get("AGENTDESK_ROOT_PATH"), "/repo");
+
+        // The new name is set last, so it wins wherever a later entry does —
+        // which is how every one of these lists is applied.
+        let names: Vec<&str> = vars.iter().map(|(k, _)| k.as_str()).collect();
+        let pos = |k: &str| names.iter().position(|n| *n == k).unwrap();
+        assert!(pos("MAROL_PORT") > pos("AGENTDESK_PORT"), "{names:?}");
+
+        // Nothing else is doubled. This is a compatibility shim for our own
+        // prefix, not a rule about environments in general.
+        let plain = under_both_names(vec![("PATH".to_string(), "/bin".to_string())]);
+        assert_eq!(plain.len(), 1, "{plain:?}");
+    }
+
     /// remembering it was pointless.
     #[test]
     fn a_hosts_tunnel_port_holds_still_across_runs_but_not_across_machines() {
@@ -4356,11 +4444,11 @@ mod tests {
             "claude",
             Vec::new(),
             Some("/data/plugin"),
-            Some("[AgentDesk 任務] 修好登入\n\n多行的 prompt".into()),
+            Some("[Marol 任務] 修好登入\n\n多行的 prompt".into()),
         );
         assert_eq!(args[0], "--plugin-dir");
         assert_eq!(args[1], "/data/plugin");
-        assert!(args[2].starts_with("[AgentDesk"));
+        assert!(args[2].starts_with("[Marol"));
         assert_eq!(args.len(), 3);
     }
 
@@ -4413,6 +4501,30 @@ mod tests {
     }
 }
 
+/// Every `MAROL_*` variable, set under its old spelling too.
+///
+/// These are not internal plumbing: `$MAROL_ROOT_PATH` and `$MAROL_PORT` are
+/// read by shell lines the *person* wrote, in a config file that lives inside
+/// their own repository and is usually committed. This app deciding to change
+/// its name is not a reason for `cp "$AGENTDESK_ROOT_PATH/.env" .env` to stop
+/// working — a setup script that silently stopped copying would show up as
+/// "the worktree is mysteriously broken", which is the exact failure the
+/// config file was added to prevent.
+///
+/// Both are set rather than one translated, because a repository may well
+/// have been edited already: the two names name the same thing, so a script
+/// using either gets the same answer.
+fn under_both_names(vars: Vec<(String, String)>) -> Vec<(String, String)> {
+    let mut out = Vec::with_capacity(vars.len() * 2);
+    for (k, v) in vars {
+        if let Some(rest) = k.strip_prefix("MAROL_") {
+            out.push((format!("AGENTDESK_{rest}"), v.clone()));
+        }
+        out.push((k, v));
+    }
+    out
+}
+
 /// The derivation behind `Core::tunnel_ports`, kept apart from the disk so it
 /// can be asked the questions that matter without one.
 fn tunnel_ports(host: &str, machine: &str, remembered: Option<u16>) -> Vec<u16> {
@@ -4445,7 +4557,7 @@ fn world_hold(hr: &HostRef, home: &str) -> Option<WorldHold> {
     }
     // The config is a regular file and can live anywhere; the home is where it
     // belongs, beside everything else this app leaves in a world.
-    let conf = format!("{home}/.agentdesk/tmux.conf");
+    let conf = format!("{home}/.marol/tmux.conf");
     if let Err(e) = hr.write_file(&conf, pty::HOLD_CONF) {
         eprintln!("[core] could not write the tmux config into this world: {e:#}");
         return None;
@@ -4468,7 +4580,18 @@ fn world_hold(hr: &HostRef, home: &str) -> Option<WorldHold> {
         eprintln!("[core] this world would not say who we are there; nothing will be held");
         return None;
     };
-    let socket_dir = format!("/tmp/agentdesk-{uid}");
+    // Out here the app's name is on the *directory*, not on the sockets — they
+    // are named for the desk alone, because this directory is already ours. So
+    // a world still holding sessions from before the rename goes on using the
+    // directory they are in, and moves only once it is empty. Unlinking a live
+    // agent's socket would take away the only name it has.
+    let former = format!("/tmp/agentdesk-{uid}");
+    let socket_dir = if hr.list_dir(&former).is_empty() {
+        format!("/tmp/marol-{uid}")
+    } else {
+        eprintln!("[core] this world still holds sessions in {former}; staying there");
+        former
+    };
     if let Err(e) = hr.mkdir_p(&socket_dir) {
         eprintln!("[core] could not make a socket directory in this world: {e:#}");
         return None;

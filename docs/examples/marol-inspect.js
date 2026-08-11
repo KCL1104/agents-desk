@@ -1,18 +1,18 @@
 /**
- * AgentDesk inspect — the repo's half of the preview's one channel.
+ * Marol inspect — the repo's half of the preview's one channel.
  *
  * Load this in your dev server's page (dev builds only), and Alt+click
- * turns any element into a message the AgentDesk preview panel can hear:
+ * turns any element into a message the Marol preview panel can hear:
  * which component, which file, which line. The desk composes it into a
  * sentence for the agent; sending stays a human click.
  *
  * Vite:   put this file somewhere in your app and, in dev only:
- *           if (import.meta.env.DEV) import('./agentdesk-inspect.js');
- * Plain:  <script src="/agentdesk-inspect.js"></script> in the dev html.
+ *           if (import.meta.env.DEV) import('./marol-inspect.js');
+ * Plain:  <script src="/marol-inspect.js"></script> in the dev html.
  *
  * Nothing here runs in production builds unless you ship it there, and
- * AgentDesk never injects it for you — that is the point. The desk only
- * listens for `agentdesk:pick` from the page it is previewing.
+ * Marol never injects it for you — that is the point. The desk only
+ * listens for `marol:pick` from the page it is previewing.
  */
 (() => {
   /** React dev builds hang the source on the fiber; Vue on the vnode. */
@@ -51,10 +51,10 @@
       if (!picked) return;
       e.preventDefault();
       e.stopPropagation();
-      // The parent is the AgentDesk preview panel when there is one, and
+      // The parent is the Marol preview panel when there is one, and
       // nothing otherwise — '*' is fine because the payload holds no secret
       // and the desk verifies the *sender's* origin on its side.
-      window.parent.postMessage({ type: 'agentdesk:pick', ...picked }, '*');
+      window.parent.postMessage({ type: 'marol:pick', ...picked }, '*');
     },
     true,
   );

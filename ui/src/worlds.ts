@@ -8,7 +8,7 @@ import type { TFn } from './i18n';
  */
 export type World = string;
 
-const KEY = 'agentdesk.world';
+const KEY = 'marol.world';
 
 /** The default world for new cards and sessions — a per-machine
     preference, like locale and theme. */
@@ -21,7 +21,7 @@ export function rememberWorld(world: World) {
   else localStorage.setItem(KEY, world);
   // Dialogs read the default when they open; the chip needs to hear a
   // change made elsewhere — the theme event's precedent.
-  window.dispatchEvent(new CustomEvent('agentdesk:world', { detail: world }));
+  window.dispatchEvent(new CustomEvent('marol:world', { detail: world }));
 }
 
 export function worldLabel(world: World, t: TFn): string {

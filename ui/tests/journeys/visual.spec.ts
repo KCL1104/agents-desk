@@ -67,7 +67,7 @@ test('V · six key screens, one continuous line', async ({ page }) => {
 
     // (c) 歡迎面板端出探測的發現與三點軌 —— 快門前先證實內容都到齊。
     const modal = page.locator('.modal');
-    await expect(modal).toContainText('歡迎使用 AgentDesk');
+    await expect(modal).toContainText('歡迎使用 Marol');
     await expect(page.getByTestId('welcome-claude')).toContainText('✓ 2.1.226');
     await expect(page.getByTestId('welcome-codex')).toContainText('找不到');
     await expect(page.locator('.welcome-rail-row')).toHaveCount(3);
@@ -123,7 +123,7 @@ test('V · six key screens, one continuous line', async ({ page }) => {
     // 都現讀 localStorage,所以中途改旗標就生效。
     await page.evaluate(() =>
       localStorage.setItem(
-        'agentdesk.coach',
+        'marol.coach',
         JSON.stringify({ attempt: true, mode: true, finish: true, terminal: true, waiting: true }),
       ),
     );
@@ -181,7 +181,7 @@ test('V · six key screens, one continuous line', async ({ page }) => {
         seq: 1,
         agent: 'claude',
         worktree_path: `/Users/test/worktrees/${taskId}`,
-        branch: `agentdesk/${taskId}-1`,
+        branch: `marol/${taskId}-1`,
         base_sha: 'abcd1234deadbeef',
         mode: 'normal',
         outcome: null as string | null,

@@ -1,5 +1,5 @@
 ---
-name: AgentDesk
+name: Marol
 description: "The Ultramarine Desk — a warm near-black ground, one committed jewel, and color spent only on what is happening"
 colors:
   blooded-ink: "#161214"
@@ -86,7 +86,7 @@ components:
     width: "520px"
 ---
 
-# Design System: AgentDesk
+# Design System: Marol
 
 ## Overview
 

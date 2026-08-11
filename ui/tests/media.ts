@@ -134,17 +134,17 @@ export const LINES: Record<MediaLocale, Record<string, string>> = {
 /** Pin the locale (and the drawer width) before the app boots. */
 export function localeScript(locale: MediaLocale, drawer = 600): string {
   return `
-    localStorage.setItem('agentdesk.locale', ${JSON.stringify(locale)});
-    localStorage.setItem('agentdesk.inspectorWidth', '${drawer}');
+    localStorage.setItem('marol.locale', ${JSON.stringify(locale)});
+    localStorage.setItem('marol.inspectorWidth', '${drawer}');
   `;
 }
 
 /** Welcome answered and every coach mark spent. Each has its own frame;
     turning up uninvited in another one is noise. */
 export const QUIET_FIRST_RUN = `
-  localStorage.setItem('agentdesk.welcomed', '1');
+  localStorage.setItem('marol.welcomed', '1');
   localStorage.setItem(
-    'agentdesk.coach',
+    'marol.coach',
     JSON.stringify({ attempt: true, mode: true, finish: true, terminal: true, waiting: true }),
   );
 `;
@@ -192,7 +192,7 @@ export async function seedWorld(page: Page, locale: MediaLocale, k1Status: strin
         seq: 1,
         agent: 'claude',
         worktree_path: `/Users/dev/worktrees/${taskId}`,
-        branch: `agentdesk/${taskId}-1`,
+        branch: `marol/${taskId}-1`,
         base_sha: 'abcd1234deadbeef',
         mode: 'normal',
         outcome: null,

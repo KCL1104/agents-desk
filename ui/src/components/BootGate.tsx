@@ -5,7 +5,7 @@ export function BootGate({ boot, onRetry }: { boot: BootStatus | null; onRetry: 
   const t = useT();
   return (
     <div className="boot">
-      <h1>AgentDesk</h1>
+      <h1>Marol</h1>
       {boot?.error ? (
         <>
           <p className="boot-error">{boot.error}</p>

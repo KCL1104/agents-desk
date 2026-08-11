@@ -1,4 +1,4 @@
-# AgentDesk
+# Marol
 
 **English** · [繁體中文](README.zh-TW.md)
 
@@ -156,7 +156,7 @@ pixel for pixel, beside a plain test runner.
   open attempts superseded, with their diffs frozen so the two agents' work
   can still be compared
 - **Workspace scripts**: a fresh worktree is a checkout, not a workspace.
-  `.agentdesk/config.json` says how it becomes one (see below)
+  `.marol/config.json` says how it becomes one (see below)
 - **Permission modes**: per attempt, Claude Code can ask as usual, auto-accept
   file edits (`--permission-mode acceptEdits`), or run unprompted
   (`--dangerously-skip-permissions`). The worktree is the safety argument, so
@@ -168,17 +168,17 @@ pixel for pixel, beside a plain test runner.
   and resumed is the CLI underneath, so prompt delivery, status hooks and
   permission modes all behave by what actually ran
 - **Cross-session messaging, by card name**: Claude Code v2.1.224+ lets your
-  sessions message each other on one machine, and every AgentDesk session is a
+  sessions message each other on one machine, and every Marol session is a
   real `claude`, so this works between cards out of the box. What the desk
   adds is the name. Left alone the CLI names a session after its worktree
-  directory, a slug with a counter, so AgentDesk passes `--name` with the
+  directory, a slug with a counter, so Marol passes `--name` with the
   session's own title and one card's agent messages another's as
   「修好登入 #1」. Sent messages land on the Activity timeline. Version-gated by
   probing `claude --version` once at startup, because an older CLI refuses to
   start on an unknown flag
 - **Sessions that outlive the app**: agent sessions are held in `tmux`, one
   socket each, in whichever world they run in — this machine, a WSL distro, or
-  an SSH host. Quitting AgentDesk detaches; it does not kill. Reopening the
+  an SSH host. Quitting Marol detaches; it does not kill. Reopening the
   card attaches to the agent that has been running the whole time (see below)
 - **The WSL bridge**: a card's repository can live inside a WSL distro, and
   everything runs where the repository is
@@ -194,7 +194,7 @@ pixel for pixel, beside a plain test runner.
 
 ## Sessions that outlive the app
 
-Agent sessions run inside `tmux`, one socket per session. Quitting AgentDesk
+Agent sessions run inside `tmux`, one socket per session. Quitting Marol
 detaches the client; the agent keeps going. Reopening the card attaches to the
 process that never stopped, mid-turn work included.
 
@@ -222,7 +222,7 @@ had to change is how the socket is named. `-L <name>` asks `tmux` where its
 own socket directory is, and only this machine can answer: over there the
 directory depends on a uid and a profile this side cannot see, so a sweep that
 guessed would look into an empty directory and conclude every live agent had
-died. In another world the app names the path instead — `~/.agentdesk/s/` —
+died. In another world the app names the path instead — `~/.marol/s/` —
 and tells `tmux` with `-S`. Locally it stays `-L`, because moving it would
 strand every session an older version left running under a name nothing looks
 for any more.
@@ -269,7 +269,7 @@ Two consequences worth naming:
   agent and drops the argv, so no `SessionStart` fires. Claiming 啟動中 there
   would have been the same lie the status label used to tell, told from the
   other side, and it would never have corrected itself.
-- **If the port is taken**, by a second AgentDesk or by anything else, a fresh
+- **If the port is taken**, by a second Marol or by anything else, a fresh
   one is used and the sessions the last run left behind stay quiet for the
   rest of their lives. That is exactly where this was before the endpoint was
   remembered, so it degrades rather than refusing to start.
@@ -317,14 +317,14 @@ Three things it deliberately does not do:
 
 ## Making worktrees runnable
 
-Put `.agentdesk/config.json` in a repository and every attempt's worktree sets
+Put `.marol/config.json` in a repository and every attempt's worktree sets
 itself up:
 
 ```json
 {
-  "setup": "npm install && cp \"$AGENTDESK_ROOT_PATH/.env\" .env",
+  "setup": "npm install && cp \"$MAROL_ROOT_PATH/.env\" .env",
   "run": [
-    { "name": "dev", "command": "npm run dev -- --port $AGENTDESK_PORT" },
+    { "name": "dev", "command": "npm run dev -- --port $MAROL_PORT" },
     { "name": "test", "command": "npm test -- --watch" }
   ],
   "archive": "docker compose down"
@@ -334,8 +334,8 @@ itself up:
 `setup` runs before the agent starts, in the same terminal, so its output and
 its failures are where you are already looking. `run` entries become ▶ buttons
 in the drawer that start a dev server or test watcher in that attempt's own
-worktree, with a free port in `$AGENTDESK_PORT`. `archive` runs just before
-the worktree is taken back. Every script sees `$AGENTDESK_ROOT_PATH`, the
+worktree, with a free port in `$MAROL_PORT`. `archive` runs just before
+the worktree is taken back. Every script sees `$MAROL_ROOT_PATH`, the
 repository the worktree was opened from, where untracked files worth copying
 (`.env`) live.
 
@@ -343,6 +343,12 @@ Scripts run through `sh -c`, written exactly like a line in a terminal. A
 malformed file fails the attempt start in the dialog rather than silently
 doing nothing, because a config that quietly did nothing would be
 indistinguishable from a broken worktree. (POSIX platforms only for now.)
+
+`.agentdesk/config.json` and `$AGENTDESK_*` still work, and will keep working.
+That file is the one thing this app renamed that is not its own: it lives in
+*your* repository, it is usually committed, and your collaborators may not run
+this desk at all. Both variable names are set to the same values, so a
+repository can be brought forward whenever it suits you, or not at all.
 
 ---
 
@@ -417,7 +423,7 @@ The pieces that carry the triage loop, in roughly the order you meet them:
 - **Dev server preview.** A ▶ run script's page, on the desk: an iframe beside
   the terminals showing exactly what the server sends, never proxied, never
   injected. A dead server says so instead of going blank. Opt into inspect
-  (`docs/examples/agentdesk-inspect.js`) and Alt+click turns any element into
+  (`docs/examples/marol-inspect.js`) and Alt+click turns any element into
   `{component} · {file}:{line}`, one click away from the agent's terminal.
 - **Token account.** Each Claude session's spend and context, read off its own
   transcript at every turn's end (hooks carry the path; nothing is polled
@@ -548,7 +554,7 @@ merely that something was output:
   files, their base_shas do not drift into one another, worktrees come back,
   and branches stay
 - `tests/attempts.rs`: the whole core flow with a stub agent instead of a real
-  model. What is checked is what AgentDesk did (which worktree it opened, what
+  model. What is checked is what Marol did (which worktree it opened, what
   the command line looked like, what it recorded, what it gave back), none of
   which needs a model to answer. The stub's log is NUL-separated, because one
   argument per line could not tell "one argument containing a newline" apart
@@ -598,7 +604,7 @@ comes up on its welcome flow and never starts a session, so the test would
 burn its full timeout proving only that this machine has no login. They read
 `hasCompletedOnboarding` from Claude Code's own `~/.claude.json` instead. If
 that key ever moves they start skipping rather than start passing wrongly, and
-the skip says why on stderr. `AGENTDESK_TEST_ASSUME_CLAUDE=1` runs them anyway.
+the skip says why on stderr. `MAROL_TEST_ASSUME_CLAUDE=1` runs them anyway.
 
 ### README media
 
@@ -638,7 +644,7 @@ Then: create a draft release, build all four platforms in parallel, and
 draft, so nothing half-built ships. The version guard still protects the
 manual paths: pushing a tag (or dispatching with the explicit `tag` input)
 fails outright unless the tag matches `tauri.conf.json`, rather than shipping
-a `v0.2.0` release full of `AgentDesk_0.1.0_*` files. The explicit `tag` input
+a `v0.2.0` release full of `Marol_0.1.0_*` files. The explicit `tag` input
 is also the recovery path, since a release that failed after its bump commit
 landed is re-cut with the tag it already burned rather than bumped a second
 time.
@@ -650,7 +656,7 @@ rolling prerelease tagged `nightly`, replacing whatever was there before. So
 the newest build of `main` is always one click away without waiting for a
 version to be cut:
 
-    https://github.com/KCL1104/agents-desk/releases/tag/nightly
+    https://github.com/KCL1104/marol/releases/tag/nightly
 
 It is a prerelease and never marked "latest", so it cannot displace a real
 version on the repo's front page or in the release API. If any platform fails,
@@ -698,7 +704,7 @@ platforms are unsigned. The first launch will be blocked:
   not damaged; that is the quarantine attribute:
 
   ```bash
-  xattr -dr com.apple.quarantine /Applications/AgentDesk.app
+  xattr -dr com.apple.quarantine /Applications/Marol.app
   ```
 
 - **Windows.** The blue SmartScreen dialog: "More info" → "Run anyway"
@@ -801,7 +807,7 @@ changes.
 
 At startup the app does two things: opens a small HTTP listener on loopback,
 and writes a hooks-only plugin into its data directory. Every session loads it
-with `--plugin-dir` and gets `AGENTDESK_SESSION_ID` and `AGENTDESK_HOOK_URL`
+with `--plugin-dir` and gets `MAROL_SESSION_ID` and `MAROL_HOOK_URL`
 injected; the hook is a one-line `curl` reporting the status back.
 
 | Hook event | Reported status |
@@ -850,7 +856,7 @@ State has two axes, and **the second never drives the first**:
 This follows the position `store.rs` already took with `completed`: `Stop` only
 means this turn ended, not that the work is done, so no hook can move a card.
 
-Worktrees live in `~/.agentdesk/worktrees/<repo>-<hash>/<slug>-<n>/`, **not
+Worktrees live in `~/.marol/worktrees/<repo>-<hash>/<slug>-<n>/`, **not
 next to the repo**. A repo's parent directory is very often a repo itself (an
 umbrella workspace), and a worktree placed there becomes a nested repo, at
 which point every tool that walks upwards looking for `.git` starts giving
@@ -870,7 +876,7 @@ Three more measured, undocumented facts (pinned by
    it created that directory a moment earlier. Without this the badge misses
    the first state of every attempt. The prompt itself survives the dialog and
    is sent once you answer.
-6. **`$SHELL -ilc` inherits AgentDesk's own environment.** Launched from Finder
+6. **`$SHELL -ilc` inherits Marol's own environment.** Launched from Finder
    that is clean; launched from a terminal inside a Claude Code session it is
    not, because `CLAUDE_CODE_CHILD_SESSION` switches transcript saving off, so
    `--continue` has nothing to resume and reopening an attempt silently starts
@@ -992,11 +998,37 @@ is a usable starting point.
   longer has a live TUI. What remains is the timeline and a frozen diff. The
   same goes for superseded attempts: "kept for reference" means read-only
   reference, not somewhere you can jump back in and type
-- Sessions outliving the app is local-only for now. A card in a WSL distro or
-  on an SSH host still stops when the app does and needs resume pressed. A
-  held session reads as **Running, not reporting** until its agent's next hook
-  event lands, which for an agent sitting idle at a prompt may be until you
-  type something
+- Sessions outlive the app in any world that has `tmux`, and only those. A
+  distro or host without it keeps the old behaviour: the card stops when the
+  app does and needs resume pressed. Nothing is installed on your behalf
+- A held session reads as **Running, not reporting** until its agent's next
+  hook event lands, which for an agent sitting idle at a prompt may be until
+  you type something
+- A world whose every card was deleted keeps its sockets until you open a card
+  there again. Reaching an SSH host opens a connection to it, and opening one
+  nobody asked for to tidy up is worse than a few files in a directory of ours
+
+---
+
+## Upgrading from AgentDesk
+
+This app used to be called AgentDesk. Updating carries everything over:
+
+- **Your board comes with it.** The state directory is renamed on first run —
+  database, machine id, remembered hook endpoint and tunnel ports. Nothing
+  outside it points in, so the rename is just a rename. If a Marol directory
+  is already there it wins and is never written over
+- **Worktrees stay exactly where they are**, in `~/.agentdesk/worktrees`, and
+  the desk goes on using that directory for as long as it exists. These paths
+  are written into the attempt rows that opened them *and* into each
+  repository's own git admin files; moving them would break both ends. New
+  installs get `~/.marol/worktrees`, and so does this one once the last of the
+  old trees is handed back
+- **Agents tmux is holding keep running, and are reattached rather than
+  restarted.** Their sockets are under the old name; asking for the new one
+  would have started a second agent in the same worktree
+- **`.agentdesk/config.json` and `$AGENTDESK_*` keep working** — see
+  [Making worktrees runnable](#making-worktrees-runnable)
 
 ---
 

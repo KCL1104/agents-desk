@@ -305,7 +305,7 @@ export const en = {
   'unseen.label': 'finished, not yet seen',
 
   /* ----------------------------- welcome ------------------------------ */
-  'welcome.title': 'Welcome to AgentDesk',
+  'welcome.title': 'Welcome to Marol',
   'welcome.found': 'What this machine has',
   'welcome.model': 'How it works',
   'welcome.model1': 'A card is a repo, a base branch, and something to do.',
@@ -413,7 +413,7 @@ export const en = {
   'review.send': 'Send {count} back to the agent',
   'review.queue': 'Send {count} when this turn ends',
   'review.copy': 'Copy feedback',
-  'review.header': '[AgentDesk review] Feedback on the current diff:',
+  'review.header': '[Marol review] Feedback on the current diff:',
   'review.footer': 'Please address each point above, then commit on this branch.',
 
   /* ------------------------------ env --------------------------------- */
@@ -822,7 +822,7 @@ export const zhTW: Record<MessageKey, string> = {
   'unseen.label': '已完成，還沒看過',
 
   /* ----------------------------- welcome ------------------------------ */
-  'welcome.title': '歡迎使用 AgentDesk',
+  'welcome.title': '歡迎使用 Marol',
   'welcome.found': '這台機器上找到的',
   'welcome.model': '怎麼運作',
   'welcome.model1': '一張卡片 = 一個 repo、一個 base 分支、一件要做的事。',
@@ -915,7 +915,7 @@ export const zhTW: Record<MessageKey, string> = {
   'review.send': '把 {count} 則意見送回給 agent',
   'review.queue': '這輪結束後送出 {count} 則',
   'review.copy': '複製意見',
-  'review.header': '[AgentDesk 檢視回饋] 以下是對目前 diff 的意見：',
+  'review.header': '[Marol 檢視回饋] 以下是對目前 diff 的意見：',
   'review.footer': '請逐點修改，改完後 commit 在這個分支上。',
 
   /* ------------------------------ env --------------------------------- */

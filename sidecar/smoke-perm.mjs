@@ -31,7 +31,7 @@ createInterface({ input: child.stdout }).on('line', (line) => {
       cfg: {
         cwd,
         prompt:
-          'Run exactly this shell command, nothing else: touch /tmp/agentdesk_perm_probe && echo touched',
+          'Run exactly this shell command, nothing else: touch /tmp/marol_perm_probe && echo touched',
         env: { ...process.env },
       },
     });
@@ -51,7 +51,7 @@ createInterface({ input: child.stdout }).on('line', (line) => {
         t: 'permission_reply',
         id: f.id,
         reqId: f.reqId,
-        result: { behavior: 'deny', message: 'Blocked by AgentDesk test policy.' },
+        result: { behavior: 'deny', message: 'Blocked by Marol test policy.' },
       });
     } else {
       allowed = true;

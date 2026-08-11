@@ -5,7 +5,7 @@
 
 ## 問題
 
-Agent 是非單調的:第二小時可以毀掉第一小時。今天 AgentDesk 在一個 attempt **進行中**沒有任何「回到第 N 輪之前」的手段——凍結 diff 只在終局產生,git 歷史只有 agent 自己願意 commit 的部分,而 agent 最常見的狀態正是一大片未 commit 的變更。缺這個機制的代價是行為性的:使用者不敢放手讓 agent 跑,因為跑壞了沒有便宜的退路——可還原性正是換取自主性的貨幣(Conductor 與 opcode 都以此為賣點)。
+Agent 是非單調的:第二小時可以毀掉第一小時。今天 Marol 在一個 attempt **進行中**沒有任何「回到第 N 輪之前」的手段——凍結 diff 只在終局產生,git 歷史只有 agent 自己願意 commit 的部分,而 agent 最常見的狀態正是一大片未 commit 的變更。缺這個機制的代價是行為性的:使用者不敢放手讓 agent 跑,因為跑壞了沒有便宜的退路——可還原性正是換取自主性的貨幣(Conductor 與 opcode 都以此為賣點)。
 
 ## 已經存在的東西(不要重做)
 
@@ -33,7 +33,7 @@ Conductor 在每次使用者訊息前快照(UserPromptSubmit 時刻)。我們驗
 
 - Crystal 直接 commit 在工作分支(`checkpoint:` 前綴)——**否決**:污染分支歷史,而且 commit 需要動 agent 的 index。
 - `git stash create` 什麼都不碰——但**不含 untracked 檔**,而 agent 最常做的事就是開新檔。**否決**。
-- **採用**:臨時 index 快照。`GIT_INDEX_FILE=<tmp> git add -A && git write-tree`,commit-tree 後 `git update-ref refs/agentdesk/checkpoints/<attempt-id>/<n>`。worktree、index、分支、reflog,agent 看得到的一切都原封不動——與 stats 拒用 `add -N` 是同一條紀律。
+- **採用**:臨時 index 快照。`GIT_INDEX_FILE=<tmp> git add -A && git write-tree`,commit-tree 後 `git update-ref refs/marol/checkpoints/<attempt-id>/<n>`。worktree、index、分支、reflog,agent 看得到的一切都原封不動——與 stats 拒用 `add -N` 是同一條紀律。
 - 前置工程:`HostRef::run` 目前不支援單次呼叫的額外環境變數(已查證),需要一個 `run_with_env`;WSL/SSH 的 `env K=V` 前綴管線(pty spawn 已在用)可直接沿用。
 - refs 活在主 repo 的 git dir(worktree 共享 object store),所以 worktree 收回不會帶走它們:**attempt 終局時刪除該 attempt 的全部 checkpoint refs**(凍結 diff 從此是唯一且足夠的紀錄),啟動時掃一次孤兒 refs。
 

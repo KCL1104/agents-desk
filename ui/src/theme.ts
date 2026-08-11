@@ -49,7 +49,7 @@ export interface Theme {
 
 export type StoredTheme = { preset: string } | { preset: 'custom'; light: boolean; primaries: Primaries };
 
-const KEY = 'agentdesk.theme';
+const KEY = 'marol.theme';
 
 /* ------------------------------------------------------------------ */
 /* Color math                                                          */
@@ -237,7 +237,7 @@ export function applyTheme(stored: StoredTheme): Theme {
   } catch {
     /* running without storage is fine; the theme just does not persist */
   }
-  window.dispatchEvent(new CustomEvent('agentdesk:theme'));
+  window.dispatchEvent(new CustomEvent('marol:theme'));
   return theme;
 }
 

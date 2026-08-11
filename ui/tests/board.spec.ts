@@ -306,7 +306,7 @@ test.describe('board', () => {
     await newCard(page, '修好登入');
 
     await page.locator('[data-testid="task-k1"] button.primary').click();
-    await expect(page.getByTestId('attempt-prompt')).toContainText('[AgentDesk 任務]');
+    await expect(page.getByTestId('attempt-prompt')).toContainText('[Marol 任務]');
     await page.getByTestId('attempt-prompt').fill('我自己寫的 prompt');
     await page.getByTestId('attempt-start').click();
 
@@ -527,7 +527,7 @@ test.describe('parked — work kept, ground given back', () => {
     await expect(page.getByTestId('state-k1')).toHaveText(/已暫停/);
     await expect(page.getByTestId('resume-k1')).toBeVisible();
     await expect(page.locator('[data-testid="session-s1"]')).toHaveCount(0);
-    await expect(page.locator('.toast.ok')).toContainText('agentdesk/card-1');
+    await expect(page.locator('.toast.ok')).toContainText('marol/card-1');
 
     // The shelf checkpoint was kept before the ground went.
     const kept = await page.evaluate(() => window.__mock.checkpoints.get('k1-a1'));

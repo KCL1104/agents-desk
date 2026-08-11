@@ -62,7 +62,7 @@ struct Fixture {
 impl Fixture {
     fn new(name: &str) -> Self {
         let root = std::env::temp_dir().join(format!(
-            "agentdesk-wt-{}-{name}",
+            "marol-wt-{}-{name}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&root);
@@ -70,8 +70,8 @@ impl Fixture {
         std::fs::create_dir_all(&repo).unwrap();
 
         git(&repo, &["init", "-b", "main", "-q"]);
-        git(&repo, &["config", "user.email", "t@agentdesk.test"]);
-        git(&repo, &["config", "user.name", "AgentDesk Test"]);
+        git(&repo, &["config", "user.email", "t@marol.test"]);
+        git(&repo, &["config", "user.name", "Marol Test"]);
         std::fs::write(repo.join("app.txt"), "one\n").unwrap();
         git(&repo, &["add", "-A"]);
         git(&repo, &["commit", "-qm", "first"]);
@@ -118,8 +118,8 @@ fn two_attempts_on_one_repository_do_not_see_each_other() {
         .expect("second attempt");
 
     assert_ne!(a.path, b.path);
-    assert_eq!(a.branch, "agentdesk/login-1");
-    assert_eq!(b.branch, "agentdesk/login-2");
+    assert_eq!(a.branch, "marol/login-1");
+    assert_eq!(b.branch, "marol/login-2");
 
     // Each agent writes in its own tree.
     std::fs::write(Path::new(&a.path).join("app.txt"), "from attempt one\n").unwrap();
@@ -188,7 +188,7 @@ fn removing_a_worktree_gives_the_disk_back_and_keeps_the_branch() {
     );
     // The branch is what a merged attempt was merged from; it stays.
     assert!(
-        git(&f.repo, &["branch", "--list", "agentdesk/card-1"]).contains("agentdesk/card-1"),
+        git(&f.repo, &["branch", "--list", "marol/card-1"]).contains("marol/card-1"),
         "removing the worktree took the branch with it"
     );
 }
@@ -217,14 +217,14 @@ fn a_branch_git_already_has_is_walked_past() {
     let env = env();
     let f = Fixture::new("collision");
 
-    git(&f.repo, &["branch", "agentdesk/card-1"]);
-    git(&f.repo, &["branch", "agentdesk/card-2"]);
+    git(&f.repo, &["branch", "marol/card-1"]);
+    git(&f.repo, &["branch", "marol/card-2"]);
 
     let a = f
         .trees
         .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
         .expect("must not fail on an occupied name");
-    assert_eq!(a.branch, "agentdesk/card-3");
+    assert_eq!(a.branch, "marol/card-3");
     assert_eq!(a.seq, 3, "the number actually taken has to be reported back");
 }
 
@@ -241,11 +241,11 @@ fn a_title_with_no_ascii_still_produces_a_branch_git_accepts() {
         .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", &s, 1)
         .expect("git rejected the branch name");
 
-    assert_eq!(a.branch, "agentdesk/task-9f8e7d6c-1");
+    assert_eq!(a.branch, "marol/task-9f8e7d6c-1");
     assert!(Path::new(&a.path).exists());
     assert_eq!(
         git(Path::new(&a.path), &["rev-parse", "--abbrev-ref", "HEAD"]),
-        "agentdesk/task-9f8e7d6c-1"
+        "marol/task-9f8e7d6c-1"
     );
 }
 
@@ -346,7 +346,7 @@ fn a_file_the_attempt_created_has_no_base_side() {
 #[test]
 fn a_directory_that_is_not_a_repository_is_refused_up_front() {
     let env = env();
-    let dir = std::env::temp_dir().join(format!("agentdesk-notrepo-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("marol-notrepo-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let trees = Worktrees::new(dir.join("worktrees"));
 
@@ -413,8 +413,8 @@ fn a_checkpoint_leaves_a_ref_and_the_agents_git_status_untouched() {
     for name in ["app.txt", "fresh.txt", "staged.txt"] {
         assert!(held.lines().any(|l| l == name), "{name} missing from the snapshot");
     }
-    let refs = git(f.repo.as_path(), &["for-each-ref", "refs/agentdesk/checkpoints"]);
-    assert!(refs.contains("refs/agentdesk/checkpoints/attempt-1/1"));
+    let refs = git(f.repo.as_path(), &["for-each-ref", "refs/marol/checkpoints"]);
+    assert!(refs.contains("refs/marol/checkpoints/attempt-1/1"));
 }
 
 /// A quiet turn adds nothing: same tree, no new ref — and the numbering
@@ -491,7 +491,7 @@ fn refs_are_cleared_at_the_end_and_orphans_are_swept() {
     f.trees
         .clear_checkpoints(&hr(&env), &f.repo_s(), "attempt-dead")
         .unwrap();
-    let refs = git(f.repo.as_path(), &["for-each-ref", "refs/agentdesk/checkpoints"]);
+    let refs = git(f.repo.as_path(), &["for-each-ref", "refs/marol/checkpoints"]);
     assert!(!refs.contains("attempt-dead"));
     assert!(refs.contains("attempt-live"));
 
@@ -502,7 +502,7 @@ fn refs_are_cleared_at_the_end_and_orphans_are_swept() {
     assert_eq!(f.trees.sweep_checkpoints(&hr(&env), &f.repo_s(), &live).unwrap(), 0);
     let none: std::collections::HashSet<String> = Default::default();
     assert_eq!(f.trees.sweep_checkpoints(&hr(&env), &f.repo_s(), &none).unwrap(), 1);
-    let refs = git(f.repo.as_path(), &["for-each-ref", "refs/agentdesk/checkpoints"]);
+    let refs = git(f.repo.as_path(), &["for-each-ref", "refs/marol/checkpoints"]);
     assert_eq!(refs.trim(), "");
 }
 
@@ -588,7 +588,7 @@ fn a_parked_worktree_reattaches_at_its_old_path_and_the_shelf_comes_down() {
     // Park: the ground goes back, the branch and the refs stay.
     f.trees.remove(&hr(&env), &f.repo_s(), &a.path).unwrap();
     assert!(!wt.exists());
-    let refs = git(f.repo.as_path(), &["for-each-ref", "refs/agentdesk/checkpoints"]);
+    let refs = git(f.repo.as_path(), &["for-each-ref", "refs/marol/checkpoints"]);
     assert!(refs.contains("attempt-1"), "the shelf must survive the removal");
 
     // Resume: same path, same branch, then the shelf restores the content.
@@ -623,7 +623,7 @@ fn attach_refuses_an_occupied_path_and_a_missing_branch() {
 
     let err = f
         .trees
-        .attach(&hr(&env), &f.repo_s(), &a.path, "agentdesk/never-was")
+        .attach(&hr(&env), &f.repo_s(), &a.path, "marol/never-was")
         .expect_err("a missing branch must be refused");
     assert!(err.to_string().contains("no longer has the branch"), "unhelpful error: {err}");
 }

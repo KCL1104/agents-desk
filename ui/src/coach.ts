@@ -26,7 +26,7 @@ export const COACH_KEY: Record<CoachId, { title: MessageKey; body: MessageKey }>
   waiting: { title: 'coach.waiting.title', body: 'coach.waiting.body' },
 };
 
-const KEY = 'agentdesk.coach';
+const KEY = 'marol.coach';
 
 function seenMap(): Partial<Record<CoachId, boolean>> {
   try {

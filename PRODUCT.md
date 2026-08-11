@@ -18,7 +18,7 @@ Confirmed 2026-08-09: this is an **open-source tool publicly seeking users**, no
 
 ## Product Purpose
 
-AgentDesk is a desktop console for running and supervising multiple coding agent sessions at once. Every session is a real PTY running the real CLI, and the pane looks exactly like Terminal.app — same TUI, same `/` menu, same permission prompts. The app adds what terminal tabs cannot: managing many sessions, a list that survives restarts, and an execution environment identical to your terminal's.
+Marol is a desktop console for running and supervising multiple coding agent sessions at once. Every session is a real PTY running the real CLI, and the pane looks exactly like Terminal.app — same TUI, same `/` menu, same permission prompts. The app adds what terminal tabs cannot: managing many sessions, a list that survives restarts, and an execution environment identical to your terminal's.
 
 What success looks like: on the board, **you know every card's state without opening a terminal**; the review loop (diff beside the live terminal, line comments, hand-editing the last line in the diff, telling the agent, merging) runs end to end without leaving the app.
 
@@ -26,9 +26,9 @@ What success looks like: on the board, **you know every card's state without ope
 
 **"Every session is a real terminal; the app does not repaint or reinterpret anything."** This is a mechanism claim neighboring products cannot truthfully copy:
 
-- Roughly 4/5 of the category re-renders agent output as chat bubbles (Vibe Kanban, Conductor, Crystal, opcode, Happy). AgentDesk built an SDK version first, measured it, and parked it (`src-tauri/parked/` is the evidence of the rejection, not a deletion).
+- Roughly 4/5 of the category re-renders agent output as chat bubbles (Vibe Kanban, Conductor, Crystal, opcode, Happy). Marol built an SDK version first, measured it, and parked it (`src-tauri/parked/` is the evidence of the rejection, not a deletion).
 - Conductor started as SDK-chat and was pushed by its users into growing a "Big Terminal Mode" — convergence evidence in reverse: the core bet is right.
-- The only same-camp (real-terminal) competitor is Claude Squad, which relies on magic-string screen matching and keystroke-injection auto-approval; AgentDesk's Claude Code hooks and per-attempt permission modes are the honest equivalents.
+- The only same-camp (real-terminal) competitor is Claude Squad, which relies on magic-string screen matching and keystroke-injection auto-approval; Marol's Claude Code hooks and per-attempt permission modes are the honest equivalents.
 
 Distribution and licensing (confirmed 2026-08-09): free and open source under **Apache-2.0** (LICENSE added the same day). No commercial plan, no telemetry, no pricing.
 
@@ -36,8 +36,8 @@ Distribution and licensing (confirmed 2026-08-09): free and open source under **
 
 - Requirements: Node 20+, Rust stable, and an installed, signed-in agent CLI. Agents get the user's login-shell environment (`$SHELL -ilc`), not the GUI stub PATH.
 - Three execution worlds are first-class: local, `wsl://<distro>/<path>`, `ssh://<host>/<path>`. A world is a property of the card, not a mode of the window — one desk spanning several worlds at once is an advantage over VS Code's single-remote window. Worlds are **enumerated, never invented**: WSL from `wsl.exe -l`, SSH only from the user's own `~/.ssh/config`; zero remote install, everything transits wsl.exe / ssh.
-- Unit of work: Task 1—N Attempt 1—1 Session. Every attempt gets its own git worktree and branch (`~/.agentdesk/worktrees/…`, deliberately at a path you can type); concurrency defaults to 3, excess queues and self-starts. The worktree is the safety argument: an attempt can only spend its own branch.
-- Per-repo `.agentdesk/config.json` declares setup/run/archive scripts ($AGENTDESK_PORT / $AGENTDESK_ROOT_PATH are part of the contract).
+- Unit of work: Task 1—N Attempt 1—1 Session. Every attempt gets its own git worktree and branch (`~/.marol/worktrees/…`, deliberately at a path you can type); concurrency defaults to 3, excess queues and self-starts. The worktree is the safety argument: an attempt can only spend its own branch.
+- Per-repo `.marol/config.json` declares setup/run/archive scripts ($MAROL_PORT / $MAROL_ROOT_PATH are part of the contract).
 - Shipping: GitHub Actions builds installers (unsigned on all platforms, workarounds documented) plus a rolling nightly prerelease. Currently v0.2.0; M1–M10b and the Tier 3 roadmap all shipped; system tray not done.
 - Verification baseline: Playwright 287 passed + 8 skipped, cargo 374 green; every new Tauri command must get a handler in mock-tauri.ts.
 
@@ -60,7 +60,7 @@ Distribution and licensing (confirmed 2026-08-09): free and open source under **
 
 ## Brand Commitments
 
-- **Name: AgentDesk** (outward brand and bundle name; the repo slug is KCL1104/agents-desk).
+- **Name: Marol** (outward brand and bundle name; the repo slug is KCL1104/marol).
 - **Language (confirmed 2026-08-09): English outward, Chinese inward.** The public face (README lead, release notes, marketing copy) is English-first; the maintainer language is zh-TW (decision docs, code comments). The product UI is fully bilingual en / zh-TW; the English catalogue is the source of truth and zh-TW is a total map (a missing key fails typecheck).
 - **Voice: reasoned, measurement-first.** "Found by measurement" and "the same honesty the first prompt has" are the representative sentences. Honesty over decoration: absence over lies, and every refusal ships with its full reason.
 - Existing visual constraints (recorded here, not expanded): the 11-token theme system, live WCAG contrast in the custom theme editor, 4.5:1 as the floor the app keeps for itself, no remote font loading in a desktop app.

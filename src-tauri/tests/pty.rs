@@ -115,7 +115,7 @@ fn claude_starts_its_interactive_tui_under_a_pty() {
 
     let reg = PtyRegistry::new();
     let cap = Arc::new(Capture::default());
-    let cwd = std::env::temp_dir().join("agentdesk-pty-test");
+    let cwd = std::env::temp_dir().join("marol-pty-test");
     std::fs::create_dir_all(&cwd).unwrap();
 
     reg.spawn(

@@ -6,7 +6,7 @@
 
 ## 問題
 
-AgentDesk 的 PTY 活在 app 的行程裡。關掉 app,agent 就死。
+Marol 的 PTY 活在 app 的行程裡。關掉 app,agent 就死。
 
 重開之後靠 `claude --continue` 由 cwd 找回**對話**,但那不是同一個 session:
 scrollback 沒了(`pty.rs` 的 replay buffer 只活在行程存續期間,且刻意不落盤)、
@@ -43,7 +43,7 @@ Xirp 的答案:PTY 活在 `tmux` server 裡,app 只是 attach 上去的前端。
 
 ### 選項 A:自己寫 daemon
 
-AgentDesk 起一個常駐子行程持有所有 PTY,app 透過 socket attach。
+Marol 起一個常駐子行程持有所有 PTY,app 透過 socket attach。
 
 - 好處:完全掌控協定;三個世界一致;Windows 原生也能做。
 - 壞處:**要自己處理最難的那些事**——daemon 生命週期、孤兒回收、版本不合時的升級、
@@ -51,7 +51,7 @@ AgentDesk 起一個常駐子行程持有所有 PTY,app 透過 socket attach。
 
 ### 選項 B:tmux(Xirp 與 Claude Squad 的作法)
 
-`spawn` 改成 `tmux new-session -d -s agentdesk-<id> <cmd>`,attach 用 `tmux attach`,
+`spawn` 改成 `tmux new-session -d -s marol-<id> <cmd>`,attach 用 `tmux attach`,
 輸出照樣走 PTY 讀。
 
 - 好處:**daemon 別人寫好了**,而且是三十年的成熟軟體;
@@ -82,7 +82,7 @@ AgentDesk 起一個常駐子行程持有所有 PTY,app 透過 socket attach。
 
 ### 要避開的一個坑:別讓 tmux 進到位元組路徑上
 
-AgentDesk 的第一承諾是「app 只搬運位元組,TUI 自己畫自己」。
+Marol 的第一承諾是「app 只搬運位元組,TUI 自己畫自己」。
 tmux **會**重繪——它有自己的 status line、自己的複製模式、自己的鍵繫結。
 
 所以:**`tmux -f /dev/null`(不讀使用者的 `.tmux.conf`)、`status off`、
@@ -114,7 +114,7 @@ tmux 在這裡的角色只有一個:**持有行程**。它多畫一個畫素都�
 
 第一次撤回後,先做的不是寫程式,是**量測前提**:
 
-| 作法 | 內層 agent 讀到的 `AGENTDESK_SESSION_ID` |
+| 作法 | 內層 agent 讀到的 `MAROL_SESSION_ID` |
 |---|---|
 | `-L` 每 session 一個 socket | `s42` ✓ |
 | 共用 server 的第二個 session | **`first`** ——第一個 session 的 id |
@@ -125,7 +125,7 @@ tmux 在這裡的角色只有一個:**持有行程**。它多畫一個畫素都�
 
 ### v1 的形狀
 
-- `Hold { socket, conf, socket_file }`;socket = `agentdesk-<desk tag>-<session id>`。
+- `Hold { socket, conf, socket_file }`;socket = `marol-<desk tag>-<session id>`。
   **desk tag 是 data_dir 的 FNV-1a**——沒有它,一個 install 的孤兒清掃會殺掉另一個的活 agent,
   而且測試之間會互殺。
 - spawn:`tmux -L <socket> -f <conf> new-session -A -D -s agent -c <cwd> -- <exe> <args>`。
@@ -184,13 +184,13 @@ tmux 在這裡的角色只有一個:**持有行程**。它多畫一個畫素都�
 ## 第一次實作嘗試(2026-08-11):撤掉,以及為什麼
 
 拍板後實作到「spawn 走 tmux + 關閉時 kill-session + 退出時只 detach + 啟動時掃孤兒」,
-編譯通過,而且**機制確實生效**——測試跑完後 `tmux ls` 裡留著活的 `agentdesk-<id>` session,
+編譯通過,而且**機制確實生效**——測試跑完後 `tmux ls` 裡留著活的 `marol-<id>` session,
 client 已死而 agent 還在。然後 `cargo test` 掛了四個,查下去是一個真的問題:
 
 ### 致命發現:tmux 不會把環境變數帶進新 session
 
 **新 session 繼承的是 tmux *server* 的環境,不是啟動它的 client 的。**
-於是 `AGENTDESK_SESSION_ID` 與 `AGENTDESK_HOOK_URL` 到不了 agent。
+於是 `MAROL_SESSION_ID` 與 `MAROL_HOOK_URL` 到不了 agent。
 
 這兩個變數正是狀態 hooks 的全部依據。照那個實作出貨,結果會是:
 **session 活過 app 了,但每一張卡都不再回報狀態,而且是靜默的。**
@@ -221,7 +221,7 @@ server 繼承了當下的環境;之後的 session 全部拿到那份**凍結的�
 **下一輪要先解決的,是環境傳遞,不是 attach。** 建議的下一步:
 1. 量測 `-e` 的實際上限(幾十個變數的命令列在 macOS/Linux 上會不會爆)。
 2. 決定基準環境從哪來:每次 `kill-server` 後重起以確保新鮮?還是每個 session 一個
-   獨立的 socket(`-L agentdesk-<id>`)——那樣每個 session 有自己的 server,
+   獨立的 socket(`-L marol-<id>`)——那樣每個 session 有自己的 server,
    環境天生新鮮,代價是行程數。**第二條看起來比較對。**
 3. 重新量測最低版本(`-e` 需要 3.2)。
 

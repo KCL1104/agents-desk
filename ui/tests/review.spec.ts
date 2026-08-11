@@ -77,7 +77,7 @@ test.describe('the review loop', () => {
     );
     const sent = call as { id: string; text: string };
     expect(sent.id).toBe('s1');
-    expect(sent.text).toContain('[AgentDesk 檢視回饋]');
+    expect(sent.text).toContain('[Marol 檢視回饋]');
     expect(sent.text).toContain('1. src/auth.py:2');
     expect(sent.text).toContain('> +    return session');
     expect(sent.text).toContain('session 可能是 undefined，要先檢查');

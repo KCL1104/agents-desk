@@ -18,13 +18,13 @@ use std::time::Duration;
 /// Printed by the probe shell immediately before the env dump, so we can
 /// discard anything the user's rc files echoed on the way (motd, version
 /// manager banners, `nvm` chatter).
-pub const MARKER: &str = "__AGENTDESK_ENV__";
+pub const MARKER: &str = "__MAROL_ENV__";
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Variables a running Claude Code injects into the processes it spawns.
 ///
-/// The probe shell is our child, so it inherits whatever launched AgentDesk.
+/// The probe shell is our child, so it inherits whatever launched Marol.
 /// From Finder that is nothing; from a terminal inside a Claude Code session
 /// it is these, and they describe *that* session rather than any setting the
 /// user chose. Passing them to a fresh agent makes it behave as that session's
@@ -245,14 +245,14 @@ pub fn parse_env0(dump: &str) -> HashMap<String, String> {
 mod tests {
     use super::*;
 
-    /// CI 的守門測試:AGENTDESK_EXPECT_CLAUDE=1 表示這台 runner 真的裝了
+    /// CI 的守門測試:MAROL_EXPECT_CLAUDE=1 表示這台 runner 真的裝了
     /// Claude Code —— 那 app 自己的解析路徑(login-shell 探測 → 平台正確
     /// 的 PATH 行走 → Windows 的 PATHEXT 展開)就必須找得到它;找不到是
     /// 錯,不是可容忍的環境差異。沒作此承諾的機器上自跳,本機不強求。
     #[test]
     fn a_promised_real_claude_is_found_by_the_apps_own_resolution() {
-        if std::env::var("AGENTDESK_EXPECT_CLAUDE").as_deref() != Ok("1") {
-            eprintln!("skip: AGENTDESK_EXPECT_CLAUDE != 1");
+        if std::env::var("MAROL_EXPECT_CLAUDE").as_deref() != Ok("1") {
+            eprintln!("skip: MAROL_EXPECT_CLAUDE != 1");
             return;
         }
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
@@ -334,7 +334,7 @@ mod tests {
     #[test]
     fn which_still_resolves_against_a_real_unix_path() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("agentdesk-which-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("marol-which-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let exe = dir.join("claude");
         std::fs::write(&exe, "#!/bin/sh\n").unwrap();
@@ -354,7 +354,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// Measured: launching AgentDesk from a terminal inside a Claude Code
+    /// Measured: launching Marol from a terminal inside a Claude Code
     /// session leaks that session's markers through the probe shell, and
     /// `CLAUDE_CODE_CHILD_SESSION` turns transcript saving off. A session
     /// spawned that way looks fine and then has nothing for `--continue` to

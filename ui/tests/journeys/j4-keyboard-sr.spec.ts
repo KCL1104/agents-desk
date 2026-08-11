@@ -104,7 +104,7 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
 
     // (c) 歡迎面板浮著。
     const modal = page.locator('.modal');
-    await expect(modal).toContainText('歡迎使用 AgentDesk');
+    await expect(modal).toContainText('歡迎使用 Marol');
 
     // (b) 朗讀通道的底座:.visually-hidden、polite、此刻無話。
     await expect(live).toHaveClass(/visually-hidden/);
@@ -196,7 +196,7 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
     await page.keyboard.press('Tab');
     await expect(page.getByTestId('attempt-prompt')).toBeFocused();
     await expect(page.getByTestId('attempt-prompt')).toHaveValue(
-      new RegExp(`AgentDesk 任務.*${FIRST_LINE}`, 's'),
+      new RegExp(`Marol 任務.*${FIRST_LINE}`, 's'),
     );
     // ⌘/Ctrl+Enter 送出 —— 與 review 撰寫框同一個慣例。
     await chord(page, 'Enter');

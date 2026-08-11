@@ -91,7 +91,7 @@ interface Picked {
 /** The drawer's width, remembered. Bounds keep both neighbours honest: a
  *  diff needs room to be code, and the terminal beside it needs room to
  *  stay a terminal. */
-const WIDTH_KEY = 'agentdesk.inspectorWidth';
+const WIDTH_KEY = 'marol.inspectorWidth';
 /** 寬度的允許範圍 —— clamp 與把手的 aria-valuenow 共用同一對數字。 */
 const MIN_WIDTH = 340;
 const MAX_WIDTH = 900;
@@ -1054,7 +1054,7 @@ function groupByFile(lines: DiffLine[]): FileSection[] {
 }
 
 /** Wrapping long lines is a reading preference, not a per-diff choice. */
-const WRAP_KEY = 'agentdesk.diffWrap';
+const WRAP_KEY = 'marol.diffWrap';
 
 function DiffPane({
   attemptId,

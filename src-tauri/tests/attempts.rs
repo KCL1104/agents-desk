@@ -1,7 +1,7 @@
 //! The attempt flow, end to end through the core.
 //!
 //! Driven by a stub agent rather than a real one: what is being checked here
-//! is what AgentDesk does — which worktree it opens, what it puts on the
+//! is what Marol does — which worktree it opens, what it puts on the
 //! command line, what it records, and what it gives back afterwards — none of
 //! which needs a model to answer. `tests/prompt_injection.rs` covers the part
 //! that genuinely needed measuring against the real `claude`.
@@ -91,21 +91,21 @@ struct Harness {
 /// test's boot by the probe's timeout.
 const STUB: &str = r#"#!/bin/bash
 if [ "$1" = "--version" ]; then echo "2.1.226 (Claude Code)"; exit 0; fi
-printf '%s\0' "$PWD" "$@" > "$AGENTDESK_STUB_LOG/${AGENTDESK_SESSION_ID:-unknown}.$$"
+printf '%s\0' "$PWD" "$@" > "$MAROL_STUB_LOG/${MAROL_SESSION_ID:-unknown}.$$"
 # 宣告它所替身的那個 CLI 真的會宣告的模式:Claude Code 開啟 bracketed
 # paste(DECSET 2004),而 `bracketed_followup` 只送給量測過會開它的 CLI。
 # 這一行之前 stub 是個沉默的位元組水槽,而任何會照 2004 決定要不要轉發
 # 標記的傳輸層(例如 tmux)看到的就是「這支程式沒要」。
 printf '\033[?2004h'
-exec cat > "$AGENTDESK_STUB_LOG/stdin.${AGENTDESK_SESSION_ID:-unknown}.$$"
+exec cat > "$MAROL_STUB_LOG/stdin.${MAROL_SESSION_ID:-unknown}.$$"
 "#;
 
 /// A stand-in for a Claude Code release from before session names existed.
 /// What matters is what it is NOT handed: `--name` would stop it starting.
 const OLD_STUB: &str = r#"#!/bin/bash
 if [ "$1" = "--version" ]; then echo "2.0.14 (Claude Code)"; exit 0; fi
-printf '%s\0' "$PWD" "$@" > "$AGENTDESK_STUB_LOG/${AGENTDESK_SESSION_ID:-unknown}.$$"
-exec cat > "$AGENTDESK_STUB_LOG/stdin.${AGENTDESK_SESSION_ID:-unknown}.$$"
+printf '%s\0' "$PWD" "$@" > "$MAROL_STUB_LOG/${MAROL_SESSION_ID:-unknown}.$$"
+exec cat > "$MAROL_STUB_LOG/stdin.${MAROL_SESSION_ID:-unknown}.$$"
 "#;
 
 impl Harness {
@@ -116,14 +116,14 @@ impl Harness {
     /// The same harness with a different `claude` on the PATH — how the
     /// version gate is exercised against a CLI from another era.
     fn with_claude_stub(name: &str, claude_stub: &str) -> Self {
-        let root = std::env::temp_dir().join(format!("agentdesk-att-{}-{name}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("marol-att-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
 
         let repo = root.join("repo");
         std::fs::create_dir_all(&repo).unwrap();
         git(&repo, &["init", "-b", "main", "-q"]);
-        git(&repo, &["config", "user.email", "t@agentdesk.test"]);
-        git(&repo, &["config", "user.name", "AgentDesk Test"]);
+        git(&repo, &["config", "user.email", "t@marol.test"]);
+        git(&repo, &["config", "user.name", "Marol Test"]);
         std::fs::write(repo.join("app.txt"), "one\n").unwrap();
         git(&repo, &["add", "-A"]);
         git(&repo, &["commit", "-qm", "first"]);
@@ -176,7 +176,7 @@ impl Harness {
             r#"#!/bin/bash
 export PATH="{path}"
 export HOME="{home}"
-export AGENTDESK_STUB_LOG="{logs}"
+export MAROL_STUB_LOG="{logs}"
 while [ $# -gt 0 ]; do
   case "$1" in
     -d|--shell-type) shift 2 ;;
@@ -201,7 +201,7 @@ exec "$@"
 
         let mut vars: HashMap<String, String> = HashMap::new();
         vars.insert("PATH".into(), path.clone());
-        vars.insert("AGENTDESK_STUB_LOG".into(), logs.to_string_lossy().into());
+        vars.insert("MAROL_STUB_LOG".into(), logs.to_string_lossy().into());
         vars.insert("HOME".into(), root.to_string_lossy().into());
         let env = ShellEnv {
             vars,
@@ -214,7 +214,7 @@ exec "$@"
             .block_on(Core::start_with(
                 env.clone(),
                 Arc::new(Events::default()) as Arc<dyn UiSink>,
-                root.join("agentdesk.db"),
+                root.join("marol.db"),
                 root.join("data"),
                 root.join("worktrees"),
             ))
@@ -313,7 +313,7 @@ exec "$@"
         let mut sock = std::net::TcpStream::connect(addr).expect("connect to the hook listener");
         let req = format!(
             "POST /{path}?state={state} HTTP/1.1\r\nHost: localhost\r\n\
-             X-AgentDesk-Session: {session_id}\r\ncontent-length: {}\r\n\r\n{body}",
+             X-Marol-Session: {session_id}\r\ncontent-length: {}\r\n\r\n{body}",
             body.len()
         );
         sock.write_all(req.as_bytes()).unwrap();
@@ -342,9 +342,9 @@ exec "$@"
         self.launches(session_id, 1).pop().unwrap().cwd
     }
 
-    /// Give the harness repository an `.agentdesk/config.json`.
+    /// Give the harness repository an `.marol/config.json`.
     fn config(&self, json: &str) {
-        let dir = self.repo.join(".agentdesk");
+        let dir = self.repo.join(".marol");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("config.json"), json).unwrap();
     }
@@ -423,7 +423,7 @@ struct Launch {
     args: Vec<String>,
 }
 
-/// Where a world keeps this desk's sockets: `/tmp/agentdesk-<uid>`, the same
+/// Where a world keeps this desk's sockets: `/tmp/marol-<uid>`, the same
 /// place the app puts them and for the same reason tmux keeps its own there —
 /// a socket address has about 104 bytes, and a home directory is unbounded.
 fn world_socket_dir() -> PathBuf {
@@ -432,7 +432,7 @@ fn world_socket_dir() -> PathBuf {
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default();
-    PathBuf::from(format!("/tmp/agentdesk-{uid}"))
+    PathBuf::from(format!("/tmp/marol-{uid}"))
 }
 
 /// The socket holding one session, if a world is holding it.
@@ -495,7 +495,7 @@ fn opening_an_attempt_puts_an_agent_in_a_worktree_of_its_own() {
 
     let opened = h.start(&task, "claude");
 
-    assert_eq!(opened.branch, "agentdesk/task-".to_string() + &task[..8] + "-1");
+    assert_eq!(opened.branch, "marol/task-".to_string() + &task[..8] + "-1");
     assert!(opened.prompt_sent, "claude's conventions are measured");
     assert!(Path::new(&opened.worktree_path).is_dir());
 
@@ -557,8 +557,8 @@ fn two_attempts_at_one_card_get_a_worktree_each() {
     let a = h.start(&task, "claude");
     let b = h.start(&task, "claude");
 
-    assert_eq!(a.branch, "agentdesk/fix-login-1");
-    assert_eq!(b.branch, "agentdesk/fix-login-2");
+    assert_eq!(a.branch, "marol/fix-login-1");
+    assert_eq!(b.branch, "marol/fix-login-2");
     assert_ne!(a.worktree_path, b.worktree_path);
 
     // Both are live, and neither can see the other's files.
@@ -639,7 +639,7 @@ fn reopening_an_attempt_continues_instead_of_asking_again() {
         second.args
     );
     assert!(
-        !second.args.iter().any(|a| a.contains("[AgentDesk")),
+        !second.args.iter().any(|a| a.contains("[Marol")),
         "the prompt was sent a second time; the agent would redo the whole card: {:?}",
         second.args
     );
@@ -853,7 +853,7 @@ fn merging_folds_the_branch_into_the_base_and_closes_the_attempt_out() {
         "fixed\n"
     );
     // `--no-ff`, so the attempt stays legible as one piece of work.
-    assert!(git(&h.repo, &["log", "--oneline", "--merges", "-1"]).contains("Merge agentdesk/"));
+    assert!(git(&h.repo, &["log", "--oneline", "--merges", "-1"]).contains("Merge marol/"));
 
     // And the attempt is closed out: worktree gone, diff kept.
     assert!(!Path::new(&a.worktree_path).exists());
@@ -970,7 +970,7 @@ fn a_followup_reaches_the_terminal_whole_and_lands_on_the_timeline() {
     let a = h.start(&task, "claude");
     h.launches(&a.session_id, 1); // the terminal is up
 
-    let text = "[AgentDesk 檢視回饋]\n1. auth.py:12 還是回 None\n2. 缺一個測試";
+    let text = "[Marol 檢視回饋]\n1. auth.py:12 還是回 None\n2. 缺一個測試";
     h.core.send_followup(&a.session_id, text).expect("send");
 
     // The record: the opening prompt, then this, verbatim.
@@ -1052,14 +1052,14 @@ fn a_wsl_repository_runs_its_whole_attempt_inside_the_distro() {
     let inner = a.worktree_path.strip_prefix("wsl://TestOS").unwrap();
     // …and living under the distro's own home, never the app machine's root.
     assert!(
-        inner.starts_with(&format!("{}/.agentdesk/worktrees", h.root.display())),
+        inner.starts_with(&format!("{}/.marol/worktrees", h.root.display())),
         "the worktree left the distro: {inner}"
     );
     assert!(Path::new(inner).is_dir(), "the worktree was never created");
 
     // The agent is running inside: right directory, prompt still the last
     // argv entry — and the launch record existing at all proves
-    // AGENTDESK_SESSION_ID crossed the boundary, because the stub names its
+    // MAROL_SESSION_ID crossed the boundary, because the stub names its
     // log file after it.
     let launch = h.launches(&a.session_id, 1).pop().unwrap();
     assert_eq!(
@@ -1137,7 +1137,7 @@ fn a_session_in_another_world_is_held_there_and_found_again() {
     // terminal — and it does not complain about a `-f` that is not there, so
     // this is a failure that would only ever show up as a stripe at the
     // bottom of somebody's screen.
-    let conf = h.root.join(".agentdesk").join("tmux.conf");
+    let conf = h.root.join(".marol").join("tmux.conf");
     assert!(
         std::fs::read_to_string(&conf)
             .unwrap_or_default()
@@ -1188,7 +1188,7 @@ fn a_session_in_another_world_is_held_there_and_found_again() {
         .block_on(Core::start_with(
             h.env.clone(),
             Arc::new(Events::default()) as Arc<dyn UiSink>,
-            h.root.join("agentdesk.db"),
+            h.root.join("marol.db"),
             h.root.join("data"),
             h.root.join("worktrees"),
         ))
@@ -1268,7 +1268,7 @@ fn a_world_without_tmux_still_runs_its_sessions() {
         launch.args
     );
     assert!(
-        !h.root.join(".agentdesk").join("s").exists(),
+        !h.root.join(".marol").join("s").exists(),
         "a socket directory in a world that holds nothing"
     );
 }
@@ -1346,7 +1346,7 @@ fn the_sweep_ends_forgotten_sessions_in_a_world_and_leaves_other_desks_alone() {
         .block_on(Core::start_with(
             h.env.clone(),
             Arc::new(Events::default()) as Arc<dyn UiSink>,
-            h.root.join("agentdesk.db"),
+            h.root.join("marol.db"),
             h.root.join("data"),
             h.root.join("worktrees"),
         ))
@@ -1389,8 +1389,8 @@ fn the_sweep_ends_forgotten_sessions_in_a_world_and_leaves_other_desks_alone() {
 /// probe's own words — never as a phantom "no such directory".
 #[test]
 fn an_unreachable_ssh_host_fails_the_card_with_the_probes_reason() {
-    if std::env::var("AGENTDESK_SSH_TEST").is_err() {
-        eprintln!("skipping: set AGENTDESK_SSH_TEST=1 to run the ssh tests");
+    if std::env::var("MAROL_SSH_TEST").is_err() {
+        eprintln!("skipping: set MAROL_SSH_TEST=1 to run the ssh tests");
         return;
     }
     let h = Harness::new("sshghost");
@@ -1400,12 +1400,12 @@ fn an_unreachable_ssh_host_fails_the_card_with_the_probes_reason() {
         .create_task(
             "x".into(),
             "y".into(),
-            "ssh://agentdesk-no-such-host/home/me/app".into(),
+            "ssh://marol-no-such-host/home/me/app".into(),
             "main".into(),
         )
         .expect_err("an unreachable host cannot back a card");
     assert!(
-        err.to_string().contains("agentdesk-no-such-host"),
+        err.to_string().contains("marol-no-such-host"),
         "the error must name the host: {err}"
     );
 }
@@ -1496,7 +1496,7 @@ impl SshFixture {
         std::fs::write(
             dir.join("ssh_config"),
             format!(
-                "Host agentdesk-test\n  HostName 127.0.0.1\n  Port {port}\n  User {user}\n\
+                "Host marol-test\n  HostName 127.0.0.1\n  Port {port}\n  User {user}\n\
                  \x20 IdentityFile {ik}\n  IdentitiesOnly yes\n  StrictHostKeyChecking no\n\
                  \x20 UserKnownHostsFile /dev/null\n  LogLevel ERROR\n",
                 ik = dir.join("userkey").display(),
@@ -1531,8 +1531,8 @@ impl SshFixture {
                 }
                 let body = format!(
                     "#!/bin/bash\nif [ \"$1\" = \"--version\" ]; then echo \"2.1.226 (Claude Code)\"; exit 0; fi\n\
-                     printf '%s\\0' \"$PWD\" \"$@\" > \"{logs}/${{AGENTDESK_SESSION_ID:-unknown}}.$$\"\n\
-                     exec cat > \"{logs}/stdin.${{AGENTDESK_SESSION_ID:-unknown}}.$$\"\n",
+                     printf '%s\\0' \"$PWD\" \"$@\" > \"{logs}/${{MAROL_SESSION_ID:-unknown}}.$$\"\n\
+                     exec cat > \"{logs}/stdin.${{MAROL_SESSION_ID:-unknown}}.$$\"\n",
                     logs = logs.display()
                 );
                 if std::fs::write(&path, &body).is_err() {
@@ -1547,7 +1547,7 @@ impl SshFixture {
                 // count: a real claude earlier on the PATH must never be the
                 // thing a test launches.
                 let seen = std::process::Command::new(&wrapper)
-                    .args(["agentdesk-test", &format!("$SHELL -lc 'command -v {name}'")])
+                    .args(["marol-test", &format!("$SHELL -lc 'command -v {name}'")])
                     .output()
                     .ok();
                 let found = seen
@@ -1600,11 +1600,11 @@ impl Drop for SshFixture {
 /// opens in the remote home, the agent launches through a forced-tty ssh with
 /// its argv armoured and its identity across, the diff reads back, the hook
 /// plugin is provisioned remotely with a tunnel URL, and closing returns the
-/// tree. Gated: set AGENTDESK_SSH_TEST=1 (CI does).
+/// tree. Gated: set MAROL_SSH_TEST=1 (CI does).
 #[test]
 fn an_ssh_repository_runs_its_whole_attempt_on_the_remote() {
-    if std::env::var("AGENTDESK_SSH_TEST").is_err() {
-        eprintln!("skipping: set AGENTDESK_SSH_TEST=1 to run the ssh tests");
+    if std::env::var("MAROL_SSH_TEST").is_err() {
+        eprintln!("skipping: set MAROL_SSH_TEST=1 to run the ssh tests");
         return;
     }
     let h = Harness::new("sshfull");
@@ -1613,7 +1613,7 @@ fn an_ssh_repository_runs_its_whole_attempt_on_the_remote() {
         return;
     };
 
-    let repo_url = format!("ssh://agentdesk-test{}", h.repo.display());
+    let repo_url = format!("ssh://marol-test{}", h.repo.display());
     let task = h
         .core
         .create_task("修好登入".into(), "make it work".into(), repo_url, "main".into())
@@ -1623,11 +1623,11 @@ fn an_ssh_repository_runs_its_whole_attempt_on_the_remote() {
     let a = h.start(&task, agent);
 
     // Remote paths, remote home.
-    assert!(a.worktree_path.starts_with("ssh://agentdesk-test/"), "{}", a.worktree_path);
-    let inner = a.worktree_path.strip_prefix("ssh://agentdesk-test").unwrap();
+    assert!(a.worktree_path.starts_with("ssh://marol-test/"), "{}", a.worktree_path);
+    let inner = a.worktree_path.strip_prefix("ssh://marol-test").unwrap();
     let home = dirs::home_dir().unwrap();
     assert!(
-        inner.starts_with(&format!("{}/.agentdesk/worktrees", home.display())),
+        inner.starts_with(&format!("{}/.marol/worktrees", home.display())),
         "the worktree left the remote home: {inner}"
     );
     assert!(Path::new(inner).is_dir());
@@ -1653,7 +1653,7 @@ fn an_ssh_repository_runs_its_whole_attempt_on_the_remote() {
     // The hook plugin was provisioned into the remote home, its URL pointing
     // back through the reverse tunnel — never at the app's own listener
     // address, which means nothing on the remote.
-    let hooks_file = home.join(".agentdesk/plugin/hooks/hooks.json");
+    let hooks_file = home.join(".marol/plugin/hooks/hooks.json");
     let hooks_text = std::fs::read_to_string(&hooks_file).expect("remote plugin missing");
     assert!(hooks_text.contains("http://127.0.0.1:"), "{hooks_text}");
 
@@ -1670,7 +1670,7 @@ fn an_ssh_repository_runs_its_whole_attempt_on_the_remote() {
     let tunnels = std::fs::read_to_string(h.root.join("data").join("tunnels"))
         .expect("the tunnel port was not remembered");
     assert!(
-        tunnels.contains(&format!("agentdesk-test\t{port}")),
+        tunnels.contains(&format!("marol-test\t{port}")),
         "remembered {tunnels:?}, but the plugin was told {port}"
     );
 
@@ -1711,7 +1711,7 @@ fn an_ssh_repository_runs_its_whole_attempt_on_the_remote() {
 
 /// Claude Code's cross-session messaging addresses a session by name, and
 /// left to itself the CLI derives one from the directory — a worktree slug
-/// with a counter. AgentDesk knows the card, so the session answers to what
+/// with a counter. Marol knows the card, so the session answers to what
 /// the board calls it, and one card's agent can message another's by the
 /// title a person would actually say.
 #[test]
@@ -2110,7 +2110,7 @@ fn a_run_script_gets_its_own_terminal_a_port_and_the_root_path() {
     let _guard = h.rt.enter();
     h.config(
         r#"{ "run": [{ "name": "srv",
-             "command": "echo $AGENTDESK_PORT > port.txt; echo \"$AGENTDESK_ROOT_PATH\" > root.txt; exec cat" }] }"#,
+             "command": "echo $MAROL_PORT > port.txt; echo \"$MAROL_ROOT_PATH\" > root.txt; exec cat" }] }"#,
     );
     let task = h.card("Fix login", "make it work");
     let a = h.start(&task, "claude");
@@ -2128,7 +2128,7 @@ fn a_run_script_gets_its_own_terminal_a_port_and_the_root_path() {
         .unwrap()
         .trim()
         .parse()
-        .expect("AGENTDESK_PORT was not a port number");
+        .expect("MAROL_PORT was not a port number");
     assert!(port > 0);
     assert_eq!(
         std::fs::read_to_string(wt.join("root.txt")).unwrap().trim(),
@@ -2159,7 +2159,7 @@ fn a_run_script_gets_its_own_terminal_a_port_and_the_root_path() {
 fn the_archive_script_runs_before_the_worktree_goes_back() {
     let h = Harness::new("archive");
     let _guard = h.rt.enter();
-    h.config(r#"{ "archive": "echo closed > \"$AGENTDESK_ROOT_PATH/archive-ran.txt\"" }"#);
+    h.config(r#"{ "archive": "echo closed > \"$MAROL_ROOT_PATH/archive-ran.txt\"" }"#);
     let task = h.card("Fix login", "make it work");
     let a = h.start(&task, "claude");
 
@@ -2596,6 +2596,121 @@ fn the_badge_counts_attempts_and_ad_hoc_sessions_together() {
 /// reading "closed" over a working agent is how somebody starts a second
 /// attempt onto the same worktree.
 ///
+/// An agent held from before the app was renamed is reattached, not doubled.
+///
+/// This is the one thing the rename could not simply leave behind. A local
+/// socket lives in tmux's own shared directory, so its name has to say whose
+/// it is — which means the rename reaches it. The server is bound to
+/// `agentdesk-…`; asking `new-session -A` for `marol-…` would not find it and
+/// would cheerfully start a *second* agent in the same worktree, which is
+/// precisely the accident holding sessions was built to prevent.
+///
+/// Staged the only way that is honest: a real tmux server under the old name,
+/// holding a real process, with the card's row saying `Saved` exactly as a
+/// restart leaves it.
+#[test]
+fn an_agent_held_from_before_the_rename_is_reattached_not_started_again() {
+    if std::process::Command::new("tmux").arg("-V").output().is_err() {
+        eprintln!("no tmux on PATH — nothing holds sessions here");
+        return;
+    }
+    let h = Harness::new("renamed");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.start(&task, "claude");
+    h.launches(&a.session_id, 1);
+
+    // What the last run left: a held server under the name of the day.
+    let tag = pty::desk_tag(&h.root.join("data").to_string_lossy());
+    let former = format!("agentdesk-{tag}-{}", a.session_id);
+    let current = pty::hold_socket(&tag, &a.session_id);
+    h.core.shutdown();
+    assert!(
+        std::process::Command::new("tmux")
+            .args(["-L", &current, "kill-server"])
+            .output()
+            .is_ok()
+    );
+    if let Some(d) = core::tmux_socket_dir() {
+        let _ = std::fs::remove_file(d.join(&current));
+    }
+    assert!(
+        std::process::Command::new("tmux")
+            .args(["-L", &former, "new-session", "-d", "-s", "agent", "--", "sleep", "300"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false),
+        "could not stage a session under the old name"
+    );
+
+    let core2 = h
+        .rt
+        .block_on(Core::start_with(
+            h.env.clone(),
+            Arc::new(Events::default()) as Arc<dyn UiSink>,
+            h.root.join("marol.db"),
+            h.root.join("data"),
+            h.root.join("worktrees"),
+        ))
+        .expect("second core");
+
+    // (a) The board does not call it closed. A row reading 已關閉 over a
+    // working agent is how somebody starts a second attempt on the same tree.
+    let seen = core2
+        .sessions()
+        .into_iter()
+        .find(|s| s.id == a.session_id)
+        .expect("still on the list");
+    assert_eq!(
+        seen.status,
+        Status::Detached,
+        "an agent held under the old name came back as {:?}",
+        seen.status,
+    );
+
+    // (b) Opening it reaches *that* server. Asserted as a client arriving on
+    // the old socket rather than as a second socket failing to appear: the
+    // spawn is asynchronous, so "the file is not there" is true for a moment
+    // whatever happens, and a test that reads it too early passes for the
+    // wrong reason. A client on that server is positive evidence, and it can
+    // be waited for.
+    core2
+        .reopen_session(&a.session_id, 100, 30)
+        .expect("reattach to the held session");
+    let clients = |sock: &str| {
+        std::process::Command::new("tmux")
+            .args(["-L", sock, "list-clients", "-t", "agent"])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default()
+    };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while clients(&former).is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(
+        !clients(&former).is_empty(),
+        "nothing attached to {former}; the agent held from before the rename was abandoned",
+    );
+    // And nothing was started beside it. By now the reattach has happened, so
+    // a socket under the new name could only be a second agent on the same
+    // worktree.
+    assert!(
+        !core::tmux_socket_dir()
+            .map(|d| d.join(&current).exists())
+            .unwrap_or(false),
+        "a second agent was started under {current} while {former} was still running",
+    );
+
+    core2.shutdown();
+    let _ = std::process::Command::new("tmux")
+        .args(["-L", &former, "kill-server"])
+        .output();
+    if let Some(d) = core::tmux_socket_dir() {
+        let _ = std::fs::remove_file(d.join(&former));
+    }
+}
+
 /// Skipped where tmux is absent: there is nothing to hold sessions with, so
 /// there is nothing to be honest or dishonest about.
 #[test]
@@ -2625,7 +2740,7 @@ fn a_session_tmux_kept_running_does_not_come_back_as_closed() {
         .block_on(Core::start_with(
             h.env.clone(),
             Arc::new(Events::default()) as Arc<dyn UiSink>,
-            h.root.join("agentdesk.db"),
+            h.root.join("marol.db"),
             h.root.join("data"),
             h.root.join("worktrees"),
         ))

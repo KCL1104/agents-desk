@@ -28,15 +28,15 @@ impl Sidecar {
 
 /// Locate `dist/agent-host.mjs`.
 ///
-/// `AGENTDESK_SIDECAR` wins, then the bundled resource, then the dev tree
-/// relative to the executable (`target/debug/agentdesk` -> repo root).
+/// `MAROL_SIDECAR` wins, then the bundled resource, then the dev tree
+/// relative to the executable (`target/debug/marol` -> repo root).
 fn resolve_script() -> Result<PathBuf> {
-    if let Ok(p) = std::env::var("AGENTDESK_SIDECAR") {
+    if let Ok(p) = std::env::var("MAROL_SIDECAR") {
         let p = PathBuf::from(p);
         if p.is_file() {
             return Ok(p);
         }
-        return Err(anyhow!("AGENTDESK_SIDECAR points at {p:?}, which is not a file"));
+        return Err(anyhow!("MAROL_SIDECAR points at {p:?}, which is not a file"));
     }
 
     let exe = std::env::current_exe().context("current_exe")?;
@@ -69,7 +69,7 @@ fn resolve_script() -> Result<PathBuf> {
         .ok_or_else(|| {
             anyhow!(
                 "could not find agent-host.mjs. Run `npm --prefix sidecar run build`, \
-                 or set AGENTDESK_SIDECAR. Looked in: {candidates:?}"
+                 or set MAROL_SIDECAR. Looked in: {candidates:?}"
             )
         })
 }
@@ -82,7 +82,7 @@ pub async fn spawn(env: &ShellEnv) -> Result<(Sidecar, mpsc::UnboundedReceiver<S
         .which("node")
         .ok_or_else(|| {
             anyhow!(
-                "`node` not found on the login-shell PATH ({:?}). AgentDesk needs Node 20+.",
+                "`node` not found on the login-shell PATH ({:?}). Marol needs Node 20+.",
                 env.path().unwrap_or("<none>")
             )
         })?;

@@ -11,7 +11,7 @@ interface Props {
       look alike. */
   live: boolean;
   /** The element last picked inside the page, via the opt-in inspect
-      script's postMessage. See docs/examples/agentdesk-inspect.js. */
+      script's postMessage. See docs/examples/marol-inspect.js. */
   pick: { component: string; file: string; line: number } | null;
   /** Send the pick into the attempt's terminal — offered only when the
       session is live and its CLI's input conventions are measured.

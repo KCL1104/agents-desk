@@ -9,7 +9,7 @@ They are proven working (the integration test drove a real `claude` session
 end to end) but are not part of the build, because sessions are now real
 terminals and Claude Code's own TUI handles its own permission prompts.
 
-Bring them back if AgentDesk ever needs to intercept tool calls rather than
+Bring them back if Marol ever needs to intercept tool calls rather than
 just host them — a headless/background mode, or a policy layer that must
 decide without a human present.
 

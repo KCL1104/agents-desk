@@ -41,7 +41,7 @@ impl UiSink for TauriSink {
             // and the gate would swallow exactly what they asked to see.
             let force = payload["force"].as_bool().unwrap_or(false);
             if force || !FOCUSED.load(Ordering::Relaxed) {
-                let title = payload["title"].as_str().unwrap_or("AgentDesk");
+                let title = payload["title"].as_str().unwrap_or("Marol");
                 let body = payload["body"].as_str().unwrap_or_default();
                 if let Err(e) = self.0.notification().builder().title(title).body(body).show() {
                     eprintln!("[tauri] notification failed: {e}");
@@ -184,8 +184,8 @@ impl AppState {
             .unwrap()
             .clone()
             .ok_or_else(|| match self.boot_error.lock().unwrap().clone() {
-                Some(e) => format!("AgentDesk failed to start: {e}"),
-                None => "AgentDesk is still starting up.".to_string(),
+                Some(e) => format!("Marol failed to start: {e}"),
+                None => "Marol is still starting up.".to_string(),
             })
     }
 }
@@ -955,7 +955,7 @@ fn main() {
             open_pr,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building AgentDesk")
+        .expect("error while building Marol")
         .run(|handle, event| {
             // Kill child terminals on quit rather than leaving orphaned
             // `claude` processes behind.
