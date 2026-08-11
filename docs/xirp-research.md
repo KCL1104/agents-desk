@@ -173,6 +173,186 @@ Xirp 的設定頁:齒輪圖示或 **`Cmd+,`** 開啟,八個區段,**頂端有搜
 
 ---
 
+## 5.5 截圖層拆解(第三輪:實際看圖,含放大裁切)
+
+文件內嵌 22 張 1800×1153 產品實拍。以下全部來自親眼看圖(部分經 3× 放大裁切),
+與文字描述互相印證或補正。版本標記 **v0.7.2**——這是個很年輕的 app。
+
+### 終端是真的(這點現在有畫面證據)
+
+放大 `session-grid-single` 的終端底部後可見三件事:
+
+1. **輸入行上有一個真實的反白區塊游標**壓在 `❯ go ahead and set that up` 的 `g` 上。
+2. Claude Code 自己的受管設定橫幅原封不動地印在裡面:
+   「Message from Spotify: 🔒 If the sandbox is on (check by typing /sandbox)…」
+   還有黃色的 `▶▶ auto mode on (shift+tab to cycle) · ← for agents`。
+3. **狀態列出現重繪殘影**:`Est. usage: $0.37 | Est. usage: $0.37 |`……水平重複六次後被截成 `Est.…`。
+
+第三點值得記下來:**這是 Spotify 自己發佈的官方文件截圖裡留著的終端渲染瑕疵。**
+真終端路線的代價是真實存在的,連他們也沒躲掉——這對 AgentDesk 是安慰也是提醒。
+
+### 視覺系統(與 AgentDesk 的紀律正面對照)
+
+- **底色是中性近黑**,不是溫暖的血墨。品牌色是**橘**(logo、`+` 鈕、資料夾圖示、齒輪),
+  但場上同時還有:**薄荷綠**(狀態字、計數徽章、Installed)、**青綠**(分支名、分頁底線)、
+  **紫**(worktree 圖示、對話框主要按鈕)、**紅**(Close)。
+- 也就是**五個顏色同時在講話**。AgentDesk 的「一顆寶石規則」在這裡是明確更嚴的紀律,
+  不需要向他們看齊——這是少數 AgentDesk 的設計系統贏面清楚的地方。
+- 但有一條他們也遵守:**靜止的卡片沒有彩色邊**。選中的 session 才戴橘色左邊框 + 橘色暈染。
+
+### 首頁:一個幾乎全空的畫面
+
+`xirp-home` 是整份研究裡最反直覺的一張圖:**整個視窗幾乎全黑**,正中央一個大輸入框
+「What are we shipping? Describe your goal or paste a ticket URL...」,下面一行
+「View all projects」。就這樣。
+
+頂欄:`Xirp` logo · Projects · Sessions · `+`(橘) ······ 格狀圖示(grid view)·
+綠色叢集圖示 + 活躍數 `3 ⌄` · 綠點(連線狀態)· `⌨ /` · `⌘K` · 齒輪。
+
+**這跟 AgentDesk 的操作台密度是兩個極端。** 他們的大門是一個文字框(「說出你要出什麼貨」),
+AgentDesk 的大門是一張看板。兩者都合理,但值得意識到:
+prompt-first 的門檻明顯更低,而**低門檻正是前次審查判定 AgentDesk 最弱的地方**。
+
+### Session 卡片的解剖(3× 放大)
+
+由上而下四層:
+
+1. `◎ idle` — **狀態是一個小寫 mono 單字 + 圓環字形**,綠色;右側兩顆懸浮才顯現的圖示(送出、diff)
+2. 標題 — 白色 sans,兩行截斷
+3. `🗂 session/wary-finch-cqkj` — worktree 字形(紫)+ **分支名用青綠 mono**
+4. 頁腳 — 🗄 + 一條細進度條 + `3%`(語境視窗),右側 🕐 `0m`(經過時間)
+
+**狀態用「字」不用「色邊」**,這與 AgentDesk 的 3px 狀態邊 + 7px 圓點是不同的語言。
+他們的四態靠讀,AgentDesk 的六態靠掃——AgentDesk 的更適合牆面掃視,但**沒有文字備援**。
+
+Overview 上方還有一排控制:`Group: None / Activity / Recency`、圖層鈕、卡片/列表切換、篩選鈕;
+session 格子旁有一張虛線的「**+ Quick empty session**」卡;下方是可摺疊的
+`WORKTREES (2) Manage` 與 `Recent` 區。
+
+### Session 工具列(3× 放大後逐一辨認)
+
+`← Catalog… / <session 標題>` · `⎇ session/cryptic…` · `🗄 3%` · `🗂 acme-catalog-service-w… ⌄`
+· `claude ⌄` · `🕐 5h` · 🌐 · ⎇ · 📄 · 📄± · 🖥 · `<>` · ↖ · ⑂⌄ · 📦+ · │ · `☐ Close`(紅)
+
+其中 **🖥(螢幕)與 ↖(指標)兩顆並排**,強烈暗示他們有 dev 預覽 + 元素點選——
+正是 AgentDesk `dev-preview.md` 做過的題目,而 AgentDesk 在那份決策裡**否決了注入式 inspect**。
+文件完全沒提這兩顆,**無法驗證**,但如果他們走的是注入路線,那是一個可以講的哲學差異。
+
+### 新增 session 對話框
+
+小型置中 modal:資料夾標題列 → 目標 textarea → 摺疊的「▶ Per-session claude overrides」
+(標籤帶著 agent 名字,換 agent 就換內容)→ 頁腳:worktree 切換鈕(紫、啟用中)、截圖鈕、
+`agent [claude ⌄]`,右側 **`esc` close · `⌘⇧↵` background · `⌘↵` start**。
+
+**每個動作的快捷鍵就長在按鈕上**。AgentDesk 的手勢目前活在 tooltip 與 ⌘/ 表裡——
+前次審查點名過這件事,這是最便宜的修法。
+
+### Settings 的版面解剖
+
+**是 modal 不是頁面**,左軌 + 右內容:
+
+- 左軌由上而下:**帳號列**(頭像 + `developer` + 登出圖示)→ **`🔍 Search settings`** →
+  可摺疊樹狀導覽(General / Sessions / Terminal & Editor / Git & Worktrees / Notifications …)
+  → 底部釘住 **`✓ v0.7.2 · checked 11:36 AM`**
+- 右內容:麵包屑(`General`)→ 大標(`Application`)→ 副標(`Application behavior and onboarding`)
+  → 帶圖示的區段頭(`⚙ WELCOME TOUR`)→ **設定列做成卡片**:
+  左邊標題 + 說明,右邊控制項,**說明裡帶目前值**
+
+Appearance 頁的實際內容:
+
+| 設定 | 控制項 | 說明文字 |
+|---|---|---|
+| Theme | 四顆色票預覽 + `Dark` + 下拉 | — |
+| Font Size | 滑桿 10–24 | 「Terminal text size (14px)」 |
+| Diff Font Size | 滑桿 10–24 | 「Code review and diff view text size (13px)」 |
+| File Tree Font Size | 滑桿 10–18 | 「File explorer and diff sidebar (12px)」 |
+| Terminal Font | **可編輯的 CSS font-family 字串** + 重設鈕 | 「JetBrainsMono Nerd Font Mono is bundled for powerline separators and devicons」 |
+| Layout Density | 滑桿 25–200 | 「Spacing between UI elements (100%)」 |
+
+兩點值得注意:**主題列直接把四顆色票畫出來當預覽**;
+**版面密度是一個 25–200% 的乘數**——AgentDesk 的密度是設計決定(13px body、5–10px padding),
+把它交給使用者是一個真的 a11y 論證,但也會讓「刻意不 token 化的逐面光學調校」失去意義。
+
+### 最值得偷的一招:把「拒絕」寫在使用者會去找它的地方
+
+設定頁裡出現兩次同一種元件——**一個沒有標題、只有散文的邊框方塊,就放在控制項下面**:
+
+> Sessions ▸ Defaults:
+> 「Agent-owned behavior such as models and reasoning stays in native configuration.
+> Coding Agents contains only Xirp's **curated launch controls**,
+> and **Xirp never translates permissions between agents**.」
+
+> Coding Agents ▸ Overview:
+> 「Xirp does not translate one agent's permissions into another agent's controls.
+> **Handoffs use the target agent's saved native defaults.**」
+
+這不是警告橫幅,是**「你在找的那個設定為什麼不在這裡」的答案,而且就放在你會去找它的位置**。
+
+AgentDesk 的哲學是「每個拒絕都附上完整理由」——但那些理由現在活在 README 與 `docs/decisions/`,
+**不在使用者打開設定、找不到東西的那一刻**。這一招幾乎是為 AgentDesk 量身訂做的。
+
+同一頁的 agent 卡片還把機制承諾寫進了選擇的當下:
+
+> **Claude** — 「**Hand the terminal over to** Anthropic's `claude` CLI.」 `Installed`(綠)
+
+一句話講完「這個 app 做的事就是把終端交出去」。AgentDesk 的定位句
+(「every session is a real terminal」)目前只出現在 README,沒出現在使用者選 agent 的那一格。
+
+### Rules 分頁:是「格位」不是「發現」
+
+`All (2) / Global (1) / Project (1)` 三顆篩選藥丸,底下兩張卡:
+
+- **Global CLAUDE.md** · `/Users/tobiasp/.claude/CLAUDE.md` · 🌐`global` 藥丸 · *not created*
+- **Project CLAUDE.md** · `…/acme-catalog-service/CLAUDE.md` · 📁`project` 藥丸 · *not created*
+
+**兩個檔案都不存在,但都列出來了**,附完整路徑與「尚未建立」。
+這是格位模型(告訴你該放哪)而不是發現模型(只列找到的)——比單純掃描有教學價值得多,
+而且與 AgentDesk「絕不用空白冒充狀態、缺席要有理由」的原則同源。
+
+**但要誠實補正第二輪的一個判斷**:圖上只有 `CLAUDE.md` ×2,**沒有 `AGENTS.md`**。
+Skills 分頁的空狀態也寫著「Skills are defined as SKILL.md files in
+`~/.claude/skills/` or `.claude/skills/`」——**純 Claude 慣例**。
+
+也就是說,**Xirp 的情境表面同樣是 Claude-first**;vendor neutrality 是頭條,分頁裡不是。
+第二輪我說「Rules/Skills 是能讓 codex/gemini 平價的功能」——這個論點對 AgentDesk 仍然成立
+(`AGENTS.md` 是真的,codex 與 gemini 真的讀),但**不能拿 Xirp 當佐證,他們沒做到**。
+
+### Git 分頁
+
+`Status | Graph` 分段切換 + `⎇ main` 分支藥丸,右上三顆圖示(開資料夾、面板、重新整理)。
+左欄:`🔍 Filter files…` → 檔案狀態列表 → **`Commit message…` 輸入框 + `✓ Commit` 按鈕**(+ 一顆暫存圖示);
+右欄:diff 檢視;底部:可摺疊的 `⎇ Branches (2)`。
+空狀態出現兩次且措辭不同:側欄「Working tree clean / No uncommitted changes」,主欄「Working tree is clean」。
+
+### 快捷鍵對話框
+
+兩欄(`GLOBAL` / `PROJECT VIEW`),每列 = 名稱 + kbd 藥丸,
+頁腳一句:「**Hover over a shortcut and click the pencil to customize it**」——
+改鍵就在參考表裡完成,不必去設定頁。完整清單:
+
+| 鍵 | 動作 | AgentDesk |
+|---|---|---|
+| `⌘K` | 命令面板 | 有 |
+| `⌘⇧K` | **最近 session 切換器(MRU)** | 無 |
+| `⌘⇧N` / `^⇧N` | Quick Session(挑專案) | 無 |
+| `⌘N` / `^N` | 新 session | 有(對話框) |
+| `^⇧W` | **新 worktree session** | 有(不同路徑) |
+| `^⇧T` | **新終端 session**(純 shell,非 agent) | 有(attempt 內 shell 分頁) |
+| `⌘G` | 開 grid view | 終端牆(無鍵) |
+| `⌘⇧P` | 前往專案頁 | 無專案層 |
+| `⌥M` | **切換 minimap** | 無 |
+| `⌘/` | 快捷鍵表 | 有 |
+| `⌘J` | **語音輸入** | 無 |
+| `⌘[` / `⌘]` | **上一頁 / 下一頁(瀏覽歷史)** | 無 |
+| `^Tab` / `^⇧Tab` | 切換專案 | 無 |
+| `⌘P` | 開檔 | 無 |
+| `⌘⇧F` | 專案內搜尋 | 無 |
+
+`⌘[` / `⌘]` 是個安靜但重要的模式:**他們把 app 當成一個可以來回瀏覽的空間**。
+AgentDesk 的三視圖 + 抽屜目前沒有「回上一個地方」的概念。
+
+---
+
 ## 六、模式 → 缺口配對表
 
 | # | Xirp 的做法 | AgentDesk 現況 | 哲學檢查 | 判定 |
@@ -196,7 +376,17 @@ Xirp 的設定頁:齒輪圖示或 **`Cmd+,`** 開啟,八個區段,**頂端有搜
 | 17 | **截圖附進初始 prompt** | 無圖片輸入路徑 | 安全 | P3 |
 | 18 | **worktree 位置與命名可設定** | 固定 `~/.agentdesk/worktrees/` | 安全 | P3 |
 | 19 | **三種專案型態 / 父資料夾多 repo** | 硬綁單一 git repo | **動安全論證** | 暫不做 |
-| 20 | **工具列顯示 context-window 使用量** | 抽屜顯示 `語境 {ctx} · ↑{out}`,**刻意不換算百分比** | 他們可能顯示百分比 | **不跟進**——沒有誠實的分母 |
+| 20 | **工具列與卡片顯示 context-window 百分比**(截圖確認:`🗄 ▬▬ 3%`) | 抽屜顯示 `語境 {ctx} · ↑{out}`,**刻意不換算百分比** | 他們確實顯示百分比 | **不跟進**——沒有誠實的分母 |
+| 21 | **拒絕說明卡**:無標題的散文方塊,就放在「你在找的設定不在這裡」的那個位置 | 拒絕的理由全在 README 與 `docs/decisions/`,不在 UI | 安全,且**是 AgentDesk 哲學的最佳載體** | **做,最高優先** |
+| 22 | **agent 卡片把機制承諾寫進選擇的當下**(「Hand the terminal over to Anthropic's `claude` CLI」) | 定位句只在 README | 安全 | **做**(一行字) |
+| 23 | **Rules 用格位模型**:檔案不存在也列出來,附完整路徑 + 「not created」 | 無 | 安全,與「缺席要有理由」同源 | **做**(併入 Rules 分頁) |
+| 24 | **快捷鍵就印在對話框按鈕上**(`esc close` / `⌘⇧↵ background` / `⌘↵ start`) | 手勢活在 tooltip 與 ⌘/ 表 | 安全 | **做**(前次審查已點名) |
+| 25 | **改鍵入口就在 ⌘/ 參考表裡**(hover 出現鉛筆) | ⌘/ 是唯讀表 | 安全 | P2 |
+| 26 | **`⌘[` / `⌘]` 瀏覽歷史(回上一個地方)** | 無 | 安全 | P2 |
+| 27 | **設定列做成卡片,說明文字裡帶目前值**(「Terminal text size (14px)」) | 平鋪 label + 控制項 | 安全 | 併入設定改版 |
+| 28 | **字級三軌(終端 / diff / 檔案樹)+ 版面密度 25–200%** | 密度是設計決定,無使用者控制 | 安全,是 a11y 論證 | 需決策(見 §7) |
+| 29 | **首頁是一個 prompt 框,幾乎全空** | 首頁是看板 | 安全 | 需決策(門檻 vs 密度) |
+| 30 | **`⌘J` 語音輸入** | 無 | 安全但超出邊界 | 不做 |
 
 ---
 
@@ -206,12 +396,24 @@ Xirp 的設定頁:齒輪圖示或 **`Cmd+,`** 開啟,八個區段,**頂端有搜
 
 把「Xirp 的設定頁」當成一份現成規格,對著改 `EnvPanel`:
 
-1. **`Cmd+,` + 搜尋欄 + 分區**(配對 #3、#4)。搜尋欄是這一輪投報率最高的一項:
-   它不需要重新設計資訊架構,就治好「差異化功能全藏在一顆灰字按鈕後」——
-   前次審查判定的最弱項。分區可直接借他們的骨架,但 **Projects 區段先跳過**(AgentDesk 無專案層)。
-2. **Rules + Skills 分頁**(配對 #1、#2)。理由與第一輪相同,且第二輪更確定:
-   Xirp 的 Rules 分頁明列 `CLAUDE.md`、`AGENTS.md` **與支援的 agent 設定檔**——
-   這是少數能讓 codex / gemini 得到同等價值的功能,直接兌現 PRODUCT.md 的「parity is the goal」。
+0. **拒絕說明卡**(配對 #21)。**這是整份研究裡最該先做的一件事,而且最便宜。**
+   AgentDesk 的哲學是「每個拒絕都附上完整理由」,但理由現在活在 README 與決策文件裡,
+   不在使用者打開設定、找不到東西的那一刻。做法就是 Xirp 的做法:
+   一個無標題的散文方塊,放在控制項下面,寫清楚「這裡為什麼沒有那個設定」。
+   現成的內容已經寫好了,散落在 PRODUCT.md 的「Explicit refusals」與八份決策文件裡:
+   沒有 token 金額換算、沒有語境百分比、預覽不代理不注入、scrollback 不落盤、
+   合併/開 PR 就是管線終點、狀態只從 hooks 來不解析 ANSI。
+   順帶把機制承諾放進選 agent 的那一格(配對 #22)——一行字。
+1. **`Cmd+,` + 搜尋欄 + 分區**(配對 #3、#4、#27)。搜尋欄不需要重新設計資訊架構,
+   就治好「差異化功能全藏在一顆灰字按鈕後」——前次審查判定的最弱項。
+   分區可直接借他們的骨架,但 **Projects 區段先跳過**(AgentDesk 無專案層)。
+   設定列改成卡片、說明文字裡帶目前值,是同一批工。
+2. **Rules + Skills 分頁**(配對 #1、#2、#23),用**格位模型**:
+   檔案不存在也列出來,附完整路徑與「尚未建立」。
+   **注意第三輪的補正**:Xirp 自己的 Rules 只列 `CLAUDE.md`、Skills 只認 `.claude/skills/`,
+   他們的情境表面同樣是 Claude-first。所以「這是能讓 codex/gemini 平價的功能」
+   對 AgentDesk 仍然成立(`AGENTS.md` 是真的),但**這是 AgentDesk 可以贏過他們的地方,
+   不是跟隨他們的地方**。
 3. **Prompting 可見化**(配對 #5)。AgentDesk 有 `prompt.rs`,會在 session 開場替使用者組話。
    產品原則 #3 說「app 絕不自己對 agent 說話,每則機器組的訊息都放進人的手裡」——
    開場 prompt 是這條原則目前唯一的灰帶。把「app 加了什麼」列出來(最好可編輯),
@@ -219,6 +421,8 @@ Xirp 的設定頁:齒輪圖示或 **`Cmd+,`** 開啟,八個區段,**頂端有搜
 4. **重播歡迎導覽 + 第三方授權頁**(配對 #6、#9)。都是數行,後者對 Apache-2.0 專案接近義務。
 5. **`Cmd+Shift+K` MRU 切換器**(配對 #7)。與 ⌘E 並存不衝突:
    ⌘E 是「去該去的地方」(注意力),⌘⇧K 是「回到剛才那個」(記憶)。
+6. **對話框按鈕印上快捷鍵**(配對 #24)。`esc` / `⌘↵` 直接排在按鈕文字旁,
+   前次審查點名的「手勢只活在 tooltip」用這一招就補掉一半。
 
 ### 第二批:先量測再決定
 
@@ -247,6 +451,14 @@ Xirp 的設定頁:齒輪圖示或 **`Cmd+,`** 開啟,八個區段,**頂端有搜
 10. **Files 分頁 / 專案實體 / 多 repo**。三者互相牽連,而且會把 AgentDesk 推向 IDE。
     建議最多只走到「⌘P 在 attempt worktree 裡開檔」——review loop 常需要看 diff 以外的檔案,
     這個需求是真的;完整檔案樹與編輯器則超出「監督多個 agent」的產品邊界。
+11. **門檻 vs 密度**(配對 #29)。Xirp 的首頁是一個幾乎全空的畫面加一個 prompt 框
+    (「What are we shipping?」),AgentDesk 的首頁是一張四欄看板。
+    兩者都合理,但**低門檻正是前次審查判定 AgentDesk 最弱的地方**。
+    不必把桌面清空——但「第一次開啟時,眼前第一個可以打字的東西是什麼」值得重新想一次。
+12. **字級與版面密度是否交給使用者**(配對 #28)。他們給三軌字級(終端 / diff / 檔案樹)
+    加一個 25–200% 的密度乘數。AgentDesk 的密度是刻意的設計決定
+    (13px body、5–10px padding、逐面光學調校,`polish` 那批明確寫了「硬套間距階會是 redesign 不是 polish」)。
+    交出去有真的 a11y 論證,但也等於放棄那批調校。**建議:先只給終端與 diff 字級,不給全域密度。**
 
 ---
 
@@ -281,8 +493,18 @@ Xirp 的設定頁:齒輪圖示或 **`Cmd+,`** 開啟,八個區段,**頂端有搜
 
 ## 十、證據信度聲明
 
-- **未安裝、未實測**(macOS only)。UI 描述來自官方 `.md` 原文與其截圖檔名,無截圖內容驗證。
-  版面細節(minimap 長什麼樣、grid view 的分組怎麼操作)只有文字描述。
+- **未安裝、未實測**(macOS only)。第三輪已把文件內嵌的 22 張官方截圖全部下載並實際檢視,
+  其中三處經 Chromium 3× 放大裁切辨認(工具列圖示、卡片解剖、終端底部)。
+  仍然沒有的:互動行為(minimap 怎麼操作、grid view 怎麼分組)、
+  截圖未涵蓋的畫面(Accessibility 頁、Git & Worktrees 頁、Prompting 頁、minimap 本體)。
+- **Playwright 無法瀏覽線上文件**:本 session 的 egress proxy 不接受瀏覽器當客戶端
+  (連 `example.com` 都 `ERR_CONNECTION_RESET`,proxy 只記到 Chromium 自己的元件更新請求)。
+  文字內容改以各頁的 `.md` 原文取得(`llms.txt` 列出全部十四頁),
+  圖片直接抓 CDN;Chromium 只用於本機放大裁切。**沒有繞過 proxy。**
+- 第三輪對第二輪做了一處**補正**:Rules/Skills 分頁在截圖中只認 Claude 的慣例
+  (`CLAUDE.md`、`.claude/skills/`),沒有 `AGENTS.md`——
+  第二輪根據文件文字寫的「他們的 Rules 明列 AGENTS.md」未獲畫面支持。
+- 工具列上並排的 🖥 與 ↖ 兩顆圖示疑似 dev 預覽 + 元素點選,**文件完全未提,無法驗證**。
 - 配對 #8(tmux 持久化)有三條互相佐證的官方文字(依賴清單、FAQ 2.3、debug 頁的 daemon 字樣),
   信度**高於**其他各項,但仍未親手驗證 tmux 是不是持久化的實作方式——
   也可能 tmux 另有用途而持久化來自別的 daemon。動工前需確認。
