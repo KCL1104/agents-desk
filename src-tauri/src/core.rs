@@ -41,6 +41,17 @@ const DEFAULT_LAYOUT: &str = r#"{"mode":"auto","cols":"auto"}"#;
 pub enum Status {
     /// Saved, with no terminal attached right now.
     Saved,
+    /// Still running, with nobody watching.
+    ///
+    /// Only reachable in a world that holds sessions: the app was closed,
+    /// tmux kept the agent, and this start found it alive. Distinct from
+    /// `Saved` because they are opposite facts — one says the work ended,
+    /// the other says it did not — and a card that says "closed" over a
+    /// running agent invites a second one onto the same worktree.
+    ///
+    /// Not `live`: no pty in *this* process is carrying it yet. Opening the
+    /// session attaches to what is already there.
+    Detached,
     /// Terminal is up; the agent has not reported anything yet.
     Starting,
     /// Sitting on Claude Code's folder-trust prompt.
@@ -245,6 +256,7 @@ fn timeline_worthy(s: Status) -> bool {
 fn status_name(s: Status) -> &'static str {
     match s {
         Status::Saved => "saved",
+        Status::Detached => "detached",
         Status::Starting => "starting",
         Status::AwaitingTrust => "awaiting_trust",
         Status::Running => "running",
@@ -1048,6 +1060,9 @@ impl Core {
         }
 
         let _ = router.core.set(Arc::downgrade(&core));
+
+        // Before the first paint: whatever tmux kept running is not "closed".
+        core.mark_detached();
 
         core.broadcast();
         core.emit_tabs();
@@ -3182,6 +3197,43 @@ impl Core {
 
     pub fn hook_url(&self) -> Option<String> {
         self.hooks.get().map(|h| h.url())
+    }
+
+    /// Ask tmux which of the sessions we just loaded are still running.
+    ///
+    /// `from_stored` marks everything `Saved`, which was true when every
+    /// terminal died with the app. It is not true any more, and a card that
+    /// says "closed" over a working agent is worse than a missing feature —
+    /// somebody reads it, believes the work is gone, and starts a second
+    /// attempt onto the same worktree.
+    ///
+    /// Runs before the first paint rather than on a thread: a status that
+    /// corrects itself a moment later is a flicker on the one surface whose
+    /// whole job is being trusted at a glance. `has-session` is a socket
+    /// connect, so the cost is a millisecond apiece.
+    ///
+    /// Sessions in worlds that hold nothing simply have no socket to find,
+    /// so they stay `Saved` without needing to be asked about separately.
+    fn mark_detached(&self) {
+        if self.env.which("tmux").is_none() {
+            return;
+        }
+        let tag = self.desk_tag();
+        let mut sessions = self.sessions.lock().unwrap();
+        for (id, meta) in sessions.iter_mut() {
+            if meta.status != Status::Saved {
+                continue;
+            }
+            let sock = pty::hold_socket(&tag, id);
+            let alive = std::process::Command::new("tmux")
+                .args(["-L", &sock, "has-session", "-t", pty::HOLD_SESSION])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if alive {
+                meta.status = Status::Detached;
+            }
+        }
     }
 
     /// Whether this world can hold a session past the app's own life.

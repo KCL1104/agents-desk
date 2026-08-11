@@ -4,6 +4,11 @@ import type { MessageKey } from './i18n/messages';
 
 export type Status =
   | 'saved'
+  /** Still running, with nobody watching: the app was closed, tmux kept the
+      agent, and this start found it alive. The opposite fact from `saved`,
+      and worth its own word — a card saying "closed" over a working agent
+      invites a second attempt onto the same worktree. */
+  | 'detached'
   | 'starting'
   /** Sitting on Claude Code's folder-trust prompt, which every new worktree
       opens on. No hook reports this — nothing runs until it is answered — so

@@ -41,6 +41,11 @@ export type Live =
   | { kind: 'session'; status: Status; session: SessionMeta; attempt: Attempt }
   /** An attempt exists but nothing is running it. Resumable. */
   | { kind: 'stopped'; attempt: Attempt }
+  /** Running, with nothing attached to it here: tmux kept the agent through
+      a restart. Opening the card reconnects to what is already going, so it
+      must not read as 未執行 — that is the same lie the status label used to
+      tell, told again in the one place people look first. */
+  | { kind: 'detached'; session: SessionMeta; attempt: Attempt }
   /** Parked: worktree and slot given back, branch and conversation kept.
       Quieter than stopped — it is asleep on purpose. */
   | { kind: 'parked'; attempt: Attempt }
@@ -82,6 +87,9 @@ export function liveStateOf(task: Task, sessions: readonly SessionMeta[]): Live 
   // A session that is not live has no terminal attached; `saved` and `exited`
   // both mean the same thing to the board, which is that pressing resume is
   // what happens next.
+  if (session && !session.live && session.status === 'detached') {
+    return { kind: 'detached', session, attempt };
+  }
   if (!session || !session.live) return { kind: 'stopped', attempt };
   return { kind: 'session', status: session.status, session, attempt };
 }
@@ -99,6 +107,8 @@ export function liveLabel(live: Live, t: TFn, withMode = false): string {
       return t('live.queued', { position: live.position });
     case 'stopped':
       return t('live.stopped');
+    case 'detached':
+      return t('status.detached');
     case 'parked':
       return t('live.parked');
     case 'finished': {
@@ -128,6 +138,12 @@ export function liveTone(live: Live): string {
       return live.status;
     case 'finished':
       return 'exited';
+    // Its own tone rather than falling through to `saved`: the dot is
+    // deliberately the neutral one — the agent is running but its hooks
+    // still answer to the port the previous app instance held, so nothing
+    // here knows what it is doing until the session is opened.
+    case 'detached':
+      return 'detached';
     default:
       return 'saved';
   }

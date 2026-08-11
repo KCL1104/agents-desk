@@ -209,6 +209,12 @@ textarea { resize: vertical; }
    hollow. */
 .dot.waiting_input { background: transparent; box-shadow: inset 0 0 0 1.5px var(--warn); }
 .dot.idle { background: var(--ok); }
+/* Detached keeps the neutral dot on purpose. The agent is running, but its
+   hooks are still reporting to the port the previous app instance held, so
+   this one cannot read what it is doing until the session is opened. The
+   accent dot would claim knowledge we do not have; the word carries the
+   part we do know. */
+.dot.detached { background: var(--fg-dim); }
 
 .main { display: flex; flex-direction: column; overflow: hidden; }
 

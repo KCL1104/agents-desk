@@ -27,6 +27,7 @@ export const STATUS_KEY: Record<Status, MessageKey> = {
   waiting_input: 'status.waiting_input',
   idle: 'status.idle',
   saved: 'status.saved',
+  detached: 'status.detached',
   exited: 'status.exited',
 };
 
@@ -60,6 +61,11 @@ export function sectionOf(s: SessionMeta): Section {
       return 'waiting';
     case 'idle':
       return 'idle';
+    // Running, just not watched. Filing it under 完成 would repeat in the
+    // grouping the same lie the label used to tell; 開發中 is where a
+    // working agent belongs, whoever is or is not looking at it.
+    case 'detached':
+      return 'working';
     case 'saved':
     case 'exited':
       return 'done';

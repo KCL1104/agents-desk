@@ -68,6 +68,9 @@ struct Harness {
     repo: PathBuf,
     core: Arc<Core>,
     rt: tokio::runtime::Runtime,
+    /// Kept so a test can stand a second core over the same directories —
+    /// which is the only way to exercise what a restart sees.
+    env: ShellEnv,
 }
 
 /// A stand-in for an agent CLI. Records the working directory and every
@@ -190,7 +193,7 @@ exec "$@"
         let rt = tokio::runtime::Runtime::new().unwrap();
         let core = rt
             .block_on(Core::start_with(
-                env,
+                env.clone(),
                 Arc::new(Events::default()) as Arc<dyn UiSink>,
                 root.join("agentdesk.db"),
                 root.join("data"),
@@ -203,6 +206,7 @@ exec "$@"
             repo,
             core,
             rt,
+            env,
         }
     }
 
@@ -2182,4 +2186,56 @@ fn the_badge_counts_attempts_and_ad_hoc_sessions_together() {
     // The attempt is on its trust prompt; the ad-hoc session is not, because
     // its directory is one the person already chose.
     assert_eq!(waiting, 1, "{:?}", h.core.sessions());
+}
+
+/// A held session survives the app, and the next start says so.
+///
+/// `from_stored` marks everything `Saved`, which was true when every terminal
+/// died with the app. With tmux holding local sessions it is not, and a card
+/// reading "closed" over a working agent is how somebody starts a second
+/// attempt onto the same worktree.
+///
+/// Skipped where tmux is absent: there is nothing to hold sessions with, so
+/// there is nothing to be honest or dishonest about.
+#[test]
+fn a_session_tmux_kept_running_does_not_come_back_as_closed() {
+    if std::process::Command::new("tmux").arg("-V").output().is_err() {
+        eprintln!("no tmux on PATH — nothing holds sessions here");
+        return;
+    }
+    let h = Harness::new("detached");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+    let a = h.start(&task, "claude");
+    h.launches(&a.session_id, 1);
+
+    // The agent is running under tmux. Quitting drops the client and leaves
+    // it there — which is `shutdown`, exactly what closing the window does.
+    h.core.shutdown();
+
+    // A fresh core over the same database and data dir: the restart.
+    let core2 = h
+        .rt
+        .block_on(Core::start_with(
+            h.env.clone(),
+            Arc::new(Events::default()) as Arc<dyn UiSink>,
+            h.root.join("agentdesk.db"),
+            h.root.join("data"),
+            h.root.join("worktrees"),
+        ))
+        .expect("second core");
+
+    let seen = core2
+        .sessions()
+        .into_iter()
+        .find(|s| s.id == a.session_id)
+        .expect("the session is still on the list");
+    assert_eq!(
+        seen.status,
+        Status::Detached,
+        "a session tmux kept running came back as {:?}",
+        seen.status,
+    );
+    // Not live: no pty in *this* process carries it yet. Opening attaches.
+    assert!(!seen.live, "nothing is attached to it in this process");
 }

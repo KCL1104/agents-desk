@@ -274,6 +274,9 @@ export const en = {
   'status.waiting_input': 'Waiting on you',
   'status.idle': 'Idle',
   'status.saved': 'Closed',
+  // The app was closed; the agent was not. Named for what is true of the
+  // work, not for what the window did.
+  'status.detached': 'Running unwatched',
   'status.exited': 'Exited',
   // Worn by cards whose agent has no hooks: silence that means "can't
   // tell", kept distinct from silence that means "nothing to do".
@@ -786,6 +789,7 @@ export const zhTW: Record<MessageKey, string> = {
   'status.waiting_input': '等你回覆',
   'status.idle': '待命',
   'status.saved': '已關閉',
+  'status.detached': '沒人看著在跑',
   'status.exited': '已結束',
   'status.noSignal': '無狀態訊號',
 

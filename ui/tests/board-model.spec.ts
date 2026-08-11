@@ -225,3 +225,32 @@ test('a wsl repository is labelled with its distro', async () => {
   // The name still reads from the path's last segment, URL or not.
   expect(repoName('wsl://Ubuntu/home/me/code/app')).toBe('app');
 });
+
+/**
+ * 「app 關掉了,agent 沒有」——tmux 撐住的 session 在重開後不能讀成未執行。
+ *
+ * 這個謊言原本會講兩次:狀態標籤講一次(sidebar / overview / 面板),
+ * 卡片再用 `live.stopped` 講一次。兩處都要說實話。
+ */
+test.describe('a session tmux kept running', () => {
+  test('reads as running unwatched on the card, not as 未執行', () => {
+    const t = task({ attempts: [attempt({ id: 'a1', seq: 1, session_id: 's1' })] });
+    const live = liveStateOf(t, [session({ id: 's1', live: false, status: 'detached' })]);
+    expect(live.kind).toBe('detached');
+    expect(liveLabel(live, zh)).toBe('沒人看著在跑');
+  });
+
+  test('wears the neutral dot — running is known, what it is doing is not', () => {
+    const t = task({ attempts: [attempt({ id: 'a1', seq: 1, session_id: 's1' })] });
+    const live = liveStateOf(t, [session({ id: 's1', live: false, status: 'detached' })]);
+    // 不是 accent:它的 hooks 還對著上一個 app 實例的 port,這裡讀不到。
+    expect(liveTone(live)).toBe('detached');
+  });
+
+  test('a session that really did end still reads as 未執行', () => {
+    const t = task({ attempts: [attempt({ id: 'a1', seq: 1, session_id: 's1' })] });
+    const live = liveStateOf(t, [session({ id: 's1', live: false, status: 'saved' })]);
+    expect(live.kind).toBe('stopped');
+    expect(liveLabel(live, zh)).toBe('未執行');
+  });
+});
