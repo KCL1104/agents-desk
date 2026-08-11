@@ -125,6 +125,54 @@ pub fn default_tab_name(locale: Locale) -> &'static str {
     }
 }
 
+/* ------------------------------- the tray -------------------------------
+
+The one surface that speaks while the window is closed, so what it says has
+to be true of a desk that is *away* rather than stopped. Quitting detaches
+the agents tmux is holding; it does not end them.
+------------------------------------------------------------------------ */
+
+pub fn tray_show(locale: Locale) -> &'static str {
+    match locale {
+        Locale::En => "Open AgentDesk",
+        Locale::ZhTw => "打開 AgentDesk",
+    }
+}
+
+pub fn tray_quit(locale: Locale) -> &'static str {
+    match locale {
+        Locale::En => "Quit",
+        Locale::ZhTw => "結束",
+    }
+}
+
+/// The text beside the icon, where the platform draws one.
+///
+/// Empty while nothing waits. A tray that always says its own name spends a
+/// permanent slice of the menu bar to tell you nothing, which is the same
+/// rule the board's status edge already keeps: colour is an event, not a
+/// stripe. No language of its own — a count and a warning sign read the same
+/// in both.
+pub fn tray_title(waiting: usize) -> String {
+    if waiting == 0 {
+        String::new()
+    } else {
+        format!("⚠ {waiting}")
+    }
+}
+
+/// The hover text. Windows has no label beside the icon, so this is the
+/// whole message there, and it says it in words rather than a glyph.
+pub fn tray_tooltip(locale: Locale, waiting: usize) -> String {
+    if waiting == 0 {
+        return "AgentDesk".to_string();
+    }
+    match locale {
+        Locale::En => format!("AgentDesk: {waiting} waiting on you"),
+        Locale::ZhTw => format!("AgentDesk：{waiting} 個等你"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,6 +195,28 @@ mod tests {
         assert_eq!(cell.get(), Locale::ZhTw);
         cell.set(Locale::En);
         assert_eq!(cell.get(), Locale::En);
+    }
+
+    /// Nothing waiting is nothing said. The tray label is the one string
+    /// that occupies screen for as long as the app is alive, so an idle desk
+    /// has to give the space back — and the moment it has something to
+    /// report, it must be countable rather than merely present.
+    #[test]
+    fn the_tray_is_silent_until_it_has_a_number() {
+        assert_eq!(tray_title(0), "");
+        assert!(tray_title(1).contains('1'));
+        assert!(tray_title(12).contains("12"));
+        // The tooltip carries the whole message on Windows, where there is
+        // no label beside the icon at all, so it never goes empty.
+        for locale in [Locale::En, Locale::ZhTw] {
+            assert_eq!(tray_tooltip(locale, 0), "AgentDesk");
+            assert!(tray_tooltip(locale, 3).contains('3'));
+            assert!(tray_tooltip(locale, 3).contains("AgentDesk"));
+        }
+        // Two languages, two menus. A tray built once in English and never
+        // rebuilt is the failure this pins.
+        assert_ne!(tray_show(Locale::En), tray_show(Locale::ZhTw));
+        assert_ne!(tray_quit(Locale::En), tray_quit(Locale::ZhTw));
     }
 
     /// The bodies are glued after a session title, so a leading capital or a

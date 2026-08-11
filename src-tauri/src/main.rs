@@ -14,6 +14,8 @@ mod worktree;
 use ::core::result::Result as StdResult;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 
@@ -49,13 +51,16 @@ impl UiSink for TauriSink {
         if event == "badge" {
             // The dock/taskbar wears the waiting count, so "how many agents
             // need me" survives minimising the window. macOS and Unity
-            // launchers render it; elsewhere the call is a harmless no-op.
+            // launchers render it; elsewhere the call is a harmless no-op —
+            // which on Windows means no-op entirely, and is why the same
+            // number also goes to the tray below.
             let count = payload["count"].as_i64().unwrap_or(0);
             let app = self.0.clone();
             let run = self.0.run_on_main_thread(move || {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.set_badge_count((count > 0).then_some(count));
                 }
+                paint_tray(&app, count.max(0) as usize);
             });
             if let Err(e) = run {
                 eprintln!("[tauri] badge update failed: {e}");
@@ -67,10 +72,109 @@ impl UiSink for TauriSink {
     }
 }
 
+/// Put the waiting count on the tray, and remember it.
+///
+/// Remembered because the count and the language arrive on different clocks:
+/// the badge fires when a session changes state, `set_locale` when a person
+/// changes the picker, and each has to be able to redraw without the other
+/// happening again.
+///
+/// Must be called on the main thread — every caller here is already inside a
+/// `run_on_main_thread` or a menu handler, which is one.
+fn paint_tray(app: &AppHandle, waiting: usize) {
+    *app.state::<AppState>().waiting.lock().unwrap() = waiting;
+    let Some(tray) = app.tray_by_id("main") else { return };
+    let locale = app
+        .state::<AppState>()
+        .core()
+        .map(|c| c.locale.get())
+        .unwrap_or_default();
+    let _ = tray.set_title(Some(i18n::tray_title(waiting)));
+    let _ = tray.set_tooltip(Some(i18n::tray_tooltip(locale, waiting)));
+}
+
+/// Bring the window back and put the caret in it.
+///
+/// `show` as well as `set_focus`: a window the platform minimised to the tray
+/// is hidden, and focusing something hidden focuses nothing.
+fn open_window(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
+/// The tray: an icon that says whether anything is waiting, and a way back
+/// into the window.
+///
+/// It exists mostly for Windows. macOS and Unity draw the waiting count on
+/// the dock icon, so there the tray repeats something already said; on
+/// Windows there is no badge at all, and until now a closed window meant no
+/// signal of any kind that an agent was blocked on you.
+///
+/// Deliberately three lines and no more:
+///
+///   * closing the window still does what the platform says it does. Making
+///     close mean hide is a thing tray apps do, and it surprises everyone who
+///     meant to quit — the more so now that quitting is cheap, since the
+///     agents outlive it.
+///   * quitting from here goes through `ExitRequested` like every other
+///     quit, so tmux-held sessions are *detached* rather than orphaned and
+///     the hook port is given back.
+///   * the menu does not list the waiting sessions by name. That is a real
+///     idea and a bigger one: it needs the list rebuilt on every state
+///     change and a click route into the webview, and the count already
+///     answers the question the tray exists to answer.
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    let locale = i18n::Locale::default();
+    let show = MenuItem::with_id(app, "tray.show", i18n::tray_show(locale), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "tray.quit", i18n::tray_quit(locale), true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+    *app.state::<AppState>().tray_items.lock().unwrap() = Some((show, quit));
+
+    let mut builder = TrayIconBuilder::with_id("main")
+        .menu(&menu)
+        .tooltip(i18n::tray_tooltip(locale, 0))
+        // The menu belongs to the right button. A left click is the
+        // impatient version of "open it", and swallowing that into a menu
+        // makes the common act cost two clicks.
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "tray.show" => open_window(app),
+            "tray.quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                open_window(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
 #[derive(Default)]
 struct AppState {
     core: Mutex<Option<Arc<Core>>>,
     boot_error: Mutex<Option<String>>,
+    /// The tray's two menu items, held so a language change can rewrite
+    /// them. The tray is built before the webview has said which language
+    /// it is in — it has to exist from the first moment, since its whole
+    /// job is to be there when the window is not — so it is built in
+    /// English and corrected when the answer arrives.
+    tray_items: Mutex<Option<(MenuItem<tauri::Wry>, MenuItem<tauri::Wry>)>>,
+    /// The last count the badge carried, so a language change can redraw the
+    /// tooltip without waiting for the next session to change state.
+    waiting: Mutex<usize>,
 }
 
 impl AppState {
@@ -91,12 +195,24 @@ impl AppState {
 /* ------------------------------------------------------------------ */
 
 #[tauri::command]
-fn set_locale(state: State<'_, AppState>, locale: String) -> StdResult<(), String> {
+fn set_locale(app: AppHandle, state: State<'_, AppState>, locale: String) -> StdResult<(), String> {
     // Best-effort: the language is a display preference, so a call that lands
     // before the core is up is not worth surfacing as an error to the webview.
+    let parsed = i18n::Locale::parse(&locale);
     if let Ok(core) = state.core() {
-        core.locale.set(i18n::Locale::parse(&locale));
+        core.locale.set(parsed);
     }
+    // The tray was built before anyone had said which language this is, so
+    // this is where it finds out. Rewriting the two labels rather than
+    // rebuilding the menu: a menu replaced under an open tray is a menu that
+    // closes itself in the user's hand.
+    if let Some((show, quit)) = state.tray_items.lock().unwrap().as_ref() {
+        let _ = show.set_text(i18n::tray_show(parsed));
+        let _ = quit.set_text(i18n::tray_quit(parsed));
+    }
+    let waiting = *state.waiting.lock().unwrap();
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || paint_tray(&handle, waiting));
     Ok(())
 }
 
@@ -748,6 +864,12 @@ fn main() {
         })
         .manage(AppState::default())
         .setup(|app| {
+            // Before the core: the tray's whole job is to be there when the
+            // window is not, and a boot that fails is exactly a moment when
+            // somebody needs a way back to the window.
+            if let Err(e) = build_tray(app.handle()) {
+                eprintln!("[tauri] tray unavailable: {e}");
+            }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let sink: Arc<dyn UiSink> = Arc::new(TauriSink(handle.clone()));

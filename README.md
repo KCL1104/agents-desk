@@ -184,10 +184,11 @@ pixel for pixel, beside a plain test runner.
   everything runs where the repository is
 - **The SSH host**: the same seam across a wire, using the `Host` aliases from
   your own `~/.ssh/config`
+- **A system tray icon**: the waiting count, and a way back into the window,
+  for when the window is closed. It earns its place mainly on Windows, where
+  there is no dock badge at all
 - **English and 繁體中文**, following your system language and switchable from
-  settings. Native notifications follow the same setting
-
-Not done yet: system tray.
+  settings. Native notifications and the tray menu follow the same setting
 
 ---
 
@@ -238,6 +239,35 @@ Two consequences worth naming:
   remembered, so it degrades rather than refusing to start.
 
 Not yet done: the same for the WSL and SSH worlds.
+
+---
+
+## The tray
+
+An icon that says whether anything is waiting on you, and a way back into the
+window when the window is gone. `⚠ 3` beside the icon where the platform draws
+a label, the same thing in words on hover where it does not, and nothing at
+all while nothing waits: a tray that always says its own name spends a
+permanent slice of the menu bar to tell you something you knew.
+
+It is mostly for Windows. macOS and Unity put the waiting count on the dock
+icon already, so there the tray repeats a thing that has been said; on Windows
+there is no badge, and a closed window used to mean no signal of any kind that
+an agent was blocked.
+
+Three things it deliberately does not do:
+
+- **Closing the window still means what your platform says it means.** Making
+  close mean hide is a thing tray apps do, and it surprises everyone who meant
+  to quit. It is also less needed than it used to be, now that quitting is
+  cheap: the agents outlive it.
+- **Quitting from the tray is the same quit.** It goes through the same exit
+  path as every other, so tmux-held sessions are detached rather than
+  orphaned, and the hook port is given back for the next run to take.
+- **The menu does not list the waiting sessions by name.** That is a real idea
+  and a larger one: it needs the list rebuilt on every state change and a
+  click route back into the webview. The count already answers the question
+  the tray exists to answer, which is whether to go and look.
 
 ---
 
