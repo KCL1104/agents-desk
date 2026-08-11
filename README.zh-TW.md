@@ -116,8 +116,9 @@ review 迴圈最常見的收尾是一行小修，所以 diff 直接讓你修。`
 - SQLite session 清單，跨重啟保留；重開會 `--continue` 接續該目錄的對話
 - 多個工作區分頁，各自保留自己的佈局與 scrollback
 - 任意 agent CLI 加任意啟動參數，原封不動傳過去
-- **狀態偵測與通知**：靠 Claude Code hooks，不解析 ANSI。左上角顯示
-  「⚠ N 個等你」，被擋住的 session 會發系統通知
+- **狀態偵測與通知**：靠 agent 自己的 hooks，不解析 ANSI。左上角顯示
+  「⚠ N 個等你」，被擋住的 session 會發系統通知。兩支實測過的 CLI ——
+  Claude Code 與 Codex —— 回報同樣的六個時刻（見「兩支實測過的 agent」）
 - **任務與 attempt**：一張卡可以開多個 attempt，每個有自己的 git worktree
   與分支，同一個 repo 上的兩個 agent 互不干擾。收尾時 diff 先凍結進資料庫，
   再把 worktree 還回去
@@ -136,9 +137,14 @@ review 迴圈最常見的收尾是一行小修，所以 diff 直接讓你修。`
   attempt 自動標為已被取代，diff 凍結保留，方便事後比較兩個 agent 的做法
 - **Workspace scripts**：新開的 worktree 只是個 checkout，不是能跑的工作區。
   `.marol/config.json` 說明它怎麼長成一個（見下）
-- **權限模式**：每個 attempt 可以選 Claude Code 要照常詢問、自動接受檔案編輯
-  （`--permission-mode acceptEdits`），或全自動不再詢問
-  （`--dangerously-skip-permissions`）。安全論證就是 worktree，所以這個選項
+- **權限模式**：每個 attempt 可以選實測過的 CLI 要照常詢問、自動接受檔案
+  編輯，或全自動不再詢問。這句話在命令列上怎麼寫是那支 CLI 自己的事 ——
+  Claude Code 有 permission mode（`--permission-mode acceptEdits`、
+  `--dangerously-skip-permissions`），Codex 有沙箱與核准政策
+  （`--sandbox workspace-write --ask-for-approval on-request`、
+  `--dangerously-bypass-approvals-and-sandbox`）—— 這張桌子存的是人核准了
+  什麼，不替任何 agent 把設定翻譯成另一個 agent 的。安全論證就是 worktree，
+  所以這個選項
   只存在於 attempt，臨時 session 永遠沒有。模式在開始對話框核准一次，排隊與
   resume 都會沿用；session 全自動跑著的時候，卡片一直掛著 ⚡ 徽章
 - **具名設定檔**：profile 就是幫「這個 CLI、每次都帶這些參數」取一個名字，
@@ -358,10 +364,12 @@ export PATH="$HOME/.cargo/bin:$PATH"
   server 送出的樣子，不代理、不注入。server 死了面板會說，不留白框。repo 自掛
   inspect script（`docs/examples/marol-inspect.js`）後，Alt+click 任何元件
   就變成「{component} · {file}:{line}」，一鍵送進 agent 的終端機。
-- **Token 帳。** 每個 claude session 的花費與語境水位，每回合結束從它自己的
+- **Token 帳。** 每個實測過的 session 的花費與語境水位，每回合結束從它自己的
   transcript 讀一次（路徑由 hooks 遞來，回合中不輪詢）。檢視器顯示
   「語境 279k · ↑2.6M」，hover 給四欄精確值。只給 token、不給金額或百分比：
-  價目表會過期，沒量測過的 context window 是發明出來的分母。
+  價目表會過期，沒量測過的 context window 是發明出來的分母。兩支 CLI 記帳的
+  方式不同 —— Claude Code 一則訊息一列，Codex 每列都是累計總和 —— 所以摺疊
+  的方式也不同：把 Codex 的列加起來，會讓一個 session 的帳單乘上它的回合數。
 - **終端機搜尋**（`⌘/Ctrl+F`）。用浮層搜 10k 行捲動歷史；Enter 與 Shift+Enter
   走上下一個，找不到會直說。終端機內改用 Ctrl+Shift+F，因為 Ctrl+F 屬於
   readline。輸出裡的網址用 ⌘/Ctrl+click 開啟。
@@ -369,10 +377,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
   憑記憶打字。標題可以不填：留白就用 prompt 的第一行，這是對話框明講的規則，
   不是碰巧的預設。
 - **世界。** 左下角的切換決定新東西開在哪（WSL distro 與 SSH host 用枚舉的，
-  不發明），點選就地探那個世界的 `claude`。走 WSL 或 SSH 的 repo 會在卡片上
+  不發明），點選就地探那個世界有哪些 agent。走 WSL 或 SSH 的 repo 會在卡片上
   戴 host 徽章；總覽在超過一個世界時按機器分組。
-- **無訊號 chip。** 狀態來自 Claude Code 的 hooks；跑其他 agent 的卡片會直說
-  「無狀態訊號」，不讓安靜被讀成沒事。
+- **無訊號 chip。** 狀態來自 agent 自己的 hooks；跑沒有 hooks 的 CLI 的卡片
+  會直說「無狀態訊號」，不讓安靜被讀成沒事。
 
 ### 鍵盤
 
@@ -451,6 +459,9 @@ session 的流程，以及 xterm 對**真實 PTY bytes** 的解碼與渲染。
 
 - `tests/pty.rs`：子行程在 tty 上（所以 CLI 進互動模式，不是降級的
   non-interactive），以及它拿到的是 login shell 的 PATH 而不是 GUI stub
+- `tests/agent_parity.rs`：`codex` 的同一條鏈路，加上兩支 CLI 的每個 flag
+  與每個 flag 的值都對它們自己的 `--help` 檢查一遍。完全不需要憑證；CLI 沒
+  安裝時會大聲跳過
 - `tests/hooks.rs`：完整鏈路 PTY → 真的 `claude` → plugin hook → curl →
   HTTP listener，且 session id 正確對應。不需要花錢的 API call
 - `ui/tests/fixtures/claude-tui.json`：從 PTY 擷取的真實 Claude Code TUI 輸出，
@@ -627,12 +638,34 @@ rustfmt-clean，把整棵樹重排是另一件事，不該跟接 CI 綁在一起
 `npm run smoke` 沒有進 CI：它會真的開一個 Claude Code session，需要憑證。
 
 `.github/workflows/claude-detect.yml` 守著其餘 CI 守不住的那一條承諾：app 在
-真的機器上找得到真的 Claude Code。四條腿，Linux、macOS、原生 Windows、WSL 裡
+真的機器上找得到真的 agent CLI。四條腿，Linux、macOS、原生 Windows、WSL 裡
 的 Ubuntu，各自在真的 runner 上裝真的 CLI，然後驅動 app **自己**的解析路徑
 （login-shell 探測、各平台的 PATH 走法、WSL 那道門）直到找到執行檔、並從
-`claude --version` 拿到回答。每次推上 `main`、碰到 `src-tauri` 的 push 都跑，
-每週一也跑，因為上游安裝器改了形狀不需要這裡有任何 commit；樹是綠的而週一
-紅了，指的就是他們。
+`--version` 拿到回答。WSL 那條腿連 Codex 一起裝，因為受測的是那道門，而一個
+世界只在它真的搆得到的 agent 上可用。每次推上 `main`、碰到 `src-tauri` 的
+push 都跑，每週一也跑，因為上游安裝器改了形狀不需要這裡有任何 commit；樹是
+綠的而週一紅了，指的就是他們。
+
+`.github/workflows/agent-parity.yml` 守著另一條：這個 app **遞給**那些 CLI
+的東西，它們是不是還收。`src-tauri/src/agent.rs` 是一張別人家慣例的表，這種
+表會安靜地爛掉 —— 改名的 flag 是一個還沒畫出終端機就結束的 session，不再被
+認得的設定 key 是一張永遠不顯示狀態的卡片（Codex 對解析不了的 `-c` 值是當成
+字串留著，不是拒絕，所以什麼都不會失敗）。所以這張表拿去對真的 CLI 量，
+Linux、macOS、Windows 三個平台都跑：
+
+- app 送得出的每一個帶橫線的 token，都要出現在那支 CLI 自己的 `--help` 裡 ——
+  它配的每一個值也要，因為 `--sandbox` 活著而 `workspace-write` 改了名，
+  失敗得跟 flag 不見一樣徹底
+- `codex resume` 還是子命令、`--continue` 還是選項，因為這兩者放在命令列的
+  兩端
+- `codex doctor` 要把這個 app 送的那組 `-c` 參數回報成「設定載入了」——
+  而故意寫壞的那一個要回報成「拒絕了」，否則前半句什麼也沒證明
+- 一支真的 `codex` 帶著那些參數啟動，要抵達 app 真的 hook listener，session
+  id 由 shell 展開過、payload 在 request body 裡
+
+這些全都不需要憑證：`codex exec` 在第一個請求送出去之前就會觸發
+`SessionStart` 與 `UserPromptSubmit`，請求之後才因為沒有認證而失敗，離被量的
+那一段很遠。碰到後端的 PR 會跑，每週二也跑。
 
 ---
 
@@ -663,21 +696,28 @@ rustfmt-clean，把整棵樹重排是另一件事，不該跟接 CI 綁在一起
 
 ## 狀態偵測
 
-多開 session 時你唯一真正需要的資訊是「哪一個在等我」。取得方式是請 Claude
-Code 自己回報，不是去解析畫面，因為解析 ANSI 會在 TUI 改版時無聲壞掉。
+多開 session 時你唯一真正需要的資訊是「哪一個在等我」。取得方式是請 agent
+自己回報，不是去解析畫面，因為解析 ANSI 會在 TUI 改版時無聲壞掉。
 
 App 啟動時做兩件事：在 loopback 開一個小 HTTP listener，以及把一份只含 hooks
-的 plugin 寫到資料目錄。每個 session 用 `--plugin-dir` 載入它，並注入
-`MAROL_SESSION_ID` 與 `MAROL_HOOK_URL`；hook 是一行 `curl`，把狀態
-回報回來。
+的 plugin 寫到資料目錄。每個 session 都被注入 `MAROL_SESSION_ID`，並用它那支
+CLI 自己提供的方式指向那個 listener —— Claude Code 用 `--plugin-dir` 載入
+plugin，Codex 收 `-c hooks.*` 覆寫，那是只屬於這一次啟動的設定、不碰磁碟上
+任何檔案。兩種都不寫進你自己的設定檔，因為一個會去改
+`~/.claude/settings.json` 或 `~/.codex/config.toml` 的 app，就是一個能悄悄
+關掉你自己寫的 hooks 的 app。
 
-| Hook 事件 | 回報狀態 |
-|---|---|
-| `SessionStart` / `UserPromptSubmit` / `PreToolUse` | 執行中 |
-| `PermissionRequest`、`Notification`(permission_prompt) | **等你授權** |
-| `Notification`(idle_prompt) | **等你回覆** |
-| `Stop` | 待命 |
-| `SessionEnd` | 結束 |
+| Hook 事件 | 回報狀態 | |
+|---|---|---|
+| `SessionStart` / `UserPromptSubmit` / `PreToolUse` | 執行中 | 兩支都有 |
+| `PermissionRequest`、`Notification`(permission_prompt) | **等你授權** | 兩支都有 |
+| `Notification`(idle_prompt) | **等你回覆** | 只有 Claude Code |
+| `Stop` | 待命 | 兩支都有 |
+| `SessionEnd` | 結束 | 兩支都有 |
+
+Codex 沒有閒置提示事件，所以它從不回報「等你回覆」。沒有任何東西回報得出來
+的狀態，這張桌子不會自己發明；Codex 回合結束就是「待命」，那本來就是
+「該你了」。
 
 只有「等你授權」與「等你回覆」會發通知與計入徽章。那是 agent 真的被擋住、
 沒有你就無法繼續的兩種狀態。
@@ -689,7 +729,22 @@ App 啟動時做兩件事：在 loopback 開一個小 HTTP listener，以及把�
 2. **`"shell": "sh"` 會讓 hook 靜默不觸發。** 沒有錯誤、沒有回報。`"bash"`
    可以，不指定也可以。有回歸測試釘住這點。
 3. **hook 一定要 exit 0。** 退出碼 2 會**擋下**它所在的那個工具呼叫，所以每
-   一行都以 `|| true` 結尾。app 掛掉絕不能連帶卡死 agent。
+   一行都以 `|| true` 結尾（Codex 那邊是 `|| exit 0`，因為這句話在 `sh` 與
+   `cmd.exe` 裡意思一樣，而 `cmd.exe` 根本沒有 `true` 這個命令）。app 掛掉
+   絕不能連帶卡死 agent。
+
+再三個，量的是 Codex 0.147：
+
+4. **Codex 沒有 `http` 這種 hook type**，所以每個事件都要付一次 `curl` ——
+   而它預設的 hook timeout 是十分鐘。一個能把工具呼叫卡住十分鐘的狀態回報，
+   比沒有狀態更糟，所以這個 app 設定的每個 hook 都帶很短的 timeout，裡面的
+   `curl` 還更早放棄。
+5. **Codex 的 hook 沒被信任過就不會跑**，而信任是記在 hook 自己的雜湊上。
+   所以這份定義每個 session 都一模一樣 —— session id 走 `$MAROL_SESSION_ID`
+   而不是寫死 —— 一次 `/hooks` 就管一台機器一輩子。
+6. **不用 `$` 拼變數的 shell 會讓那個 id 原樣留著。** 每份 hook payload 都帶
+   工作目錄，而一個 attempt 的 worktree 只屬於一個 session，所以 id 沒活著
+   抵達的回報改用目錄安放。同一個目錄下有兩個活著的 session 就拒絕，不猜。
 
 （另外三個關於 worktree 與首則 prompt 的實測結果，見下面「任務與 attempt」。）
 
@@ -738,9 +793,42 @@ repo 旁邊**。repo 的上層目錄很常自己也是一個 repo（傘狀 works
 載入，不重複塞。模板在 `<data_dir>/prompt-template.md`，可以改，升級不會蓋掉。
 開 attempt 的對話框顯示完整 prompt 且可編輯，送出什麼就記什麼。
 
-非 Claude 的 agent 不自動送 prompt：那些 CLI 的參數慣例沒有實測過，而在某個
-CLI 裡代表「這是你的 prompt」的參數，在另一個裡可能代表「印出來然後結束」。
+沒實測過的 agent 不自動送 prompt：那些 CLI 的參數慣例不知道，而在某個 CLI
+裡代表「這是你的 prompt」的參數，在另一個裡可能代表「印出來然後結束」。
 猜錯比不猜更糟，所以 UI 顯示組好的 prompt 讓人一鍵複製。
+
+### 兩支實測過的 agent
+
+Claude Code 與 Codex 是這張桌子知道其慣例的兩支 CLI，它們拿到的東西一樣：
+首則 prompt 走命令列、review 批次從 session 自己的輸入送回去、權限模式、
+接回那個目錄裡既有對話的 resume、來自 hooks 的狀態與活動、從 transcript
+讀出來的 token 帳。這些慣例全部住在同一張表 `src-tauri/src/agent.rs`，
+所以第三支 agent 是加一列，不是把整個核心重新稽核一遍。
+
+它們不是彼此的翻譯，這裡也不假裝是：
+
+| | Claude Code | Codex |
+|---|---|---|
+| 首則 prompt | positional | positional |
+| resume | `--continue`（選項） | `resume --last`（子命令） |
+| 自動接受編輯 | `--permission-mode acceptEdits` | `--sandbox workspace-write --ask-for-approval on-request` |
+| 全自動 | `--dangerously-skip-permissions` | `--dangerously-bypass-approvals-and-sandbox` |
+| hooks | plugin，走 `--plugin-dir` | 設定，走 `-c hooks.*` |
+| 閒置提示 | 會回報 | 沒有這個事件 —— 回合結束就是「該你了」 |
+| session 名字 | `--name`，並以此互傳訊息 | 沒有 |
+| token 記帳 | 一則訊息一列 | 累計總和 |
+
+兩種接法都不寫進你自己的設定檔。一個會把自己塞進
+`~/.claude/settings.json` 或 `~/.codex/config.toml` 的 app，就是一個能悄悄
+關掉你自己寫的 hooks 的 app。
+
+**Codex 會請你信任它的 hooks，一次。** Codex 不跑沒給它看過的 hook，而且把
+信任記在 hook 自己的雜湊上。所以第一個 Codex session 會在它自己的終端機裡、
+用它自己的話說 hooks 需要審核；`/hooks` 回答它一次，之後每個 Codex session
+都會回報狀態，因為這張桌子每次送的都是同一份 hook 定義。session id 走
+`$MAROL_SESSION_ID` 而不是直接寫死，正是為了這個。Marol 不送
+`--dangerously-bypass-hook-trust` —— 那會連 repository 自己帶的 hooks 一起
+放行。
 
 ---
 
@@ -811,14 +899,19 @@ SDK 版本的程式碼收在 `src-tauri/parked/`（Node 那半在 `sidecar/`）�
 
 - 收尾就到「合併」與「開 PR」為止。PR 的 review、留言、CI 紅綠、合併按鈕都
   不做。那是另一個大得多的工具，硬做只會把這裡最深的東西稀釋掉
-- 狀態偵測只對 Claude Code 有效。其他 CLI 沒有等價的 hook 機制，會顯示為
-  「執行中 / 已關閉」而已。首則 prompt 也只對 Claude Code 自動送出，其他
+- 狀態偵測對 Claude Code 與 Codex 有效。其他 CLI 沒有等價的 hook 機制，會
+  顯示為「執行中 / 已關閉」而已。首則 prompt 也只對這兩支自動送出，其他
   agent 會把組好的 prompt 顯示出來讓你自己貼（見上）
-- 第一次在某個目錄開 session 時，Claude Code 會問你信不信任這個資料夾。這是
-  它原本的行為，刻意不繞過。**每個 attempt 都是新目錄，所以每個 attempt 都會
-  遇到一次**
+- 第一次在某個目錄開 session 時，兩支 CLI 都會問你信不信任這個資料夾。這是
+  它們原本的行為，刻意不繞過。**每個 attempt 都是新目錄，所以每個 attempt
+  都會遇到一次** —— 而第一個 Codex session 還會請你審核一次它的 hooks，
+  一台機器一次（見「兩支實測過的 agent」）
+- Codex 沒有閒置提示事件，所以 Codex 的卡片會直接從「執行中」跳到「該你了」，
+  不會經過 Claude Code 卡片會顯示的「等待輸入」。沒有任何東西回報得出來的
+  狀態，這張桌子不會自己發明
 - scrollback 不持久化，跟真的終端機一樣。對話歷史由 agent 自己存（Claude Code
-  在 `~/.claude/projects/`），重開時靠 `--continue` 接回去
+  在 `~/.claude/projects/`、Codex 在 `~/.codex/sessions/`），重開時靠那支 CLI
+  自己的 resume 接回去
 - **設定 outcome 是終局動作**：worktree 會被移除，所以那個 attempt 不再有活的
   TUI。留下來的是時間軸與一份凍結的 diff。superseded 的 attempt 也一樣，
   「保留可回看」指的是唯讀回看，不是還能跳進去打字

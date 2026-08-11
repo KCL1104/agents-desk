@@ -128,9 +128,10 @@ pixel for pixel, beside a plain test runner.
   `--continue` to resume that directory's conversation
 - Multiple workspace tabs, each keeping its own layout and scrollback
 - Any agent CLI with any launch arguments, passed through untouched
-- **Status detection and notifications** via Claude Code hooks rather than by
-  parsing ANSI. The top left shows "⚠ N waiting on you", and a blocked session
-  raises a native notification
+- **Status detection and notifications** via the agents' own hooks rather
+  than by parsing ANSI. The top left shows "⚠ N waiting on you", and a blocked
+  session raises a native notification. Both measured CLIs — Claude Code and
+  Codex — report the same six moments (see "The two measured agents")
 - **Tasks and attempts**: one card can have several attempts, each with its
   own git worktree and branch, so two agents on the same repo never collide.
   Finishing an attempt freezes its diff into the database before the worktree
@@ -157,9 +158,14 @@ pixel for pixel, beside a plain test runner.
   can still be compared
 - **Workspace scripts**: a fresh worktree is a checkout, not a workspace.
   `.marol/config.json` says how it becomes one (see below)
-- **Permission modes**: per attempt, Claude Code can ask as usual, auto-accept
-  file edits (`--permission-mode acceptEdits`), or run unprompted
-  (`--dangerously-skip-permissions`). The worktree is the safety argument, so
+- **Permission modes**: per attempt, a measured CLI can ask as usual,
+  auto-accept file edits, or run unprompted. What that means on a command line
+  is the CLI's own business — Claude Code has a permission mode
+  (`--permission-mode acceptEdits`, `--dangerously-skip-permissions`), Codex
+  has a sandbox and an approval policy (`--sandbox workspace-write
+  --ask-for-approval on-request`, `--dangerously-bypass-approvals-and-sandbox`)
+  — and this desk stores what a person approved rather than translating one
+  agent's settings into another's. The worktree is the safety argument, so
   the choice exists for attempts and never for ad-hoc sessions. Approved once
   in the start dialog, it survives queueing and resumes, and the card wears a
   ⚡ badge for as long as the session runs unprompted
@@ -425,12 +431,15 @@ The pieces that carry the triage loop, in roughly the order you meet them:
   injected. A dead server says so instead of going blank. Opt into inspect
   (`docs/examples/marol-inspect.js`) and Alt+click turns any element into
   `{component} · {file}:{line}`, one click away from the agent's terminal.
-- **Token account.** Each Claude session's spend and context, read off its own
-  transcript at every turn's end (hooks carry the path; nothing is polled
+- **Token account.** Each measured session's spend and context, read off its
+  own transcript at every turn's end (hooks carry the path; nothing is polled
   mid-turn). The inspector shows `ctx 279k · ↑2.6M` with the exact four-way
   breakdown on hover. Tokens, never dollars or percentages: a price table goes
   stale, and a context window we did not measure would be an invented
-  denominator.
+  denominator. The two CLIs keep the ledger differently — Claude Code writes
+  one row per message, Codex a running total — so the rows are folded
+  differently too; adding Codex's up would multiply a session's bill by its
+  number of turns.
 - **Find in terminal** (`⌘/Ctrl+F`). Search the 10k-line scrollback from a
   small overlay; Enter and Shift+Enter step through matches, a miss says so.
   From inside a terminal the chord adds Shift, since Ctrl+F belongs to
@@ -441,12 +450,12 @@ The pieces that carry the triage loop, in roughly the order you meet them:
   dialog states rather than a lucky default.
 - **Worlds.** The bottom-left switch picks where new cards and sessions open
   (WSL distros and SSH hosts enumerated, never invented) and probes the chosen
-  world's `claude` on demand. Repos over WSL or SSH carry a host badge on
+  world's agents on demand. Repos over WSL or SSH carry a host badge on
   their cards, and the overview separates sessions by machine once more than
   one is involved.
-- **No-signal chip.** Status comes from Claude Code's hooks; a card running any
-  other agent says "no status signal" rather than letting silence read as
-  calm.
+- **No-signal chip.** Status comes from the agent's own hooks; a card running
+  a CLI without them says "no status signal" rather than letting silence read
+  as calm.
 
 ### Keyboard
 
@@ -543,6 +552,9 @@ merely that something was output:
   shell's PATH rather than a GUI stub
 - `tests/hooks.rs`: the whole chain, PTY → real `claude` → plugin hook → curl →
   HTTP listener, with the session id matching. No paid API call needed
+- `tests/agent_parity.rs`: the same chain for `codex`, plus every flag and
+  every flag's values checked against both CLIs' own `--help`. Needs no
+  credentials at all; skips loudly when a CLI is not installed
 - `ui/tests/fixtures/claude-tui.json`: real Claude Code TUI output captured
   from a PTY, **deliberately split in two through the middle of a multi-byte
   character**. A control test proves this fixture really does break under
@@ -755,14 +767,41 @@ should not be tied to wiring up CI.
 credentials.
 
 `.github/workflows/claude-detect.yml` guards the one claim the rest of CI
-cannot: that the app finds a real Claude Code on a real machine. Four legs,
+cannot: that the app finds a real agent CLI on a real machine. Four legs,
 Linux, macOS, native Windows and Ubuntu under WSL, install the real CLI on a
 real runner, then drive the app's **own** resolution path (the login-shell
 probe, the platform's PATH walk, the WSL doorway) until it finds the binary
-and gets an answer out of `claude --version`. It runs on every push to `main`
-touching `src-tauri` and every Monday, because the upstream installer can
-change shape without any commit here, and a Monday failure with a green tree
-points at them.
+and gets an answer out of `--version`. The WSL leg carries Codex as well,
+because the doorway is the thing under test and a world is only usable for
+the agents it can reach. It runs on every push to `main` touching `src-tauri`
+and every Monday, because the upstream installer can change shape without any
+commit here, and a Monday failure with a green tree points at them.
+
+`.github/workflows/agent-parity.yml` guards the other one: that what this app
+*hands* those CLIs is still what they take. `src-tauri/src/agent.rs` is a
+table of somebody else's conventions, and tables like that rot quietly — a
+renamed flag is a session that exits before it draws a terminal, and a config
+key that stopped being recognised is a card that simply never shows status
+(Codex keeps an unparseable `-c` value as a literal string rather than
+refusing it, so nothing fails). So the table is measured against both real
+CLIs, on Linux, macOS and Windows:
+
+- every dashed token the app can emit appears in that CLI's own `--help` —
+  and so does every value it pairs with one, because `--sandbox` outliving
+  `workspace-write` fails exactly as hard as losing the flag
+- `codex resume` is still a subcommand and `--continue` still an option, since
+  the two go in opposite ends of a command line
+- `codex doctor` reports the exact `-c` arguments this app passes as config it
+  loaded — and a deliberately broken one as config it refused, or the first
+  half proves nothing
+- a real `codex` started with those arguments reaches the app's real hook
+  listener, with the session id expanded by the shell and the payload in the
+  request body
+
+None of it needs credentials: `codex exec` fires `SessionStart` and
+`UserPromptSubmit` before the first request goes out, and the request then
+fails on authentication long after the part being measured. It runs on PRs
+touching the backend and every Tuesday.
 
 ---
 
@@ -801,22 +840,30 @@ making the product bilingual.
 ## Status detection
 
 With several sessions open, the only thing you genuinely need to know is which
-one is waiting for you. That comes from asking Claude Code to report it, not
+one is waiting for you. That comes from asking the agent to report it, not
 from parsing the screen, because parsing ANSI breaks silently whenever the TUI
 changes.
 
 At startup the app does two things: opens a small HTTP listener on loopback,
-and writes a hooks-only plugin into its data directory. Every session loads it
-with `--plugin-dir` and gets `MAROL_SESSION_ID` and `MAROL_HOOK_URL`
-injected; the hook is a one-line `curl` reporting the status back.
+and writes a hooks-only plugin into its data directory. Every session gets
+`MAROL_SESSION_ID` injected and is pointed at that listener the way its own
+CLI offers — Claude Code loads the plugin with `--plugin-dir`, Codex takes
+`-c hooks.*` overrides, which is config for one launch touching nothing on
+disk. Neither writes into your own configuration, because an app that edits
+`~/.claude/settings.json` or `~/.codex/config.toml` is an app that can
+silently switch off the hooks you wrote for yourself.
 
-| Hook event | Reported status |
-|---|---|
-| `SessionStart` / `UserPromptSubmit` / `PreToolUse` | running |
-| `PermissionRequest`, `Notification`(permission_prompt) | **waiting on permission** |
-| `Notification`(idle_prompt) | **waiting on you** |
-| `Stop` | idle |
-| `SessionEnd` | ended |
+| Hook event | Reported status | |
+|---|---|---|
+| `SessionStart` / `UserPromptSubmit` / `PreToolUse` | running | both |
+| `PermissionRequest`, `Notification`(permission_prompt) | **waiting on permission** | both |
+| `Notification`(idle_prompt) | **waiting on you** | Claude Code only |
+| `Stop` | idle | both |
+| `SessionEnd` | ended | both |
+
+Codex has no idle-prompt event, so it never reports "waiting on you". A state
+nothing can report is not a state this desk invents; a finished Codex turn is
+`idle`, which is already "your move".
 
 Only "waiting on permission" and "waiting on you" raise a notification and
 count towards the badge. Those are the two states where the agent really is
@@ -832,8 +879,25 @@ documented:
    `"bash"` works, and so does leaving it out. There is a regression test
    pinning this.
 3. **A hook must exit 0.** Exit code 2 **blocks** the tool call it is attached
-   to, so every line ends with `|| true`. The app breaking must never wedge
-   the agent along with it.
+   to, so every line ends with `|| true` (`|| exit 0` on the Codex side, which
+   means the same thing in `sh` and in `cmd.exe`, where `true` is not a
+   command at all). The app breaking must never wedge the agent along with it.
+
+Three more, from measuring Codex 0.147:
+
+4. **Codex offers no `http` hook type**, so every event costs a `curl` — and
+   its default hook timeout is ten minutes. A status ping that can hold a tool
+   call for ten minutes is worse than no status, so every hook this app
+   configures carries a short one, and the `curl` inside gives up sooner still.
+5. **A Codex hook does not run until it has been trusted**, and trust is
+   recorded against the hook's own hash. So the definition is byte-identical
+   for every session — the session id rides as `$MAROL_SESSION_ID` rather than
+   being baked in — and one `/hooks` covers a machine for good.
+6. **A shell that does not spell variables with `$` leaves the id standing.**
+   Every hook payload carries the working directory, and an attempt's worktree
+   belongs to exactly one session, so a report whose id did not survive is
+   placed by its directory instead. Two live sessions in one directory is
+   refused rather than guessed at.
 
 (Three more measured findings, about worktrees and the first prompt, are under
 "Tasks and attempts" below.)
@@ -893,11 +957,47 @@ load natively and are not repeated. The template lives at
 it. The start-attempt dialog shows the full prompt and lets you edit it, and
 what is recorded is what was sent.
 
-Non-Claude agents do not get the prompt sent automatically. Those CLIs'
-argument conventions have not been measured, and a flag meaning "here is your
-prompt" in one can mean "print this and exit" in another. Guessing wrong is
-worse than not guessing, so the UI shows the assembled prompt with a copy
-button.
+An unmeasured CLI does not get the prompt sent automatically. Its argument
+conventions are unknown, and a flag meaning "here is your prompt" in one can
+mean "print this and exit" in another. Guessing wrong is worse than not
+guessing, so the UI shows the assembled prompt with a copy button.
+
+### The two measured agents
+
+Claude Code and Codex are the CLIs this desk knows the conventions of, and
+they get the same things: the first prompt on the command line, a review
+batch sent back through the session's own input, a permission mode, a resume
+that continues the conversation already in that directory, status and
+activity from hooks, and a token account read off the transcript. Every one
+of those conventions lives in one table, `src-tauri/src/agent.rs`, so a third
+agent is an entry rather than an audit.
+
+They are not translations of each other, and nothing here pretends they are:
+
+| | Claude Code | Codex |
+|---|---|---|
+| first prompt | positional | positional |
+| resume | `--continue` (an option) | `resume --last` (a subcommand) |
+| auto-accept edits | `--permission-mode acceptEdits` | `--sandbox workspace-write --ask-for-approval on-request` |
+| unprompted | `--dangerously-skip-permissions` | `--dangerously-bypass-approvals-and-sandbox` |
+| hooks | a plugin, via `--plugin-dir` | config, via `-c hooks.*` |
+| idle prompt | reported | no such event — a finished turn is `idle` |
+| session names | `--name`, and messaging with it | none |
+| token ledger | one row per message | a running total |
+
+Neither wiring writes into your own configuration. An app that injected
+itself into `~/.claude/settings.json` or `~/.codex/config.toml` is an app that
+can silently disable the hooks you wrote for yourself.
+
+**Codex asks you to trust its hooks, once.** Codex will not run a hook it has
+not been shown, and records that trust against the hook's own hash. So the
+first Codex session says its hooks need review, in its own terminal, in its
+own words; `/hooks` answers it, and every Codex session afterwards reports
+status, because this desk passes the same hook definition every time. The
+session id rides as `$MAROL_SESSION_ID` rather than being baked in for
+exactly that reason. Marol does not pass
+`--dangerously-bypass-hook-trust`, which would also wave through any hooks
+the repository itself carries.
 
 ---
 
@@ -983,17 +1083,22 @@ is a usable starting point.
 - Finishing stops at "merge" and "open PR". PR review, comments, CI status and
   the merge button are all out of scope. That is a much larger tool, and
   forcing it in here would only dilute the deepest thing this does
-- Status detection only works with Claude Code. Other CLIs have no equivalent
-  hook mechanism and will only show "running / closed". The first prompt is
-  also only sent automatically for Claude Code; other agents get the assembled
-  prompt displayed for you to paste (see above)
-- The first time you open a session in a directory, Claude Code asks whether
-  you trust the folder. That is its own behaviour and is deliberately not
+- Status detection works with Claude Code and Codex. Other CLIs have no
+  equivalent hook mechanism and will only show "running / closed". The first
+  prompt is also only sent automatically for those two; other agents get the
+  assembled prompt displayed for you to paste (see above)
+- The first time you open a session in a directory, both CLIs ask whether you
+  trust the folder. That is their own behaviour and is deliberately not
   bypassed. **Every attempt is a new directory, so every attempt hits it
-  once**
+  once** — and a first Codex session also asks you to review its hooks, once
+  per machine (see "The two measured agents")
+- Codex has no idle-prompt event, so a Codex card goes from "running" to
+  "your move" without the intermediate 等待輸入 a Claude Code card can show.
+  A state nothing can report is not a state this desk invents
 - Scrollback is not persisted, the same as a real terminal. Conversation
-  history is the agent's own (Claude Code keeps it in `~/.claude/projects/`),
-  and reopening reconnects through `--continue`
+  history is the agent's own (Claude Code keeps it in `~/.claude/projects/`,
+  Codex in `~/.codex/sessions/`), and reopening reconnects through that CLI's
+  own resume
 - **Setting an outcome is final.** The worktree is removed, so that attempt no
   longer has a live TUI. What remains is the timeline and a frozen diff. The
   same goes for superseded attempts: "kept for reference" means read-only

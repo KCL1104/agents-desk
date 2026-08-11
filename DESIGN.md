@@ -210,7 +210,7 @@ Component philosophy: **quiet instruments; consequence is armed.** Controls are 
 ### Board Card (signature)
 - Desk Surface fill, Machined Seam hairline + bevel, radius m, padding 9px 11px, `cursor: grab`; title 600/13px, two-line clamp.
 - **The 3px status edge** carries the second axis: rest = seam; **needs-you** = amber edge + 5% amber wash + THE BREATH; **astir** (mid-turn) = THE SHIMMER on an accent edge; queued = amber edge; stopped/parked/finished recede by fill and edge (never text opacity); **merged** keeps Violet-Crimson after the fact — discarded and superseded stay neutral, declining is not a state to advertise.
-- The no-signal chip (non-Claude agents) wears Faintest Honest Ink: a disclaimer, never a status.
+- The no-signal chip (agents with no hooks — everything but Claude Code and Codex) wears Faintest Honest Ink: a disclaimer, never a status.
 - Motion pair: **THE BREATH** (breathe 2.4s ease-in-out infinite — a 0→2px amber-28% ring; anything blocked on a human breathes, and nothing else on the desk may pulse at attention scale) and **THE SHIMMER** (3.6s edge glow — weather, never a request). Breath outranks shimmer. Both settle to honest static states under `prefers-reduced-motion`. The only other motions in the app: the empty-board CTA's beckon (3.2s) and a 120ms background ease on session rows. Everything is `ease`/`ease-in-out`; no cubic-bezier exists.
 
 ### Session Row (sidebar)
