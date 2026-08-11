@@ -346,7 +346,17 @@ exec "$@"
     /// Everything the session's terminal has been fed, once anything has.
     /// The stub's `cat` writes what it reads, so this is the input as the
     /// agent would have received it.
-    fn stdin_of(&self, session_id: &str) -> String {
+    /// Everything written to this session's stdin, once `settled` agrees it
+    /// has all arrived.
+    ///
+    /// Waiting on the *content* rather than on "anything at all". A write to
+    /// a pty arrives in as many pieces as the kernel feels like splitting it
+    /// into, and under tmux there is a further hop, so a read that returns
+    /// the moment the file is non-empty can catch a bracketed paste holding
+    /// its opening marker and nothing else. That is precisely what it did on
+    /// macOS, intermittently, and never once on Linux — which is why it
+    /// survived until the suite was run somewhere other than Linux.
+    fn stdin_when(&self, session_id: &str, settled: impl Fn(&str) -> bool) -> String {
         let dir = self.root.join("logs");
         let prefix = format!("stdin.{session_id}.");
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -364,11 +374,13 @@ exec "$@"
                     }
                 }
             }
-            if !all.is_empty() {
+            if settled(&all) {
                 return all;
             }
             if Instant::now() > deadline {
-                panic!("nothing arrived on session {session_id}'s stdin");
+                // Say what did arrive: "never settled" alone cannot tell a
+                // write that was cut short from one that never started.
+                panic!("session {session_id}'s stdin never settled; it holds {all:?}");
             }
             std::thread::sleep(Duration::from_millis(50));
         }
@@ -913,9 +925,11 @@ fn a_followup_reaches_the_terminal_whole_and_lands_on_the_timeline() {
 
     // The delivery: newlines ride inside the bracketed paste, so the message
     // arrives as one message rather than one per line.
-    let stdin = h.stdin_of(&a.session_id);
+    // Wait for the *closing* marker, since that is the last thing written:
+    // anything short of it means the paste is still on its way, not that it
+    // arrived broken.
+    let stdin = h.stdin_when(&a.session_id, |s| s.contains("\u{1b}[201~"));
     assert!(stdin.contains("\u{1b}[200~"), "no paste start: {stdin:?}");
-    assert!(stdin.contains("\u{1b}[201~"), "no paste end: {stdin:?}");
     assert!(
         stdin.contains("還是回 None\n2. 缺一個測試"),
         "the message's own newlines did not survive: {stdin:?}"
