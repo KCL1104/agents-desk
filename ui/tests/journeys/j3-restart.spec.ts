@@ -6,6 +6,7 @@ import {
   chord,
   driveStatus,
   expectAnnounce,
+  expectFocusNeutral,
   expectFocusWithin,
   sessionShape,
 } from './helpers';
@@ -140,7 +141,7 @@ test('J3 · restart recovery, end to end', async ({ page }) => {
     await expect(page.locator('[data-testid="col-running"] .board-card')).toHaveCount(5);
     await expect(page.locator('[data-testid="col-review"] .board-card')).toHaveCount(1);
     // (a) 視圖切換不發明焦點：起點是中性的 <body>。
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
     // (b) 朗讀通道存在、polite、而且此刻無話可說 —— 一桌子停止卡
     // 不是要人動作的訊號。
     await expect(live).toHaveAttribute('aria-live', 'polite');
@@ -275,7 +276,7 @@ test('J3 · restart recovery, end to end', async ({ page }) => {
     await expect(page.getByTestId('task-k1')).toHaveClass(/astir/);
     await expect(page.getByTestId('state-k1')).toContainText('執行中');
     // (a) 離開終端牆，焦點退回中性起點。
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
     // (b) 朗讀通道自清的契約：說完 5 秒內清空，舊話不重播。
     await expect(live).toHaveText('', { timeout: 10_000 });
 
@@ -345,7 +346,7 @@ test('J3 · restart recovery, end to end', async ({ page }) => {
     await expect(page.getByTestId('diff-body')).toContainText("return redirect('/home');");
     // (a) 用按鈕開抽屜不搶插入點 —— 只有 ⌘I 的和弦才把焦點送進 diff；
     // 空牆上沒有 pane 接手，焦點退回中性的 <body>。
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
     // (b) 開一扇唯讀的抽屜沒有要說的話。
     await expect(live).toHaveText('');
 

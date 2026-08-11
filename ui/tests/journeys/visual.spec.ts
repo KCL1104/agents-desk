@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { chord, coldStart, driveStatus, expectAnnounce, expectFocusWithin } from './helpers';
+import { chord, coldStart, driveStatus, expectAnnounce, expectFocusNeutral, expectFocusWithin } from './helpers';
 
 /**
  * V —— 六個關鍵畫面的視覺基準線，走成一條不換手的線：
@@ -93,7 +93,7 @@ test('V · six key screens, one continuous line', async ({ page }) => {
       '開第一張卡：一個 repo、一個分支、一件要做的事',
     );
     // (a) 自動浮起的面板沒有召喚者可還，焦點退回 <body>；(b) 通道安靜。
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
     await expect(live).toHaveText('');
 
     await expect(page).toHaveScreenshot('2-first-run-board.png', { ...SHOT, mask: masks });
@@ -110,7 +110,7 @@ test('V · six key screens, one continuous line', async ({ page }) => {
     await expect(page.locator('.term-keymap-row')).toHaveCount(3);
     await expect(page.getByTestId('term-keymap')).toContainText('終端牆 · 看板 · 總覽');
     // (a) 視圖和弦不搬焦點；(b) 換視圖不是要朗讀的事。
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
     await expect(live).toHaveText('');
 
     await expect(page).toHaveScreenshot('6-terminal-wall.png', { ...SHOT, mask: masks });
@@ -264,7 +264,7 @@ test('V · six key screens, one continuous line', async ({ page }) => {
       page.locator('[data-section="waiting"] [data-testid="session-s102"]'),
     ).toBeVisible();
     // (a) 種桌子與換視圖都不搬焦點。
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
 
     await expect(page).toHaveScreenshot('3-board-three-states.png', { ...SHOT, mask: masks });
   });
@@ -325,7 +325,7 @@ test('V · six key screens, one continuous line', async ({ page }) => {
     // 回看板;檢視器連著終端視圖一起卸下,焦點退回 <body>。
     await chord(page, '2');
     await expect(page.getByTestId('board')).toBeVisible();
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
 
     // k1 也停在授權門上 —— 桌上現在兩個等你。
     await driveStatus(page, 's101', 'waiting_permission');

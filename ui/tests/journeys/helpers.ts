@@ -208,6 +208,24 @@ export async function expectFocusWithin(page: Page, target: string): Promise<voi
 }
 
 /**
+ * 焦點退回中性起點。
+ *
+ * `expectFocusWithin` 的另一半，而且同樣要等 —— 這是這個檔案裡唯一
+ * 一個曾經寫成「不等」的斷言，然後在 macOS 上紅了。焦點的落點會等
+ * 一格畫面，焦點的*離開*一樣：持有焦點的元素被卸載時，瀏覽器把
+ * activeElement 收回 <body>，那是它自己的排程，不是斷言的。
+ *
+ * 契約沒有變鬆：仍然要退回 <body>，只是不再要求它在某一格之內做完。
+ */
+export async function expectFocusNeutral(page: Page): Promise<void> {
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement === document.body), {
+      message: 'focus should have gone back to <body>',
+    })
+    .toBe(true);
+}
+
+/**
  * 平台修飾鍵的和弦，existing specs 的同一顆：ControlOrMeta —— mac 上是
  * ⌘、其他平台是 Ctrl，與 App 鍵盤表聽的 metaKey/ctrlKey 同一份事實。
  * 終端機裡的變體加 Shift（Ctrl+字母屬於 shell），opts.shift 說這件事。

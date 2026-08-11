@@ -5,6 +5,7 @@ import {
   coldStart,
   driveStatus,
   expectAnnounce,
+  expectFocusNeutral,
   expectFocusWithin,
 } from './helpers';
 
@@ -335,7 +336,7 @@ test('J1 · the first run, end to end', async ({ page }) => {
     // 桌子用過了:backlog 的 CTA 縮回短標籤,不再說第一分鐘的長句。
     await expect(page.getByTestId('board-cta')).toHaveText('按 ＋ 新增卡片');
     // (a) 重新整理從中性起點出發,(b) 朗讀通道乾淨。
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
     await expect(live).toHaveText('');
   });
 });

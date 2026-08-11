@@ -6,6 +6,7 @@ import {
   chord,
   driveStatus,
   expectAnnounce,
+  expectFocusNeutral,
   expectFocusWithin,
   seedDesk,
   sessionShape,
@@ -186,7 +187,7 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
     });
     expect(edges.idle).not.toBe(edges.waiting);
     // (a) 離開牆，終端把插入點還回來：焦點退到中性起點。
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
     // (b) 換視圖不是要朗讀的事：通道裡只有（或已清掉）開機那一句。
     await expect(live).toHaveText(/^(2 個 session 等你.*)?$/s);
   });
@@ -219,7 +220,7 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
     // 對話框關閉節點：Esc 收面板，焦點回到來處（看板上的中性起點）。
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('palette')).toHaveCount(0);
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
   });
 
   await test.step('3. ⌘E lands in waiting #1; the answer drops the badge to 1', async () => {
@@ -262,7 +263,7 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
     // 回看板監工 —— 終端從此不在眼前。
     await chord(page, '2');
     await expect(page.getByTestId('board')).toBeVisible();
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
     // 剛答完的兩張現在也微光：整面牆都在做，沒有一張呼吸。
     await expect(page.locator('.board-card.astir')).toHaveCount(4);
     await expect(page.locator('.board-card.needs-you')).toHaveCount(0);
@@ -276,7 +277,7 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
     await expect(page.getByTestId('unseen-card-k3')).toBeVisible();
     await expect(page.locator('.tab-badge.unseen')).toHaveText('1');
     // (a) 沒人動你的焦點；(b) 回合結束被聽到 —— 朗讀鏈的那一份。
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
     await expectAnnounce(page, `「${T3} #1」回合結束`);
     // 安定窗過後，列真的搬進「待命」—— 未選取的 row 不受釘選保護。
     await expect.poll(() => sectionOf(page, 's93')).toBe('idle');
@@ -409,7 +410,7 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
     await expectAnnounce(page, `「${T4} #1」回合結束`);
     await expect(page.getByTestId('unseen-card-k4')).toBeVisible();
     await expect(page.locator('.tab-badge.unseen')).toHaveText('1');
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
 
     // 鍵盤上卡：門是唯一誠實的 tab stop（程式聚焦不是滑鼠 —— J1 的
     // 同一款起手），Tab 一下就是「暫停」。
@@ -439,9 +440,7 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
     await expect(page.locator('.tab-badge.unseen')).toHaveCount(0);
     // (a) 按鈕連著卡腳一起換裝，焦點退回 <body> —— 今天的真話
     // （見報告：park 後沒有安排落點），釘住，改了會被看見。
-    await expect
-      .poll(() => page.evaluate(() => document.activeElement === document.body))
-      .toBe(true);
+    await expectFocusNeutral(page);
     // (b) 停放走 toast，不走朗讀通道。
     await expect(live).not.toContainText('已暫停');
 

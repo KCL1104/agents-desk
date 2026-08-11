@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { installMock } from '../mock-tauri';
 import { format, zhTW } from '../../src/i18n/messages';
-import { REPO, chord, driveStatus, expectAnnounce, expectFocusWithin } from './helpers';
+import { REPO, chord, driveStatus, expectAnnounce, expectFocusNeutral, expectFocusWithin } from './helpers';
 
 /**
  * J5 —— 中文系統上的第一次，走 J1 的骨架，說 zh-TW 型錄裡真正的句子：
@@ -154,7 +154,7 @@ test('J5 · the zh-TW journey, end to end', async ({ page }) => {
     );
     await expect(page.getByTestId('board-cta')).toHaveText(zh('board.emptyBacklogFirst'));
     // (a) Modal 收起時把焦點還回它借走的地方 —— 開場那裡是 <body>。
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
     // (b) 關一扇門不是要朗讀的事。
     await expect(live).toHaveText('');
   });
@@ -446,7 +446,7 @@ test('J5 · the zh-TW journey, end to end', async ({ page }) => {
     // 桌子用過了：backlog 的 CTA 縮回中文的短標籤。
     await expect(page.getByTestId('board-cta')).toHaveText(zh('board.emptyBacklog'));
     // (a) 重新整理從中性起點出發；(b) 朗讀通道乾淨。
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expectFocusNeutral(page);
     await expect(live).toHaveText('');
   });
 });
