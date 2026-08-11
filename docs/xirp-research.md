@@ -504,14 +504,22 @@ AgentDesk 的三視圖 + 抽屜目前沒有「回上一個地方」的概念。
 
 #### 執行結果(狀態:**完成**,三階段一次做完)
 
-**量測**:≥90 字元的字串 **69 → 25**(目標 ≤25);≥140 的 **21 → 12**。
-改動 20 條字串,兩語同步;新增 1 個 key(`env.docs`)。
+**量測**:≥90 字元的字串 **69 → 24**(目標 ≤25);≥140 的 **21 → 12**。
+改動 20 條字串、刪除 2 條,兩語同步;新增 1 個 key(`env.docs`)。
 
-**剩下的 25 條全部可歸類**,逐條檢查過:coach 五則(一生只出現一次,刻意留長)、
+**剩下的 24 條全部可歸類**,逐條檢查過:coach 五則(一生只出現一次,刻意留長)、
 welcome 面板三則、`attempt.unmeasuredHint` 與 `termSr.hint` 與 `usage.tip`(量測免責)、
 `ckpt.hint` 與 `preview.sshHint` 與 `board.deleteBusy` 與 `env.degraded`(拒絕/保證)、
 `err.*` 四則與 `park.restoreFailed`(錯誤)、`ckpt.note` 與 `preview.note`(遞給 agent 的訊息)、
-`keys.diff`(⌘/ 參考表本身)、`newTask.promptPlaceholder`(欄位內的範例)。
+`keys.diff`(⌘/ 參考表本身)。
+
+**範例 placeholder 一併移除**:新卡片對話框原本用一個虛構的 bug 當示範
+(標題「修好登入頁在 Safari 的白畫面」+ 內文「登入後畫面全白,console 沒有錯誤…」)。
+兩者是同一個故事的標題與內文,所以一起拿掉——只留一半會變成孤兒。
+兩個欄位都有真的 `<label>` 與各自的一行提示,移除 placeholder 對無障礙只有好處
+(placeholder 本來就不是 label)。**注意反面**:Xirp 的首頁整個是靠一句 placeholder
+撐起來的(「What are we shipping?」)——placeholder 當**入口的邀請**很有力,
+當**欄位裡的範例**則是常駐噪音。這兩件事不一樣。
 
 **兩件被擋下來的事,值得記下:**
 

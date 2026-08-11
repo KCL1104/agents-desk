@@ -134,7 +134,6 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
         <label>{t('newTask.titleLabel')}</label>
         <input
           value={title}
-          placeholder={t('newTask.titlePlaceholder')}
           data-testid="task-title"
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={submitOnEnter}
@@ -146,7 +145,6 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
           rows={5}
           value={prompt}
           data-testid="task-prompt"
-          placeholder={t('newTask.promptPlaceholder')}
           onChange={(e) => setPrompt(e.target.value)}
           // 多行欄位裡 Enter 是換行,送出走 ⌘/Ctrl+Enter —— 與 review
           // 撰寫框同一個慣例;一樣避開 IME 組字確認的那顆 Enter。

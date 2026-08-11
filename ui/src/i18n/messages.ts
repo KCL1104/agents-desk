@@ -42,11 +42,8 @@ export const en = {
   /* ---------------------------- new card ------------------------------ */
   'newTask.title': 'New card',
   'newTask.titleLabel': 'Title (optional)',
-  'newTask.titlePlaceholder': 'Fix the blank login page on Safari',
   'newTask.titleHint': 'Leave blank to use the prompt’s first line.',
   'newTask.promptLabel': 'What the agent should do',
-  'newTask.promptPlaceholder':
-    'The screen goes white after signing in, with no console errors. Reproduce it first, then fix it.',
   'newTask.promptHint':
     'Starting an attempt appends the branch and base — you can edit it before it is sent.',
   'newTask.repo': 'Repo',
@@ -544,10 +541,8 @@ export const zhTW: Record<MessageKey, string> = {
   /* ---------------------------- new card ------------------------------ */
   'newTask.title': '新卡片',
   'newTask.titleLabel': '標題（選填）',
-  'newTask.titlePlaceholder': '修好登入頁在 Safari 的白畫面',
   'newTask.titleHint': '留白就用 prompt 的第一行。',
   'newTask.promptLabel': '要 agent 做什麼',
-  'newTask.promptPlaceholder': '登入後畫面全白，console 沒有錯誤。先重現再修。',
   'newTask.promptHint': '開 attempt 時會補上分支與 base —— 送出前可以改。',
   'newTask.repo': 'Repo',
   'newTask.repoHint': '本機路徑，或 wsl://<distro>/<路徑>，或 ssh://<host>/<路徑>。',
