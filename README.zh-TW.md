@@ -152,9 +152,9 @@ review 迴圈最常見的收尾是一行小修，所以 diff 直接讓你修。`
   口的名字去找另一張卡的 agent。送出的訊息會落在活動時間軸上。啟動時探測
   一次 `claude --version` 做版本閘門，因為舊版 CLI 遇到不認識的 flag 會直接
   拒絕啟動
-- **活得比 app 久的 session**：在本機，agent 的 session 由 `tmux` 扛著，
-  一個 session 一個 socket。關掉 AgentDesk 是斷開，不是殺掉。重開卡片會接回
-  那個一直在跑的 agent（見下）
+- **活得比 app 久的 session**：agent 的 session 由 `tmux` 扛著，一個 session
+  一個 socket，而且是在它自己所在的世界裡——本機、WSL distro、SSH host 都算。
+  關掉 AgentDesk 是斷開，不是殺掉。重開卡片會接回那個一直在跑的 agent（見下）
 - **WSL 橋接**：卡片的 repo 可以住在 WSL distro 裡，一切就在 repo 所在的
   世界執行
 - **SSH host**：同一道接縫，跨一條線，用的是你自己 `~/.ssh/config` 裡的
@@ -168,11 +168,11 @@ review 迴圈最常見的收尾是一行小修，所以 diff 直接讓你修。`
 
 ## 活得比 app 久的 session
 
-本機的 agent session 跑在 `tmux` 裡，一個 session 一個 socket
-（`agentdesk-<desk>-<session>`）。關掉 AgentDesk 只是斷開 client，agent 繼續
-跑。重開卡片接回的是那個從來沒停過的行程，包括做到一半的那一輪。
+agent session 跑在 `tmux` 裡，一個 session 一個 socket。關掉 AgentDesk 只是
+斷開 client，agent 繼續跑。重開卡片接回的是那個從來沒停過的行程，包括做到
+一半的那一輪。
 
-四個值得點名的判定：
+五個值得點名的判定：
 
 - **`new-session -A -D` 就是 create-or-attach**，所以「第一次開」和「重啟後
   接回」是同一條程式碼路徑，兩者不可能對不上。
@@ -182,11 +182,38 @@ review 迴圈最常見的收尾是一行小修，所以 diff 直接讓你修。`
   的，跟著桌子收掉；agent 是你開來讓它跑的。
 - **socket 名字帶著每個安裝自己的標籤**（data 目錄的 FNV-1a），所以一個安裝
   的孤兒清掃永遠不會殺掉另一個安裝的活 agent。
+- **持久化是世界的能力，不是 app 的前提。** 有 `tmux` 的世界就有，沒有的世界
+  保持它原本的行為一模一樣——而一個剛裝好的 WSL Ubuntu 就是沒有。不會有任何
+  東西被替你裝上去，本機或遠端都一樣。
 
-被扛住的 session 回來時叫做 **執行中，尚未回報**，而且是在第一次繪製之前用
-`tmux has-session` 問過的，不是丟給背景執行緒：一個過一下才自己修正的狀態，
-在一個唯一職責就是「一眼可信」的表面上是閃爍。圓點用中性色，因為那一刻我們
-知道的就只有「它在跑」。
+### 每一個世界，不只是這一台
+
+WSL distro 與 SSH host 也是同一回事，而唯一需要改的只有 socket 怎麼命名。
+`-L <名字>` 是去問 `tmux`「你的 socket 目錄在哪」，而這個問題只有本機答得出來：
+在別的世界，那個目錄取決於一個這邊看不見的 uid 與 profile，於是一次猜錯的清掃
+會看進一個空目錄，然後判定所有還活著的 agent 都死了。所以在別的世界改由 app
+自己指定路徑——`~/.agentdesk/s/`——再用 `-S` 告訴 `tmux`。本機維持 `-L`，因為
+換掉會讓舊版本留下、還在跑的每一個 session 卡在一個再也沒人會去找的名字底下。
+
+從這一個改動長出來的三件事：
+
+- **設定檔要送進那個世界。** `-f` 指到一個不存在的檔案時 `tmux` 不會抱怨，它
+  會用預設值啟動，然後在 agent 的終端機上畫一條狀態列。所以寫不進去的時候是
+  「這個 session 不被扛住」，而不是「被一個會重繪的 tmux 扛住」。
+- **在外面，socket 名字還要帶上機器的身分。** 同一個人的兩台筆電有同一個 data
+  目錄；如果兩台都連到同一個 SSH host，它們會算出同一個標籤，然後其中一張桌子
+  的孤兒清掃會無聲地殺掉另一張桌子正在跑的工作。寫進 data 目錄一次的隨機 id
+  就是把它們分開的東西。
+- **結束遠端 session 時，socket 檔要在同一個命令裡刪掉。** 沒有第二次機會：
+  這個行程碰不到那個檔案系統，而 `tmux` 的 server 結束時會把 inode 留在原地，
+  於是下一次清掃看到的殘檔和活著的 server 長得一模一樣。
+
+被扛住的 session 回來時叫做 **執行中，尚未回報**——它在跑，而且目前也就只知道
+這麼多，所以圓點用中性色。本機是在第一次繪製之前用 `tmux has-session` 問過的，
+不是丟給背景執行緒：一個過一下才自己修正的狀態，在一個唯一職責就是「一眼可信」
+的表面上是閃爍。其他世界則是丟到執行緒上問，因為問之前得先探測那個世界——一個
+login shell，SSH 的話還要一條連線——而「畫面要等一台筆電跟伺服器講完話才肯出現」
+是兩者裡比較糟的那個。至於答不出來的世界，什麼都不動：連不上不等於不在了。
 
 但它不會一直停在那裡。**hook 的 endpoint 跨重啟是同一個**：port 按號碼再要
 一次、token 留著，所以那個 session 的 plugin 設定裡烤進去的 URL 仍然打得到，
@@ -204,7 +231,13 @@ hook，`url` 是一個死字串、後面沒有 shell，而 Claude Code 只在 se
   的，而上一輪留下的 session 會安靜到它自己結束為止。那正是「還沒有記住
   endpoint」之前的狀態，所以它是降級，不是拒絕啟動。
 
-尚未做：WSL 與 SSH 世界的同一件事。
+SSH host 是透過反向隧道打回那個 listener 的，所以它還有第二個 port、同一個
+問題，答案也一樣：遠端 port 按 host 記下來，記不到的時候就從 host 名字加上這
+台機器的 id 推出來。兩半都重要——host，是為了讓同一張桌子的兩台伺服器不撞在
+一起；機器，是因為那個 port 綁在**遠端**那一側，兩台筆電連到同一台伺服器時
+不然會跟它要同一個號碼。而 `ssh -f` 是認證完就 fork，就算 forward 被拒絕也照樣
+回 0、只把訊息印在沒人會看的 stderr 上，所以這裡開了 `ExitOnForwardFailure`：
+被拒絕就是一個答案，然後換下一個號碼試。
 
 ---
 
@@ -713,7 +746,7 @@ Tauri 視窗 (React + xterm.js)
       │  invoke: term_write / term_resize
       │  event:  term:output
 Rust 核心  ── PTY registry · session 清單 · SQLite
-      │  portable-pty（本機 agent 由 tmux 扛著，一個 session 一個 socket）
+      │  portable-pty（agent 由各自世界的 tmux 扛著，一個 session 一個 socket）
   claude / codex / … × N
 ```
 

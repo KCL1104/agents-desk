@@ -4404,19 +4404,6 @@ mod tests {
     }
 }
 
-/// Where tmux keeps its sockets: `$TMUX_TMPDIR` or `/tmp`, then `tmux-<uid>`.
-///
-/// Read rather than asked for, because the ids this desk has forgotten exist
-/// nowhere else — `list-sessions` can only speak for a server you can already
-/// name. Unix only, which costs nothing: the only worlds that hold sessions
-/// are the ones with tmux, and Windows has none.
-#[cfg(unix)]
-/// Is anything still answering on this socket?
-///
-/// The one question both the startup check and the sweep ask, so they cannot
-/// answer it differently. A failure to run tmux at all reads as "no" here,
-/// which is the safe direction for the check and, in the sweep, is why the
-/// unlink asks again rather than trusting a kill it may never have run.
 /// The derivation behind `Core::tunnel_ports`, kept apart from the disk so it
 /// can be asked the questions that matter without one.
 fn tunnel_ports(host: &str, machine: &str, remembered: Option<u16>) -> Vec<u16> {
@@ -4463,6 +4450,12 @@ fn world_hold(hr: &HostRef, home: &str) -> Option<WorldHold> {
     })
 }
 
+/// Is anything still answering on this socket, here?
+///
+/// The one question both the local startup check and the local sweep ask, so
+/// they cannot answer it differently. A failure to run tmux at all reads as
+/// "no", which is the safe direction for the check and, in the sweep, is why
+/// the unlink asks again rather than trusting a kill it may never have run.
 fn tmux_answers(tmux: &std::path::Path, socket: &pty::Socket) -> bool {
     let (_, args) = pty::hold_alive(socket);
     std::process::Command::new(tmux)
@@ -4490,6 +4483,14 @@ fn is_local(cwd: &str) -> bool {
     host::locate(cwd).map(|l| l.host == Host::Local).unwrap_or(true)
 }
 
+/// Where tmux keeps its sockets: `$TMUX_TMPDIR` or `/tmp`, then `tmux-<uid>`.
+///
+/// Read rather than asked for, because the ids this desk has forgotten exist
+/// nowhere else — `list-sessions` can only speak for a server you can already
+/// name. Unix only, which costs nothing: this is the *local* socket directory,
+/// and a machine with no tmux holds nothing to look for. Another world's
+/// sockets live where the app put them and need none of this.
+#[cfg(unix)]
 pub fn tmux_socket_dir() -> Option<std::path::PathBuf> {
     let base = std::env::var("TMUX_TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
     // SAFETY: getuid is always safe; it reads a process property and cannot fail.
@@ -4502,8 +4503,9 @@ pub fn tmux_socket_dir() -> Option<std::path::PathBuf> {
     None
 }
 
-/// The one libc call this crate needs, declared rather than adding a
-/// dependency for a single symbol.
+// The one libc call this crate needs, declared rather than adding a
+// dependency for a single symbol. A plain comment: rustc does not accept a
+// doc comment on an extern block, and warns rather than rendering it.
 #[cfg(unix)]
 extern "C" {
     #[link_name = "getuid"]

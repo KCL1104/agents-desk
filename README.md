@@ -176,10 +176,10 @@ pixel for pixel, beside a plain test runner.
   「修好登入 #1」. Sent messages land on the Activity timeline. Version-gated by
   probing `claude --version` once at startup, because an older CLI refuses to
   start on an unknown flag
-- **Sessions that outlive the app**: on this machine, agent sessions are held
-  in `tmux`, one socket each. Quitting AgentDesk detaches; it does not kill.
-  Reopening the card attaches to the agent that has been running the whole
-  time (see below)
+- **Sessions that outlive the app**: agent sessions are held in `tmux`, one
+  socket each, in whichever world they run in — this machine, a WSL distro, or
+  an SSH host. Quitting AgentDesk detaches; it does not kill. Reopening the
+  card attaches to the agent that has been running the whole time (see below)
 - **The WSL bridge**: a card's repository can live inside a WSL distro, and
   everything runs where the repository is
 - **The SSH host**: the same seam across a wire, using the `Host` aliases from
@@ -194,12 +194,11 @@ pixel for pixel, beside a plain test runner.
 
 ## Sessions that outlive the app
 
-Local agent sessions run inside `tmux`, one socket per session
-(`agentdesk-<desk>-<session>`). Quitting AgentDesk detaches the client; the
-agent keeps going. Reopening the card attaches to the process that never
-stopped, mid-turn work included.
+Agent sessions run inside `tmux`, one socket per session. Quitting AgentDesk
+detaches the client; the agent keeps going. Reopening the card attaches to the
+process that never stopped, mid-turn work included.
 
-Four decisions worth naming:
+Five decisions worth naming:
 
 - **`new-session -A -D` is create-or-attach**, so "open it for the first time"
   and "reattach after a restart" are one code path and cannot disagree.
@@ -211,12 +210,49 @@ Four decisions worth naming:
 - **The socket name carries a per-install tag** (an FNV-1a of the data
   directory), so one installation's orphan sweep can never kill another's live
   agent.
+- **Persistence is a property of the world, not a premise of the app.** A
+  world with `tmux` gets it; a world without keeps exactly the behaviour it
+  had, which on a fresh Ubuntu under WSL is most of them. Nothing is
+  installed on your behalf, here or anywhere.
 
-A held session comes back as **Running, not reporting**, checked with `tmux
-has-session` before the first paint rather than on a background thread: a
-status that corrects itself a moment later is a flicker, on the one surface
-whose job is to be believed at a glance. Its dot stays neutral, because at
-that moment we know the agent is running and nothing more.
+### Every world, not just this one
+
+The same holds inside a WSL distro and on an SSH host, and the only thing that
+had to change is how the socket is named. `-L <name>` asks `tmux` where its
+own socket directory is, and only this machine can answer: over there the
+directory depends on a uid and a profile this side cannot see, so a sweep that
+guessed would look into an empty directory and conclude every live agent had
+died. In another world the app names the path instead — `~/.agentdesk/s/` —
+and tells `tmux` with `-S`. Locally it stays `-L`, because moving it would
+strand every session an older version left running under a name nothing looks
+for any more.
+
+Three things follow from that one change:
+
+- **The config goes into the world.** `tmux` does not complain about a `-f`
+  file that is not there; it starts on its defaults and draws a status line
+  over the agent's terminal. So a config the app could not write means the
+  session is not held at all, rather than held by a `tmux` that repaints.
+- **The socket name carries a machine id too, out there.** Two laptops
+  belonging to one person have the same data directory. If both reach one SSH
+  host they would agree on a tag, and one desk's orphan sweep would kill the
+  other's running work in silence. A random id, written once into the data
+  directory, is what tells them apart.
+- **Ending a remote session unlinks its socket in the same command.** There is
+  no second visit: this process cannot reach that filesystem, and `tmux`
+  leaves the inode behind when a server exits, so a leftover file and a live
+  server look identical on the next sweep.
+
+A held session comes back as **Running, not reporting** — the agent is
+running, and nothing more is known yet, so its dot stays neutral. Locally that
+is settled with `tmux has-session` before the first paint rather than on a
+background thread: a status that corrects itself a moment later is a flicker,
+on the one surface whose job is to be believed at a glance. Every other world
+is asked on a thread, because asking costs a probe of that world first — a
+login shell, and over SSH a connection — and a board that will not paint until
+a laptop has finished talking to a server is the worse of the two. A world
+that does not answer is left entirely alone: off the VPN is not the same as
+gone.
 
 It does not stay that way. **The hook endpoint is the same one across
 restarts**: the port is asked for again by number and the token is kept, so
@@ -238,7 +274,15 @@ Two consequences worth naming:
   rest of their lives. That is exactly where this was before the endpoint was
   remembered, so it degrades rather than refusing to start.
 
-Not yet done: the same for the WSL and SSH worlds.
+An SSH host reaches that listener through a reverse tunnel, so it has a second
+port with the same problem, and the same answer: the remote port is remembered
+per host, and failing that derived from the host name and this machine's id.
+Both halves matter — the host so one desk's two servers do not collide, the
+machine because the port is bound on the *remote* side and two laptops
+reaching one server would otherwise ask it for the same one. `ssh -f` forks
+after authentication and exits 0 even when the forward was refused, printing
+into a stderr nobody reads, so `ExitOnForwardFailure` is set: a refused port
+is an answer, and the next candidate gets tried.
 
 ---
 
@@ -858,7 +902,7 @@ Tauri window (React + xterm.js)
       │  invoke: term_write / term_resize
       │  event:  term:output
 Rust core  ── PTY registry · session list · SQLite
-      │  portable-pty (local agents held in tmux, one socket each)
+      │  portable-pty (agents held in tmux, one socket each, per world)
   claude / codex / … × N
 ```
 
