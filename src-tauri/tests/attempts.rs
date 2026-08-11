@@ -423,6 +423,31 @@ struct Launch {
     args: Vec<String>,
 }
 
+/// Where a world keeps this desk's sockets: `/tmp/agentdesk-<uid>`, the same
+/// place the app puts them and for the same reason tmux keeps its own there —
+/// a socket address has about 104 bytes, and a home directory is unbounded.
+fn world_socket_dir() -> PathBuf {
+    let uid = std::process::Command::new("id")
+        .arg("-u")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+    PathBuf::from(format!("/tmp/agentdesk-{uid}"))
+}
+
+/// The socket holding one session, if a world is holding it.
+///
+/// Matched by session id rather than by taking the only entry: that directory
+/// is per-user, not per-test, so a whole run's worth of harnesses shares it —
+/// and so does whatever desk the person running the tests has open.
+fn held_socket(session_id: &str) -> Option<PathBuf> {
+    std::fs::read_dir(world_socket_dir())
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.to_string_lossy().ends_with(session_id))
+}
+
 impl Drop for Harness {
     fn drop(&mut self) {
         self.core.shutdown();
@@ -444,14 +469,15 @@ impl Drop for Harness {
                 let _ = std::fs::remove_file(dir.join(&sock));
             }
         }
-        // The same for the worlds behind the stand-in wsl.exe, whose sockets
-        // this desk named itself. Removing the root takes the files; the
-        // servers holding them have to be told.
-        if let Ok(entries) = std::fs::read_dir(self.root.join(".agentdesk").join("s")) {
-            for e in entries.flatten() {
+        // The same for the worlds behind the stand-in wsl.exe. Those sockets
+        // live in a directory shared with every other harness and with the
+        // person's own desk, so only this harness's own sessions are touched.
+        for s in self.core.sessions() {
+            if let Some(p) = held_socket(&s.id) {
                 let _ = std::process::Command::new("tmux")
-                    .args(["-S", &e.path().to_string_lossy(), "kill-server"])
+                    .args(["-S", &p.to_string_lossy(), "kill-server"])
                     .output();
+                let _ = std::fs::remove_file(&p);
             }
         }
         let _ = std::fs::remove_dir_all(&self.root);
@@ -1085,8 +1111,19 @@ fn a_session_in_another_world_is_held_there_and_found_again() {
         eprintln!("no tmux on PATH — nothing holds sessions here");
         return;
     }
-    let h = Harness::new("wsl-hold");
+    // A deliberately long root, because that is the bug this found. The
+    // socket used to live under the world's home, and a home is unbounded: a
+    // macOS runner's temp home put the address at 135 bytes against a limit
+    // of 104, and every session in that world failed to start with the
+    // message going to a pty that closed with it. A name this long reproduces
+    // it; the socket now lives in `/tmp`, so the home's length is irrelevant.
+    let h = Harness::new("wsl-hold-in-a-world-with-a-very-long-home-directory");
     let _guard = h.rt.enter();
+    assert!(
+        h.root.to_string_lossy().len() > 45,
+        "this test is only a test while its home is long: {}",
+        h.root.display()
+    );
     let repo_url = format!("wsl://TestOS{}", h.repo.display());
     let task = h
         .core
@@ -1110,32 +1147,30 @@ fn a_session_in_another_world_is_held_there_and_found_again() {
     );
 
     // And the socket landed in the app's own directory inside the world,
-    // where a `-L` would have gone looking in tmux's instead.
-    let socks = h.root.join(".agentdesk").join("s");
-    let held: Vec<PathBuf> = std::fs::read_dir(&socks)
-        .expect("no socket directory in the distro")
-        .flatten()
-        .map(|e| e.path())
-        .collect();
-    assert_eq!(held.len(), 1, "{held:?}");
-    let sock = held[0].to_string_lossy().to_string();
-    assert!(sock.ends_with(&a.session_id), "{sock}");
-    // Not the tag this desk uses at home. Over there the data directory alone
-    // does not identify a desk — two laptops belonging to one person have the
-    // same path, and if they both reached this host they would agree on a tag
-    // and then sweep each other's running agents. What tells them apart is
-    // written once, here.
-    let name = held[0].file_name().unwrap().to_string_lossy().into_owned();
-    let tag = name.strip_suffix(&format!("-{}", a.session_id)).unwrap();
-    assert_ne!(tag, pty::desk_tag(&h.root.join("data").to_string_lossy()));
+    // where a `-L` would have gone looking in tmux's instead — and *not*
+    // under the home, whose length is nobody's to promise.
+    let held = held_socket(&a.session_id).expect("the world is not holding the session");
+    let sock = held.to_string_lossy().to_string();
     assert!(
-        h.root.join("data").join("machine-id").exists(),
-        "nothing was written down to tell this machine from another"
+        !sock.starts_with(&*h.root.to_string_lossy()),
+        "the socket went back under the home, so its length is the home's: {sock}"
     );
     assert!(
         sock.len() < 104,
         "a {} byte socket path will not fit in a sockaddr_un: {sock}",
         sock.len()
+    );
+    // Not the tag this desk uses at home. Over there the data directory alone
+    // does not identify a desk — two laptops belonging to one person have the
+    // same path, and if they both reached this host they would agree on a tag
+    // and then sweep each other's running agents. What tells them apart is
+    // written once, here.
+    let name = held.file_name().unwrap().to_string_lossy().into_owned();
+    let tag = name.strip_suffix(&format!("-{}", a.session_id)).unwrap();
+    assert_ne!(tag, pty::desk_tag(&h.root.join("data").to_string_lossy()));
+    assert!(
+        h.root.join("data").join("machine-id").exists(),
+        "nothing was written down to tell this machine from another"
     );
     assert!(
         std::process::Command::new("tmux")
@@ -1267,19 +1302,17 @@ fn the_sweep_ends_forgotten_sessions_in_a_world_and_leaves_other_desks_alone() {
     let a = h.start(&task, "claude");
     h.launches(&a.session_id, 1);
 
-    let socks = h.root.join(".agentdesk").join("s");
-    let mine = std::fs::read_dir(&socks)
-        .unwrap()
-        .flatten()
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .next()
-        .expect("the session was held");
+    let socks = world_socket_dir();
+    let mine = held_socket(&a.session_id).expect("the session was held");
     // The name is `<desk tag>-<session id>`, and the id is what we came with.
     let tag = mine
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
         .strip_suffix(&format!("-{}", a.session_id))
         .expect("the socket is named for its session")
         .to_string();
-    assert!(!tag.is_empty(), "{mine}");
+    assert!(!tag.is_empty(), "{}", mine.display());
 
     // Two more servers in the same directory: one this desk left behind and
     // forgot, one belonging to a different desk entirely.
@@ -1342,9 +1375,13 @@ fn the_sweep_ends_forgotten_sessions_in_a_world_and_leaves_other_desks_alone() {
     );
     assert!(stranger.exists());
 
+    // That directory belongs to the user, not to this harness, and nothing
+    // else will come back for what the test left in it.
     let _ = std::process::Command::new("tmux")
         .args(["-S", &stranger.to_string_lossy(), "kill-server"])
         .output();
+    let _ = std::fs::remove_file(&stranger);
+    let _ = std::fs::remove_file(&orphan);
     core2.shutdown();
 }
 
@@ -1640,30 +1677,15 @@ fn an_ssh_repository_runs_its_whole_attempt_on_the_remote() {
     // The remote is holding the session. Same mechanism as WSL — a socket the
     // app named, in a directory it made, inside the world — which is the only
     // shape that works when this side cannot see the world's tmux directory.
-    let socks = home.join(".agentdesk").join("s");
-    let held: Vec<PathBuf> = std::fs::read_dir(&socks)
-        .map(|it| {
-            it.flatten()
-                .map(|e| e.path())
-                .filter(|p| p.to_string_lossy().ends_with(&a.session_id))
-                .collect()
-        })
-        .unwrap_or_default();
-    assert_eq!(held.len(), 1, "the remote is not holding the session: {held:?}");
+    let held = held_socket(&a.session_id).expect("the remote is not holding the session");
     assert!(
         std::process::Command::new("tmux")
-            .args([
-                "-S",
-                &held[0].to_string_lossy(),
-                "has-session",
-                "-t",
-                "agent",
-            ])
+            .args(["-S", &held.to_string_lossy(), "has-session", "-t", "agent"])
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false),
         "nothing is answering on {}",
-        held[0].display()
+        held.display()
     );
 
     // Diff over the wire; close returns the tree and keeps the evidence.
@@ -1680,9 +1702,9 @@ fn an_ssh_repository_runs_its_whole_attempt_on_the_remote() {
         let _ = std::fs::remove_dir_all(parent);
     }
     let _ = std::process::Command::new("tmux")
-        .args(["-S", &held[0].to_string_lossy(), "kill-server"])
+        .args(["-S", &held.to_string_lossy(), "kill-server"])
         .output();
-    let _ = std::fs::remove_file(&held[0]);
+    let _ = std::fs::remove_file(&held);
 }
 
 /* ----------------------- cross-session messaging ----------------------- */

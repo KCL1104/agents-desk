@@ -3395,14 +3395,23 @@ impl Core {
                     tmux_socket_dir().map(|d| d.join(&name).to_string_lossy().to_string());
                 (pty::Socket::Named(name), file)
             }
-            Some(dir) => (
-                pty::Socket::Path(pty::hold_socket_path(
-                    dir,
-                    &self.remote_tag(),
-                    session_id,
-                )),
-                None,
-            ),
+            Some(dir) => {
+                let path = pty::hold_socket_path(dir, &self.remote_tag(), session_id);
+                // The one failure tmux gives no useful sign of: too long an
+                // address and the session simply does not start, with an
+                // error nobody sees because it went to a pty that closed with
+                // it. Refusing to hold is the honest version of the same
+                // outcome, and it says so.
+                if path.len() >= pty::SOCKET_PATH_LIMIT {
+                    eprintln!(
+                        "[core] {} bytes is too long for a socket address; \
+                         this session runs but will not be held: {path}",
+                        path.len()
+                    );
+                    return None;
+                }
+                (pty::Socket::Path(path), None)
+            }
         };
         Some(HoldPlan {
             socket,
@@ -4421,11 +4430,11 @@ fn tunnel_ports(host: &str, machine: &str, remembered: Option<u16>) -> Vec<u16> 
 
 /// Ask a world whether it can hold sessions, and set it up if it can.
 ///
-/// Three questions, in the order that makes a "no" cheapest: is there a tmux
-/// in there, can this app put a config where that tmux will read it, and is
-/// there somewhere to keep the sockets. Any "no" and the world simply does
-/// not hold — the same answer a machine without tmux has always given, and
-/// every card in it goes on working exactly as before.
+/// Four questions, in the order that makes a "no" cheapest: is there a tmux in
+/// there, can this app put a config where that tmux will read it, who are we
+/// over there, and can we make a directory of our own. Any "no" and the world
+/// simply does not hold — the same answer a machine without tmux has always
+/// given, and every card in it goes on working exactly as before.
 ///
 /// One round trip apiece, once per host per run, beside the environment probe
 /// that already costs the same.
@@ -4434,14 +4443,38 @@ fn world_hold(hr: &HostRef, home: &str) -> Option<WorldHold> {
         eprintln!("[core] no tmux in this world, so nothing holds its sessions: {e:#}");
         return None;
     }
+    // The config is a regular file and can live anywhere; the home is where it
+    // belongs, beside everything else this app leaves in a world.
     let conf = format!("{home}/.agentdesk/tmux.conf");
-    let socket_dir = format!("{home}/.agentdesk/s");
     if let Err(e) = hr.write_file(&conf, pty::HOLD_CONF) {
         eprintln!("[core] could not write the tmux config into this world: {e:#}");
         return None;
     }
+    // The socket cannot, and the reason is arithmetic. A unix socket address
+    // has about 104 bytes for its entire path, of which a session id already
+    // spends 36 — and a home directory is unbounded. Measured, not feared: a
+    // macOS temp home put the path at 135 bytes and every session in that
+    // world silently failed to start.
+    //
+    // So sockets go where tmux keeps its own, and for the same reason:
+    // `/tmp`, short and always there, one directory per uid because `/tmp` is
+    // everyone's. `0700` on it is what makes that safe, and it is asked for
+    // rather than inherited — a umask this side never sees decides the rest.
+    let Some(uid) = hr
+        .run_ok("id", &["-u"], None)
+        .ok()
+        .filter(|u| !u.is_empty() && u.chars().all(|c| c.is_ascii_digit()))
+    else {
+        eprintln!("[core] this world would not say who we are there; nothing will be held");
+        return None;
+    };
+    let socket_dir = format!("/tmp/agentdesk-{uid}");
     if let Err(e) = hr.mkdir_p(&socket_dir) {
         eprintln!("[core] could not make a socket directory in this world: {e:#}");
+        return None;
+    }
+    if let Err(e) = hr.run_ok("chmod", &["700", &socket_dir], None) {
+        eprintln!("[core] could not lock down {socket_dir}: {e:#}");
         return None;
     }
     Some(WorldHold {

@@ -205,15 +205,21 @@ pub fn hold_socket(desk: &str, session_id: &str) -> String {
     format!("agentdesk-{desk}-{session_id}")
 }
 
+/// What a `sockaddr_un` has room for, minus a byte for the terminator.
+///
+/// 104 on macOS, 108 on Linux; the smaller is the one that has to hold. This
+/// is not a stylistic budget — go past it and `tmux -S` fails to start the
+/// session at all, with a message that goes to a pty which then closes.
+pub const SOCKET_PATH_LIMIT: usize = 104;
+
 /// The socket *file* for one session of one desk, in a world whose tmux
 /// directory this process cannot see.
 ///
-/// Shorter than the local name, and not out of taste: a unix socket path has
-/// about 104 bytes to live in, and all of it is spent here — a home
-/// directory, ours inside it, and a name that already carries a 36-character
-/// session id. The `agentdesk-` the local name wears is what keeps it apart
-/// from the person's own sockets in tmux's shared directory; this directory
-/// belongs to us, so the prefix would be ten bytes of saying so twice.
+/// Shorter than the local name, and not out of taste: see `SOCKET_PATH_LIMIT`.
+/// A 36-character session id already spends a third of it. The `agentdesk-`
+/// the local name wears is what keeps it apart from the person's own sockets
+/// in tmux's shared directory; this directory belongs to us, so the prefix
+/// would be ten bytes of saying so twice.
 pub fn hold_socket_path(dir: &str, desk: &str, session_id: &str) -> String {
     format!(
         "{}/{}",
@@ -720,13 +726,16 @@ mod hold_tests {
     /// discovered as "tmux: socket name too long" on somebody's machine.
     #[test]
     fn a_remote_socket_path_fits_in_a_unix_socket_address() {
-        let long_home = "/home/a-rather-long-account-name";
+        // The shape the app actually builds: `/tmp`, one directory per uid,
+        // and the name. Not the home — a home is unbounded, and a macOS temp
+        // one put this at 135 bytes, over the limit, where every session in
+        // that world failed to start with nothing to read about it.
         let p = hold_socket_path(
-            &format!("{long_home}/.agentdesk/s"),
+            "/tmp/agentdesk-4294967295",
             &desk_tag("/Users/someone/Library/Application Support/agentdesk"),
             "550e8400-e29b-41d4-a716-446655440000",
         );
-        assert!(p.len() < 104, "{} bytes: {p}", p.len());
+        assert!(p.len() < SOCKET_PATH_LIMIT, "{} bytes: {p}", p.len());
         // Trailing slashes come from joins upstream and must not double.
         assert!(!hold_socket_path("/d/", "t", "s").contains("//"));
         // Two desks share one remote home; the tag is what keeps their
