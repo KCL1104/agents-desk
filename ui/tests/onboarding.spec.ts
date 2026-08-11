@@ -3,6 +3,20 @@ import { installMock } from './mock-tauri';
 
 const REPO = '/Users/test/picked-repo';
 
+/** `goto`, and then wait for the app to actually be there.
+ *
+ * Almost every test below presses a key or clicks something the moment the
+ * page loads, and each of those is handled by a listener React installs on
+ * mount. Pressing before that is a race the test wins on a fast machine and
+ * loses on a slow one — which is what it did on the macOS runner, on a
+ * different test each run. From outside it looks like flakiness; from
+ * inside it is a missing wait.
+ */
+async function land(page: Page) {
+  await page.goto('/');
+  await expect(page.locator('.tab')).toHaveCount(1);
+}
+
 /** Boot with the one-shot surfaces re-armed — the mock normally
  *  pre-answers them so the rest of the suite never fights them. Re-armed
  *  once per tab, not per load: a reload must exercise the real
@@ -16,7 +30,7 @@ async function bootFresh(page: Page) {
       localStorage.removeItem('agentdesk.coach');
     }
   });
-  await page.goto('/');
+  await land(page);
 }
 
 async function newCard(page: Page, title: string) {
@@ -117,7 +131,7 @@ test.describe('the first-run panel', () => {
     page,
   }) => {
     await page.addInitScript(installMock);
-    await page.goto('/');
+    await land(page);
     await page.getByRole('button', { name: '設定' }).click();
     await page.getByTestId('show-welcome').click();
     await expect(page.locator('.modal')).toContainText('歡迎使用 AgentDesk');
@@ -139,7 +153,7 @@ test.describe('the first-run panel', () => {
     page,
   }) => {
     await page.addInitScript(installMock);
-    await page.goto('/');
+    await land(page);
     await page.getByRole('button', { name: '設定' }).click();
     await page.getByTestId('open-docs').click();
     const zh = await page.evaluate(
@@ -157,7 +171,7 @@ test.describe('the first-run panel', () => {
     await page.addInitScript(() =>
       localStorage.setItem('agentdesk.coach', JSON.stringify({ attempt: true, finish: true })),
     );
-    await page.goto('/');
+    await land(page);
     await page.getByRole('button', { name: '設定' }).click();
     await page.getByTestId('replay-coach').click();
     await expect(page.locator('.toast')).toContainText('重新教');
@@ -167,7 +181,7 @@ test.describe('the first-run panel', () => {
 
   test('the welcome panel reopens from the palette too', async ({ page }) => {
     await page.addInitScript(installMock);
-    await page.goto('/');
+    await land(page);
     await page.keyboard.press('ControlOrMeta+K');
     await page.getByTestId('palette-input').fill('歡迎');
     await page.getByTestId('pal-action-show-welcome').click();
@@ -196,7 +210,7 @@ test.describe('the first-run panel', () => {
     await page.addInitScript(() => {
       localStorage.removeItem('agentdesk.welcomed');
     });
-    await page.goto('/');
+    await land(page);
 
     // A closed session files under 已完成, which starts collapsed — the
     // count on the section head is the proof the desk is lived-in.
@@ -326,14 +340,7 @@ test.describe('the first-run terminal wall', () => {
 test.describe('settings', () => {
   const open = async (page: Page) => {
     await page.addInitScript(installMock);
-    await page.goto('/');
-    // Wait for the app to exist before typing at it. The chord is handled by
-    // a listener React installs on mount, so pressing it straight after
-    // `goto` is a race the test wins only on a fast machine — and loses on a
-    // slower one, where it then spends its whole timeout waiting for a panel
-    // nothing ever opened. Found by the macOS runner, where a different one
-    // of these tests lost the race on each run.
-    await expect(page.locator('.tab')).toHaveCount(1);
+    await land(page);
     await page.keyboard.press('ControlOrMeta+,');
     await expect(page.getByTestId('settings-body')).toBeVisible();
   };
@@ -398,7 +405,7 @@ test.describe('settings', () => {
 test.describe('notification preferences', () => {
   test('toggles persist and the test button fires one', async ({ page }) => {
     await page.addInitScript(installMock);
-    await page.goto('/');
+    await land(page);
     await page.getByRole('button', { name: '設定' }).click();
     await page.getByTestId('sec-notifications').click();
 
@@ -424,7 +431,7 @@ test.describe('notification preferences', () => {
 test.describe('checkpoints', () => {
   test('the environment panel owns the switch, default on', async ({ page }) => {
     await page.addInitScript(installMock);
-    await page.goto('/');
+    await land(page);
     await page.getByRole('button', { name: '設定' }).click();
     await page.getByTestId('sec-sessions').click();
 
