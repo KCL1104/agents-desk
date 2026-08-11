@@ -338,6 +338,14 @@ export const en = {
   /* ---------------------------- inspector ----------------------------- */
   'inspector.changes': 'Changes',
   'inspector.activity': 'Activity',
+  // What the agent reads before anyone types. Named for the question rather
+  // than the file type: "rules and skills" is our word for it, "knows" is
+  // what someone is actually asking.
+  'inspector.knows': 'Knows',
+  'knows.project': 'From this checkout',
+  'knows.global': 'From this machine',
+  'knows.shared': 'all agents',
+  'knows.absent': 'not created',
   'inspector.reload': 'Reload',
   'inspector.closeView': 'Close inspector',
   'inspector.frozen': 'Frozen',
@@ -833,6 +841,11 @@ export const zhTW: Record<MessageKey, string> = {
   /* ---------------------------- inspector ----------------------------- */
   'inspector.changes': '變更',
   'inspector.activity': '活動',
+  'inspector.knows': '它知道什麼',
+  'knows.project': '來自這個 checkout',
+  'knows.global': '來自這台機器',
+  'knows.shared': '所有 agent',
+  'knows.absent': '尚未建立',
   'inspector.reload': '重新讀取',
   'inspector.closeView': '關閉檢視',
   'inspector.frozen': '已凍結',

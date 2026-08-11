@@ -23,6 +23,20 @@ export interface StartResult {
 }
 
 /** An attempt's footprint at a glance. Mirrors worktree.rs DiffStat. */
+/** One instruction file an agent working in a directory will read. `exists`
+ *  is the honest half: a missing rules file is still worth naming, because
+ *  the question people have is "where does this go". */
+export interface AgentDoc {
+  scope: 'global' | 'project';
+  /** `claude` · `codex` · `gemini`, or `shared` for the file all of them
+   *  have agreed to look at. */
+  agent: string;
+  kind: 'rules' | 'skill';
+  name: string;
+  path: string;
+  exists: boolean;
+}
+
 export interface AttemptStat {
   /** Files touched, counting untracked ones — an agent's commonest act. */
   files: number;
@@ -242,6 +256,10 @@ export const api = {
   /** Open a URL in the system browser. Through the opener plugin, because a
       plain anchor inside the webview would navigate the app itself. */
   openExternal: (url: string) => invoke<void>('plugin:opener|open_url', { url, with: null }),
+
+  /** The rules and skills an agent working in `cwd` will read — every
+      supported CLI's convention, present or not. */
+  agentDocs: (cwd: string) => invoke<AgentDoc[]>('agent_docs', { cwd }),
 
   /** Open a local file in whatever the system opens it with. Separate from
       `openExternal` because a Windows path is not a URL — `C:\…` through the

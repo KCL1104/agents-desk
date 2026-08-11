@@ -1086,6 +1086,17 @@ export function installMock(): void {
     'plugin:dialog|open': () => '/Users/test/picked-repo',
     'plugin:opener|open_url': () => null,
     'plugin:opener|open_path': () => null,
+
+    /** Slots and discoveries together, the way the core returns them: two
+     *  rules files present, one absent, plus a skill read off disk. */
+    agent_docs: () => [
+      { scope: 'project', agent: 'claude', kind: 'rules', name: 'CLAUDE.md', path: '/wt/CLAUDE.md', exists: true },
+      { scope: 'project', agent: 'shared', kind: 'rules', name: 'AGENTS.md', path: '/wt/AGENTS.md', exists: false },
+      { scope: 'project', agent: 'gemini', kind: 'rules', name: 'GEMINI.md', path: '/wt/GEMINI.md', exists: false },
+      { scope: 'project', agent: 'claude', kind: 'skill', name: 'release', path: '/wt/.claude/skills/release/SKILL.md', exists: true },
+      { scope: 'global', agent: 'claude', kind: 'rules', name: 'CLAUDE.md', path: '/home/me/.claude/CLAUDE.md', exists: true },
+      { scope: 'global', agent: 'codex', kind: 'rules', name: 'AGENTS.md', path: '/home/me/.codex/AGENTS.md', exists: false },
+    ],
     'plugin:notification|is_permission_granted': () => true,
     'plugin:notification|notify': () => null,
   };

@@ -519,6 +519,29 @@ impl HostRef<'_> {
         }
     }
 
+    /// The names directly inside `path`; empty when it is not a directory or
+    /// cannot be read.
+    ///
+    /// Names, not paths: joining is `join`'s job, because that is the one
+    /// place that knows what separator a world speaks. Failure is emptiness
+    /// rather than an error — every caller is asking "what is here", and a
+    /// directory that does not exist answers that question with "nothing".
+    pub fn list_dir(&self, path: &str) -> Vec<String> {
+        match self.host {
+            Host::Local => std::fs::read_dir(path)
+                .map(|it| {
+                    it.flatten()
+                        .map(|e| e.file_name().to_string_lossy().into_owned())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            _ => self
+                .run_ok("ls", &["-1", path], None)
+                .map(|s| s.lines().map(str::to_string).filter(|l| !l.is_empty()).collect())
+                .unwrap_or_default(),
+        }
+    }
+
     pub fn mkdir_p(&self, path: &str) -> Result<()> {
         match self.host {
             Host::Local => Ok(std::fs::create_dir_all(path)?),

@@ -450,6 +450,13 @@ fn list_branches(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// The rules and skills an agent working in this directory will read —
+/// every supported CLI's convention, present or not.
+#[tauri::command]
+fn agent_docs(state: State<'_, AppState>, cwd: String) -> StdResult<Vec<core::AgentDoc>, String> {
+    state.core()?.agent_docs(&cwd).map_err(|e| format!("{e:#}"))
+}
+
 /// The attempt's diff — against its base, or, when `n` names a checkpoint,
 /// against that snapshot instead.
 #[tauri::command]
@@ -790,6 +797,7 @@ fn main() {
             open_attempt,
             reopen_attempt,
             finish_attempt,
+            agent_docs,
             attempt_diff,
             attempt_stats,
             attempt_events,

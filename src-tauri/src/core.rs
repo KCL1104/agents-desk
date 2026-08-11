@@ -306,6 +306,25 @@ pub struct Launcher {
     pub profile: bool,
 }
 
+/// One instruction file an agent working in a directory will read.
+///
+/// `exists` is the honest half: a rules file that is not there is still worth
+/// naming, because the question people actually have is "where does this go",
+/// and an empty list answers it with silence.
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentDoc {
+    /// `global` (the machine's) or `project` (this checkout's).
+    pub scope: &'static str,
+    /// Which CLI reads it: `claude`, `codex`, `gemini`, or `shared` for the
+    /// file all of them have agreed to look at.
+    pub agent: &'static str,
+    /// `rules` or `skill`.
+    pub kind: &'static str,
+    pub name: String,
+    pub path: String,
+    pub exists: bool,
+}
+
 /// The Claude Code release that added `--name` and cross-session messaging.
 ///
 /// Handing `--name` to an older CLI stops it from starting at all, so the
@@ -2221,6 +2240,95 @@ impl Core {
 
     /// The attempt's diff: live from the worktree while it still exists, and
     /// the frozen copy once it does not.
+    /// What the agent working here already knows before anyone types.
+    ///
+    /// Slots, not discoveries: a rules file that is missing is still listed,
+    /// with its path and marked absent, because the useful answer to "where
+    /// do the conventions go" is the path itself. Skills are the exception —
+    /// a skill is whatever somebody wrote — so those are read off disk.
+    ///
+    /// Every supported CLI's convention appears, not only the one this
+    /// session happens to run. Hooks, checkpoints and the token account are
+    /// all Claude-only by measurement; this is the rare surface where the
+    /// other agents get exactly what Claude gets, and narrowing it to the
+    /// running agent would throw that away for nothing.
+    pub fn agent_docs(&self, cwd: &str) -> Result<Vec<AgentDoc>> {
+        let (loc, he) = self.located(cwd)?;
+        let hr = he.hr(&self.env);
+        let home = he
+            .env
+            .vars
+            .get("HOME")
+            .or_else(|| he.env.vars.get("USERPROFILE"))
+            .cloned();
+        let mut out = Vec::new();
+
+        for (name, agent) in [
+            ("CLAUDE.md", "claude"),
+            ("AGENTS.md", "shared"),
+            ("GEMINI.md", "gemini"),
+        ] {
+            let path = hr.join(&loc.path, name);
+            out.push(AgentDoc {
+                scope: "project",
+                agent,
+                kind: "rules",
+                exists: hr.exists(&path),
+                name: name.to_string(),
+                path,
+            });
+        }
+
+        if let Some(home) = home.as_deref() {
+            for (dir, name, agent) in [
+                (".claude", "CLAUDE.md", "claude"),
+                (".codex", "AGENTS.md", "codex"),
+                (".gemini", "GEMINI.md", "gemini"),
+            ] {
+                let path = hr.join(&hr.join(home, dir), name);
+                out.push(AgentDoc {
+                    scope: "global",
+                    agent,
+                    kind: "rules",
+                    exists: hr.exists(&path),
+                    name: name.to_string(),
+                    path,
+                });
+            }
+        }
+
+        // One directory per skill, each holding a SKILL.md. A directory
+        // without one is somebody's notes, not a skill, and stays out.
+        let roots = [
+            ("project", hr.join(&hr.join(&loc.path, ".claude"), "skills")),
+            (
+                "global",
+                home.as_deref()
+                    .map(|h| hr.join(&hr.join(h, ".claude"), "skills"))
+                    .unwrap_or_default(),
+            ),
+        ];
+        for (scope, root) in roots {
+            if root.is_empty() {
+                continue;
+            }
+            for entry in hr.list_dir(&root) {
+                let path = hr.join(&hr.join(&root, &entry), "SKILL.md");
+                if hr.exists(&path) {
+                    out.push(AgentDoc {
+                        scope,
+                        agent: "claude",
+                        kind: "skill",
+                        exists: true,
+                        name: entry,
+                        path,
+                    });
+                }
+            }
+        }
+        Ok(out)
+    }
+
     pub fn attempt_diff(&self, attempt_id: &str) -> Result<String> {
         self.attempt_diff_from(attempt_id, None)
     }

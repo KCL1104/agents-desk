@@ -399,3 +399,52 @@ test.describe('compare against a checkpoint', () => {
     await expect(page.getByTestId('diff-body')).toContainText('src/auth.py');
   });
 });
+
+/**
+ * 「它知道什麼」——agent 還沒被打字之前就已經讀過的東西。
+ *
+ * hooks 狀態、檢查點、token 帳都是量測後的 Claude 專屬;這一格是唯一一個
+ * 其他 agent 拿到的東西跟 Claude 完全一樣的表面,所以三家的慣例都列。
+ */
+test.describe('what the agent already knows', () => {
+  test('rules are slots, not discoveries: absent files are still named', async ({ page }) => {
+    await boardWithAttempt(page);
+    await page.getByTestId('inspect-k1').click();
+    await page.getByTestId('inspector-knows-tab').click();
+
+    const knows = page.getByTestId('knows');
+    await expect(knows).toContainText('來自這個 checkout');
+    await expect(knows).toContainText('來自這台機器');
+
+    // 存在的可以開;不存在的照樣列出來,戴著「尚未建立」——
+    // 人真正想問的是「慣例該放哪」,只列存在的等於用沉默回答。
+    await expect(page.getByTestId('knows-CLAUDE.md').first()).toBeEnabled();
+    await expect(knows).toContainText('尚未建立');
+    const absent = knows.locator('.knows-row.absent').first();
+    await expect(absent.locator('button')).toBeDisabled();
+
+    // 三家的慣例都在,不是只有正在跑的那一個。
+    await expect(knows).toContainText('AGENTS.md');
+    await expect(knows).toContainText('GEMINI.md');
+    await expect(knows).toContainText('所有 agent');
+
+    // Skill 是別人寫的東西,所以是讀出來的,不是格位。
+    await expect(page.getByTestId('knows-release')).toBeVisible();
+  });
+
+  test('an existing file opens; the third tab joins the arrow rotation', async ({ page }) => {
+    await boardWithAttempt(page);
+    await page.getByTestId('inspect-k1').click();
+
+    // 分頁列從兩格變三格,方向鍵繞一圈回到原點。
+    await page.getByTestId('inspector-diff-tab').focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect(page.getByTestId('inspector-knows-tab')).toHaveAttribute('aria-selected', 'true');
+
+    await page.getByTestId('knows-CLAUDE.md').first().click();
+    const opened = await page.evaluate(
+      () => window.__mock.calls.find((c) => c.cmd === 'plugin:opener|open_path')?.args,
+    );
+    expect((opened as { path: string }).path).toContain('CLAUDE.md');
+  });
+});

@@ -938,6 +938,26 @@ button.board-cta:hover {
   color: var(--fg-dim); font-size: var(--fs-data); line-height: 1.55;
 }
 .licenses { margin-top: 4px; }
+
+/* ---------- what the agent knows ----------
+   Slots, not discoveries: a rules file that is not there is still listed
+   with its path. Absent rows recede by fill and by the faintest honest ink
+   — never by fading the whole row, which would drag the name under its own
+   contrast floor. */
+.knows { padding: 8px var(--gutter-x); overflow-y: auto; }
+.knows-head {
+  margin: 10px 0 4px; font-size: var(--fs-label); font-weight: 600;
+  color: var(--fg-dim); letter-spacing: 0.05em;
+}
+.knows-row { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; }
+.knows-name {
+  background: none; border: none; padding: 0; font-family: var(--mono);
+  font-size: var(--fs-data); color: var(--accent); cursor: pointer; text-align: left;
+}
+.knows-name:hover { text-decoration: underline; }
+.knows-name:disabled { color: var(--fg-faint); cursor: default; opacity: 1; }
+.knows-agent { font-size: var(--fs-label); color: var(--fg-dim); }
+.knows-absent { font-size: var(--fs-label); color: var(--fg-faint); font-style: italic; }
 .dialog-error { color: var(--err); font-size: var(--fs-data); margin: 10px 0 0; }
 .dialog-warn {
   color: var(--warn); margin: 8px 0 0; line-height: 1.6;

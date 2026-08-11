@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, type AttemptStat, type Checkpoint } from '../api';
+import { api, type AgentDoc, type AttemptStat, type Checkpoint } from '../api';
 import type { Attempt, AttemptEvent, SessionMeta } from '../types';
-import { useT } from '../i18n';
+import { useT, type MessageKey } from '../i18n';
 import { useArmed } from './armed';
 import { Icon } from './Icon';
 import { FileEditor } from './FileEditor';
@@ -56,7 +56,15 @@ interface Props {
   onOpenPreview: () => void;
 }
 
-type Pane = 'diff' | 'timeline';
+type Pane = 'diff' | 'timeline' | 'knows';
+
+/** The strip, as data. Was a hardcoded pair with a two-way arrow toggle;
+ *  a third tab made the toggle a rotation, and a rotation wants a list. */
+const PANES: readonly { id: Pane; title: MessageKey; testid: string }[] = [
+  { id: 'diff', title: 'inspector.changes', testid: 'inspector-diff-tab' },
+  { id: 'timeline', title: 'inspector.activity', testid: 'inspector-timeline-tab' },
+  { id: 'knows', title: 'inspector.knows', testid: 'inspector-knows-tab' },
+];
 
 /** The line a comment is being written against. */
 interface Picked {
@@ -323,33 +331,28 @@ export function AttemptInspector({
           onKeyDown={(e) => {
             if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
             e.preventDefault();
-            const next = pane === 'diff' ? 'timeline' : 'diff';
-            setPane(next);
-            (
-              e.currentTarget.children[next === 'diff' ? 0 : 1] as HTMLElement
-            )?.focus();
+            // Wraps: a cycle with a dead end is a list, the same rule the
+            // workspace tabs keep.
+            const i = PANES.findIndex((p) => p.id === pane);
+            const step = e.key === 'ArrowRight' ? 1 : -1;
+            const next = PANES[(i + step + PANES.length) % PANES.length];
+            setPane(next.id);
+            (e.currentTarget.children[PANES.indexOf(next)] as HTMLElement)?.focus();
           }}
         >
-          <button
-            role="tab"
-            aria-selected={pane === 'diff'}
-            tabIndex={pane === 'diff' ? 0 : -1}
-            className={pane === 'diff' ? 'active' : ''}
-            data-testid="inspector-diff-tab"
-            onClick={() => setPane('diff')}
-          >
-            {t('inspector.changes')}
-          </button>
-          <button
-            role="tab"
-            aria-selected={pane === 'timeline'}
-            tabIndex={pane === 'timeline' ? 0 : -1}
-            className={pane === 'timeline' ? 'active' : ''}
-            data-testid="inspector-timeline-tab"
-            onClick={() => setPane('timeline')}
-          >
-            {t('inspector.activity')}
-          </button>
+          {PANES.map((p) => (
+            <button
+              key={p.id}
+              role="tab"
+              aria-selected={pane === p.id}
+              tabIndex={pane === p.id ? 0 : -1}
+              className={pane === p.id ? 'active' : ''}
+              data-testid={p.testid}
+              onClick={() => setPane(p.id)}
+            >
+              {t(p.title)}
+            </button>
+          ))}
         </div>
         <span className="spacer" />
         <button className="icon" onClick={refresh} title={t('inspector.reload')} aria-label={t('inspector.reload')}>
@@ -527,6 +530,8 @@ export function AttemptInspector({
         </p>
       )}
 
+      {pane === 'knows' && <Knows cwd={attempt.worktree_path} />}
+
       {pane === 'diff' ? (
         <>
           {/* Swap the baseline: the whole attempt, or what has happened
@@ -623,7 +628,7 @@ export function AttemptInspector({
             </Modal>
           )}
         </>
-      ) : (
+      ) : pane === 'timeline' ? (
         <>
           {restored !== null && (
             <p className="restore-banner small" data-testid="restore-say" aria-live="polite">
@@ -664,7 +669,7 @@ export function AttemptInspector({
             blocked={restoreBlocked}
           />
         </>
-      )}
+      ) : null}
 
       {pane === 'diff' && (picked !== null || comments.length > 0) && (
         <Review
@@ -1559,4 +1564,78 @@ function clock(ms: number): string {
   const d = new Date(ms);
   const two = (n: number) => String(n).padStart(2, '0');
   return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
+}
+
+/**
+ * What the agent working here already knows, before anyone types.
+ *
+ * Slots, not discoveries: a rules file that is missing is still listed, with
+ * its path, marked absent. The question people actually have is "where do the
+ * conventions go", and a list of only what exists answers that with silence —
+ * the same reason a session with no status signal wears a disclaimer rather
+ * than a blank.
+ *
+ * Every supported CLI's convention appears, not only the one this attempt
+ * runs. Hooks, checkpoints and the token account are all Claude-only by
+ * measurement; this is the one surface where the other agents get exactly
+ * what Claude gets, and narrowing it would give that up for nothing.
+ */
+function Knows({ cwd }: { cwd: string }) {
+  const t = useT();
+  const [docs, setDocs] = useState<AgentDoc[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setDocs(null);
+    setError(null);
+    void api
+      .agentDocs(cwd)
+      .then((d) => live && setDocs(d))
+      // Blank and broken must not look alike: a failed read says so.
+      .catch((e) => live && setError(String(e)));
+    return () => {
+      live = false;
+    };
+  }, [cwd]);
+
+  if (error !== null) return <FriendlyError text={error} testid="knows-error" />;
+  if (docs === null) return <p className="muted small">{t('common.loading')}</p>;
+
+  const groups: { scope: string; label: MessageKey }[] = [
+    { scope: 'project', label: 'knows.project' },
+    { scope: 'global', label: 'knows.global' },
+  ];
+
+  return (
+    <div className="knows" data-testid="knows">
+      {groups.map(({ scope, label }) => {
+        const rows = docs.filter((d) => d.scope === scope);
+        if (rows.length === 0) return null;
+        return (
+          <div key={scope}>
+            <h4 className="knows-head">{t(label)}</h4>
+            {rows.map((d) => (
+              <div className={`knows-row${d.exists ? '' : ' absent'}`} key={d.path}>
+                <button
+                  className="knows-name mono"
+                  data-testid={`knows-${d.name}`}
+                  // Only what is there can be opened; the rest is a path to
+                  // write to, and offering to open nothing would be a lie
+                  // dressed as a button.
+                  disabled={!d.exists}
+                  title={d.path}
+                  onClick={() => void api.openPath(d.path)}
+                >
+                  {d.name}
+                </button>
+                <span className="knows-agent">{d.agent === 'shared' ? t('knows.shared') : d.agent}</span>
+                {!d.exists && <span className="knows-absent">{t('knows.absent')}</span>}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
