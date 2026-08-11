@@ -10,6 +10,11 @@ name: Claude detection
 # WSL the whole doorway — `wsl.exe -l -q` in UTF-16LE, `--shell-type login`
 # probing, and the PATH walk inside the distro.
 #
+# The WSL leg carries Codex too, because the doorway is the thing under test
+# and a world is only usable for the agents it can actually reach. What each
+# CLI is then *handed* — its flags, its hook config — is `agent-parity.yml`'s
+# question, asked on this machine rather than through a doorway.
+#
 # On Unix the login shell is the honest bar: a login shell rebuilds PATH from
 # the profile chain, so the CLI is linked into /usr/local/bin the way a real
 # install lands on a real machine — and `node` too, because claude's launcher
@@ -104,7 +109,7 @@ jobs:
         working-directory: src-tauri
         env:
           MAROL_EXPECT_CLAUDE: "1"
-        run: cargo test promised_real_claude -- --nocapture
+        run: cargo test promised_real -- --nocapture
 
   # ---------------------------------------------------------------------------
   # WSL: a real distro under a Windows host — the wsl:// world end to end.
@@ -119,14 +124,16 @@ jobs:
         with:
           distribution: Ubuntu-24.04
 
-      - name: Install node and Claude Code inside the distro
+      - name: Install node and both agent CLIs inside the distro
         shell: wsl-bash {0}
         run: |
           set -e
           curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
           sudo apt-get install -y nodejs
           sudo npm install -g @anthropic-ai/claude-code
+          sudo npm install -g @openai/codex
           claude --version
+          codex --version
 
       - uses: actions/setup-node@v7
         with:
@@ -149,4 +156,5 @@ jobs:
         working-directory: src-tauri
         env:
           MAROL_EXPECT_WSL_CLAUDE: "1"
-        run: cargo test promised_wsl_claude -- --nocapture
+          MAROL_EXPECT_WSL_CODEX: "1"
+        run: cargo test promised_wsl_agent -- --nocapture

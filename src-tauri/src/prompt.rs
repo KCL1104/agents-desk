@@ -41,10 +41,13 @@ pub struct Vars<'a> {
 pub enum Delivery {
     /// Hand the rendered prompt over as the positional argument.
     ///
-    /// Measured, because none of it is documented: the prompt keeps the
-    /// interactive TUI (`-p` is what makes it non-interactive), a multi-line
-    /// string arrives as **one** message rather than one per line, and it
-    /// survives the trust prompt a new worktree always opens on.
+    /// Measured for Claude Code, because none of it is documented: the
+    /// prompt keeps the interactive TUI (`-p` is what makes it
+    /// non-interactive), a multi-line string arrives as **one** message
+    /// rather than one per line, and it survives the trust prompt a new
+    /// worktree always opens on. Codex takes the same shape — an optional
+    /// `PROMPT` positional that starts the interactive session with that
+    /// message — and the parity workflow holds its `--help` to it.
     Positional,
     /// We do not know this CLI's conventions, so we do not guess. The prompt
     /// is built and shown for the person to paste in themselves.
@@ -56,10 +59,14 @@ pub enum Delivery {
     Manual,
 }
 
+/// A CLI in the conventions table takes its prompt on the command line; one
+/// that is not in it is not guessed at. There is no third case on purpose —
+/// "measured" and "we know how to talk to it" are the same statement, and a
+/// CLI that made them different would be one the table is wrong about.
 pub fn delivery_for(agent: &str) -> Delivery {
-    match agent {
-        "claude" => Delivery::Positional,
-        _ => Delivery::Manual,
+    match crate::agent::Cli::of(agent) {
+        Some(_) => Delivery::Positional,
+        None => Delivery::Manual,
     }
 }
 
@@ -248,12 +255,14 @@ mod tests {
         assert!(out.starts_with("abc"));
     }
 
-    /// Only Claude Code's conventions have been measured. Guessing at another
-    /// CLI's would hand it an argument that might mean "print and exit".
+    /// Only the CLIs in the conventions table are sent a prompt. Guessing at
+    /// another's would hand it an argument that might mean "print and exit".
     #[test]
-    fn only_the_cli_we_measured_is_sent_a_prompt_automatically() {
-        assert_eq!(delivery_for("claude"), Delivery::Positional);
-        for other in ["codex", "gemini", "aider", "something-new"] {
+    fn only_the_clis_we_measured_are_sent_a_prompt_automatically() {
+        for measured in ["claude", "codex"] {
+            assert_eq!(delivery_for(measured), Delivery::Positional, "{measured}");
+        }
+        for other in ["gemini", "aider", "something-new"] {
             assert_eq!(delivery_for(other), Delivery::Manual, "{other}");
         }
     }

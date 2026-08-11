@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isMeasured } from '../agents';
 import { api, type AgentDoc, type AttemptStat, type Checkpoint } from '../api';
 import type { Attempt, AttemptEvent, SessionMeta } from '../types';
 import { useT, type MessageKey } from '../i18n';
@@ -450,7 +451,8 @@ export function AttemptInspector({
             </button>
           ))}
           {/* The manual snapshot — every agent's checkpoint, where Stop
-              only covers claude. The button answers on itself. */}
+              only covers the CLIs that report one. The button answers on
+              itself. */}
           <button
             className="chip mono"
             data-testid="checkpoint-now"
@@ -585,7 +587,7 @@ export function AttemptInspector({
             // warning about. A failure surfaces — the terminal it would
             // show up in may not even be on screen.
             editTell={
-              session?.live === true && session.agent === 'claude'
+              session?.live === true && isMeasured(session.agent)
                 ? (file) => {
                     const text = t('edit.note', { file });
                     const deliver =
@@ -634,9 +636,9 @@ export function AttemptInspector({
             <p className="restore-banner small" data-testid="restore-say" aria-live="polite">
               <span>{restored}</span>
               {/* The pre-composed note, sent only by a human hand: the
-                  worktree moved under the agent's feet, and claude can be
-                  told through the same paste a follow-up rides. */}
-              {session?.live === true && session.agent === 'claude' && (
+                  worktree moved under the agent's feet, and a measured CLI
+                  can be told through the same paste a follow-up rides. */}
+              {session?.live === true && isMeasured(session.agent) && (
                 <button
                   className="chip"
                   data-testid="restore-tell"
@@ -1576,9 +1578,9 @@ function clock(ms: number): string {
  * than a blank.
  *
  * Every supported CLI's convention appears, not only the one this attempt
- * runs. Hooks, checkpoints and the token account are all Claude-only by
- * measurement; this is the one surface where the other agents get exactly
- * what Claude gets, and narrowing it would give that up for nothing.
+ * runs — a checkout's `AGENTS.md` matters whichever agent is reading it.
+ * Narrowing the list to the running agent would answer a smaller question
+ * than the one people open this tab with.
  */
 function Knows({ cwd }: { cwd: string }) {
   const t = useT();

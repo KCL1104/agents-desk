@@ -1,3 +1,4 @@
+import { isMeasured } from './agents';
 import type { TFn } from './i18n';
 
 /**
@@ -204,10 +205,10 @@ export function composeReview(comments: readonly ReviewComment[], t: TFn): strin
 }
 
 /**
- * Mirrors `prompt.rs delivery_for`: only Claude Code's input conventions have
- * been measured, so only its sessions get a send button. Everyone else gets
- * the composed text to paste, exactly like the first prompt.
+ * Mirrors `prompt.rs delivery_for`: only the CLIs whose input conventions
+ * have been measured get a send button. Everyone else gets the composed text
+ * to paste, exactly like the first prompt.
  */
 export function followupSendable(agent: string): boolean {
-  return agent === 'claude';
+  return isMeasured(agent);
 }

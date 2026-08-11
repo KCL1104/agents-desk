@@ -101,7 +101,10 @@ test.describe('language', () => {
       'newTask.repo',
       'attempt.agent',
       'env.shell',
+      // Both CLIs' diagnostics labels are their own binary names, which is
+      // the same word in every language.
       'env.claude',
+      'env.codex',
       'env.sourceLogin',
       // "session" is the product's deliberate loanword in both languages;
       // the sidebar header and the palette's group of the same rows are

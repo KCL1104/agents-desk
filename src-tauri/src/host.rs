@@ -791,14 +791,23 @@ pub fn pty_env(env: &ShellEnv, extra: &[(String, String)]) -> Vec<(String, Strin
 mod tests {
     use super::*;
 
-    /// CI 守門的 WSL 半場:MAROL_EXPECT_WSL_CLAUDE=1 表示某個 distro
-    /// 裡真的裝了 claude —— 那 app 的整條真實路徑(wsl.exe -l -q 的
-    /// UTF-16LE 列舉 → --shell-type login 的環境探測 → distro 內的 PATH
-    /// 行走)就必須走得通。這正是使用者機器上 wsl:// 世界的每一步。
+    /// CI 守門的 WSL 半場:MAROL_EXPECT_WSL_CLAUDE / MAROL_EXPECT_WSL_CODEX
+    /// =1 表示某個 distro 裡真的裝了那支 CLI —— 那 app 的整條真實路徑
+    /// (wsl.exe -l -q 的 UTF-16LE 列舉 → --shell-type login 的環境探測 →
+    /// distro 內的 PATH 行走)就必須走得通。這正是使用者機器上 wsl://
+    /// 世界的每一步。
+    ///
+    /// 一支一個開關:兩支 CLI 在 distro 裡是各自安裝的,一支缺席該報那
+    /// 一支的實話,不該連帶把另一支的守門也關掉。
     #[test]
-    fn a_promised_wsl_claude_is_reached_through_the_real_doorway() {
-        if std::env::var("MAROL_EXPECT_WSL_CLAUDE").as_deref() != Ok("1") {
-            eprintln!("skip: MAROL_EXPECT_WSL_CLAUDE != 1");
+    fn a_promised_wsl_agent_is_reached_through_the_real_doorway() {
+        let wanted: Vec<&str> = [("claude", "MAROL_EXPECT_WSL_CLAUDE"), ("codex", "MAROL_EXPECT_WSL_CODEX")]
+            .into_iter()
+            .filter(|(_, gate)| std::env::var(gate).as_deref() == Ok("1"))
+            .map(|(agent, _)| agent)
+            .collect();
+        if wanted.is_empty() {
+            eprintln!("skip: no MAROL_EXPECT_WSL_* gate is set");
             return;
         }
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
@@ -818,14 +827,16 @@ mod tests {
         // which() 摸不到(第一版測試的錯);core 的世界探測走的就是這條:
         // HostRef::run_ok 把指令包成 wsl.exe -d <distro> -e env … claude。
         let hr = HostRef { host: &host, local: &local, env: &env };
-        let out = hr
-            .run_ok("claude", &["--version"], None)
-            .expect("claude --version through the wsl doorway");
-        assert!(
-            out.chars().any(|c| c.is_ascii_digit()),
-            "claude answered strangely: {out:?}"
-        );
-        eprintln!("claude in {} says {}", distros[0], out.trim());
+        for agent in wanted {
+            let out = hr
+                .run_ok(agent, &["--version"], None)
+                .unwrap_or_else(|e| panic!("{agent} --version through the wsl doorway: {e:#}"));
+            assert!(
+                out.chars().any(|c| c.is_ascii_digit()),
+                "{agent} answered strangely: {out:?}"
+            );
+            eprintln!("{agent} in {} says {}", distros[0], out.trim());
+        }
     }
 
     /// The classic landmine, reproduced: wsl.exe speaks UTF-16LE with a

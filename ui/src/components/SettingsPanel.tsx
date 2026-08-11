@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type * as React from 'react';
-import { LOCALE_NAME, LOCALES, useI18n, type Locale, type MessageKey } from '../i18n';
+import { LOCALE_NAME, LOCALES, useI18n, type Locale, type MessageKey, type TFn } from '../i18n';
 import { api } from '../api';
 import { joinArgs, splitArgs } from '../profiles';
 import { ENV_SOURCE_KEY, envSource, type BootStatus, type NotifyPrefs } from '../types';
@@ -286,7 +286,21 @@ export function SettingsPanel({
                 <Stat label={t('env.shell')} value={boot.shell ?? '—'} />
                 <Stat label={t('env.source')} value={t(ENV_SOURCE_KEY[envSource(boot)])} />
                 <Stat label={t('env.varCount')} value={String(boot.envVarCount ?? 0)} />
-                <Stat label={t('env.claude')} value={boot.claude ?? t('env.claudeMissing')} />
+                {/* Both CLIs this app knows how to drive, each with the two
+                    facts that decide what a card can do: whether it is
+                    there, and whether the version that is there reports
+                    status. "Installed" and "will tell you what it is doing"
+                    are different answers, and only listing the first would
+                    stay silent about the commonest reason a card shows no
+                    signal. */}
+                <Stat
+                  label={t('env.claude')}
+                  value={cliLine(boot.claude, boot.claudeVersion, reports(boot, 'claude'), t)}
+                />
+                <Stat
+                  label={t('env.codex')}
+                  value={cliLine(boot.codex, boot.codexVersion, reports(boot, 'codex'), t)}
+                />
                 {/* Whether cards' agents can message each other. The feature
                     is the CLI's own; what this desk adds is naming each
                     session after its card so messages have somewhere to go. */}
@@ -759,6 +773,29 @@ function Theming() {
 function splitPath(path: string): string[] {
   const sep = path.includes(';') || /^[A-Za-z]:[\\/]/.test(path) ? ';' : ':';
   return path.split(sep).filter(Boolean);
+}
+
+/** Whether this world's copy of a CLI is one the status hooks apply to.
+ *  Absent means the backend did not say, which reads as "no" — the same
+ *  direction the launch path takes when a version is unknown. */
+function reports(boot: BootStatus, agent: string): boolean {
+  return boot.agents?.find((a) => a.name === agent)?.reports === true;
+}
+
+/** One CLI's line in the diagnostics: where it is, which version, and
+ *  whether that version reports status. A missing CLI says only that —
+ *  there is nothing else true about it. */
+function cliLine(
+  path: string | null | undefined,
+  version: string | null | undefined,
+  reporting: boolean,
+  t: TFn,
+): string {
+  if (!path) return t('env.cliMissing');
+  const parts = [path];
+  if (version) parts.push(version);
+  parts.push(reporting ? t('env.cliReports') : t('env.cliQuiet'));
+  return parts.join(' · ');
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { isMeasured } from '../agents';
 import { api } from '../api';
 import { useT } from '../i18n';
 import { chord } from '../platform';
@@ -49,11 +50,12 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
   // claude for every convention that matters here.
   const resolved = launchers.find((l) => l.name === agent)?.agent ?? agent;
 
-  // Only Claude Code's permission flags are measured, so only its sessions
-  // get the choice. This dialog is also the safety gate's shape: modes exist
+  // Only a measured CLI's permission flags exist, so only its sessions get
+  // the choice — the two spell the modes differently, and the backend picks
+  // the spelling. This dialog is also the safety gate's shape: modes exist
   // for attempts alone, never for ad-hoc sessions — an attempt can only
   // spend its own worktree and branch.
-  const modeChoice = resolved === 'claude';
+  const modeChoice = isMeasured(resolved);
 
   // Re-render the preview when the agent changes, unless it has been edited —
   // silently discarding someone's typing to refresh a template is worse than
@@ -104,10 +106,10 @@ export function StartAttemptDialog({ task, onCancel, onStart, error }: Props) {
               onChange={(e) => {
                 const next = e.target.value;
                 setAgent(next);
-                // A mode chosen for claude must not ride silently into a CLI
-                // it was never measured against.
+                // A mode chosen for one CLI must not ride silently into a
+                // CLI that was never measured against it.
                 const nextAgent = launchers.find((l) => l.name === next)?.agent ?? next;
-                if (nextAgent !== 'claude') setMode('normal');
+                if (!isMeasured(nextAgent)) setMode('normal');
               }}
             >
               {launchers.map((l) => (

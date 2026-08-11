@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::agent::{self, Cli, Ledger, Resume};
 use crate::config;
 use crate::hooks::{self, Activity, HookHandler, HookReport, HookServer, HookState};
 use crate::host::{self, Host, HostRef};
@@ -54,11 +55,12 @@ pub enum Status {
     Detached,
     /// Terminal is up; the agent has not reported anything yet.
     Starting,
-    /// Sitting on Claude Code's folder-trust prompt.
+    /// Sitting on the CLI's folder-trust prompt.
     ///
-    /// Every attempt opens a worktree Claude Code has never seen, so every
-    /// attempt starts here. No hook can report it: nothing runs until the
-    /// prompt is answered, `SessionStart` included. Measured — see
+    /// Every attempt opens a worktree the agent has never seen, so every
+    /// attempt starts here — both measured CLIs ask before working in a new
+    /// directory. No hook can report it: nothing runs until the prompt is
+    /// answered, `SessionStart` included. Measured — see
     /// `tests/prompt_injection.rs`.
     ///
     /// So the core sets it directly, which it can do honestly because it
@@ -71,7 +73,9 @@ pub enum Status {
     Running,
     /// Blocked on a permission decision — it cannot continue without you.
     WaitingPermission,
-    /// Idle long enough that Claude Code raised an idle prompt.
+    /// Idle long enough that the CLI raised an idle prompt. Claude Code
+    /// does; Codex has no such event, so its sessions go to `Idle` and stay
+    /// there rather than being given a state nothing can ever report.
     WaitingInput,
     /// Finished its turn; your move.
     Idle,
@@ -164,16 +168,40 @@ struct UsageState {
     acc: Usage,
 }
 
-/// Sum the usage in a stretch of transcript JSONL.
+/// What a stretch of transcript said about what it cost.
+///
+/// `account` is a delta for a per-message ledger and a running total for a
+/// cumulative one, which is the whole reason the two are not the same
+/// function: adding up Codex's rows would multiply the bill by the number of
+/// turns, and taking Claude Code's last row would report the last message as
+/// the whole session. `None` means the stretch said nothing about cost, and
+/// what came before it stands.
+struct Spend {
+    account: Option<Usage>,
+    /// The prompt the next turn grows from, when the stretch said.
+    context: Option<u64>,
+}
+
+/// Read the usage in a stretch of transcript JSONL, the way this CLI writes
+/// it down.
+///
+/// Rows that fail to parse are skipped, not fatal: one malformed line — a
+/// half-flushed tail, most often — must not zero a session's account.
+fn parse_usage(ledger: Ledger, text: &str) -> Spend {
+    match ledger {
+        Ledger::PerMessage => parse_usage_per_message(text),
+        Ledger::Cumulative => parse_usage_cumulative(text),
+    }
+}
+
+/// Claude Code: one row per assistant message, each carrying its own usage.
 ///
 /// Returns the totals of every assistant row in the text, and the context
 /// size of the last **main-line** one (`input + cache_read + cache_write`
 /// ≈ the prompt the next turn will grow from). Sidechain rows count toward
 /// the totals — their spend is real — but never set the context: a
-/// sub-agent's prompt belongs to its own conversation. Rows that fail to
-/// parse are skipped, not fatal: one malformed line must not zero a
-/// session's account.
-fn parse_usage(text: &str) -> (Usage, Option<u64>) {
+/// sub-agent's prompt belongs to its own conversation.
+fn parse_usage_per_message(text: &str) -> Spend {
     let mut sum = Usage::default();
     let mut context = None;
     for line in text.lines() {
@@ -201,7 +229,75 @@ fn parse_usage(text: &str) -> (Usage, Option<u64>) {
             context = Some(i + cr + cw);
         }
     }
-    (sum, context)
+    Spend {
+        account: Some(sum),
+        context,
+    }
+}
+
+/// Codex: a `token_count` event whose `total_token_usage` is the running
+/// total for the whole session, and whose `last_token_usage` is the request
+/// that just went out.
+///
+/// So the last such row *is* the account, and the one arithmetic step is
+/// splitting Codex's `input_tokens` into the three columns this app shows.
+/// Codex counts the cached and cache-written parts **inside** `input_tokens`
+/// rather than beside it, where Claude Code keeps three disjoint buckets —
+/// so the fresh column is the remainder. Getting that backwards
+/// double-counts the cache, which is most of a long session.
+///
+/// Subtracting is also the safe direction if a future Codex moves one of
+/// those out of `input_tokens`: the three columns still add up to the prompt
+/// it reported, and only the split between them would be off.
+///
+/// The context comes from `last_token_usage.input_tokens`: the prompt the
+/// model was actually handed last time, cache and all, which is the same
+/// quantity the Claude Code side reports.
+fn parse_usage_cumulative(text: &str) -> Spend {
+    let mut account = None;
+    let mut context = None;
+    for line in text.lines() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let payload = match v.get("payload") {
+            Some(p) => p,
+            // Older rollouts wrote the event at the top level.
+            None => &v,
+        };
+        if payload.get("type").and_then(|t| t.as_str()) != Some("token_count") {
+            continue;
+        }
+        let Some(info) = payload.get("info") else {
+            // A `token_count` with no info at all is Codex saying the turn
+            // used nothing it can attribute — not a reason to forget what
+            // the rows before it said.
+            continue;
+        };
+        let read = |slot: &str, key: &str| -> Option<u64> {
+            info.get(slot)?.get(key)?.as_u64()
+        };
+        if let Some(input) = read("total_token_usage", "input_tokens") {
+            let cached = read("total_token_usage", "cached_input_tokens").unwrap_or(0);
+            // Newer field, and absent on some models even where it exists —
+            // missing reads as zero, which is a column left empty rather
+            // than a number nobody measured.
+            let written = read("total_token_usage", "cache_write_input_tokens").unwrap_or(0);
+            account = Some(Usage {
+                // Saturating, because a report where the cache exceeds the
+                // input is one to degrade on rather than panic on.
+                input: input.saturating_sub(cached).saturating_sub(written),
+                output: read("total_token_usage", "output_tokens").unwrap_or(0),
+                cache_read: cached,
+                cache_write: written,
+                context: 0,
+            });
+        }
+        if let Some(last) = read("last_token_usage", "input_tokens") {
+            context = Some(last);
+        }
+    }
+    Spend { account, context }
 }
 
 impl SessionMeta {
@@ -267,30 +363,68 @@ fn status_name(s: Status) -> &'static str {
     }
 }
 
-/// Assemble a command line: options first, the prompt last.
+/// What goes at the end of a command line, after every option.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Tail {
+    /// Neither a prompt nor a subcommand — a plain launch.
+    Nothing,
+    /// The first message, as the positional argument.
+    Prompt(String),
+    /// A subcommand: `resume --last`. Everything that modifies the run has
+    /// to be in front of it.
+    Sub(&'static [&'static str]),
+}
+
+/// Assemble a command line: options first, then the hook wiring, then the
+/// prompt or the subcommand.
 ///
 /// Kept apart from spawning because the ordering is the whole point and it is
 /// easy to undo by accident. A positional argument sitting in front of an
 /// option leaves the parse to whatever the CLI happens to do with it, and the
 /// symptom — a session that starts and then does nothing — looks like a dozen
 /// other problems.
-fn build_args(
-    agent: &str,
-    opts: Vec<String>,
-    plugin_dir: Option<&str>,
-    positional: Option<String>,
-) -> Vec<String> {
+///
+/// The subcommand goes last for a sharper reason, measured against the real
+/// CLI: `codex resume` takes positionals of its own, `[SESSION_ID] [PROMPT]`.
+/// Anything of ours that ended up after it would not be rejected — it would
+/// be read as the name of a session to resume. Options before the
+/// subcommand parse the same either way, so the order that cannot be
+/// misread is the one to keep.
+fn build_args(opts: Vec<String>, hook_args: Vec<String>, tail: Tail) -> Vec<String> {
     let mut args = opts;
-    // Only Claude Code understands `--plugin-dir`; other CLIs run without
-    // status reporting rather than failing to start.
-    if let (Some(dir), "claude") = (plugin_dir, agent) {
-        args.push("--plugin-dir".to_string());
-        args.push(dir.to_string());
-    }
-    if let Some(p) = positional {
-        args.push(p);
+    args.extend(hook_args);
+    match tail {
+        Tail::Nothing => {}
+        Tail::Prompt(p) => args.push(p),
+        Tail::Sub(words) => args.extend(words.iter().map(|w| w.to_string())),
     }
     args
+}
+
+/// The options and the tail for picking a conversation back up.
+///
+/// One function for both resume paths — a restart's and an archived row's —
+/// because they are the same sentence said twice, and the version where they
+/// drifted is the version where reopening an attempt loses its permission
+/// mode on one of the two roads. The prompt is deliberately not re-sent on
+/// either: a second copy would set the agent off doing the whole card again.
+fn resume_line(cli: Option<Cli>, mode: PermissionMode) -> (Vec<String>, Tail) {
+    let Some(cli) = cli else {
+        // A CLI nobody measured is opened in the directory and left to its
+        // own devices. Whether it can continue the conversation there is its
+        // business, said honestly rather than guessed at.
+        return (Vec::new(), Tail::Nothing);
+    };
+    let mut opts: Vec<String> = Vec::new();
+    if let Resume::Option(words) = cli.resume() {
+        opts.extend(words.iter().map(|w: &&str| w.to_string()));
+    }
+    opts.extend(cli.mode_args(mode).iter().map(|s: &&str| s.to_string()));
+    let tail = match cli.resume() {
+        Resume::Option(_) => Tail::Nothing,
+        Resume::Subcommand(words) => Tail::Sub(words),
+    };
+    (opts, tail)
 }
 
 fn now_ms() -> u64 {
@@ -344,13 +478,13 @@ pub struct AgentDoc {
 /// only used where it is known to be understood.
 const NAMED_SESSIONS_SINCE: (u64, u64, u64) = (2, 1, 224);
 
-/// Ask the installed `claude` its version, bounded.
+/// Ask an installed CLI its version, bounded.
 ///
 /// Best effort by design: a CLI that cannot answer in five seconds, or is not
 /// installed at all, reads as "version unknown" — and unknown means every
 /// version-gated flag stays off, the direction that never breaks a session.
-async fn probe_claude_version(env: &ShellEnv) -> Option<(u64, u64, u64)> {
-    let exe = env.which("claude")?;
+async fn probe_version(env: &ShellEnv, agent: &str) -> Option<(u64, u64, u64)> {
+    let exe = env.which(agent)?;
     let mut cmd = tokio::process::Command::new(exe);
     cmd.arg("--version")
         .envs(&env.vars)
@@ -361,18 +495,48 @@ async fn probe_claude_version(env: &ShellEnv) -> Option<(u64, u64, u64)> {
         .await
         .ok()?
         .ok()?;
-    parse_claude_version(&String::from_utf8_lossy(&out.stdout))
+    parse_version(&String::from_utf8_lossy(&out.stdout))
 }
 
-/// `2.1.226 (Claude Code)` → `(2, 1, 226)`. Measured against the real CLI's
-/// output; anything that does not lead with three dot-separated numbers is
-/// "unknown", never a guess.
-fn parse_claude_version(s: &str) -> Option<(u64, u64, u64)> {
-    let first = s.split_whitespace().next()?;
-    let mut nums = first.split('.').map(|p| p.parse::<u64>());
-    match (nums.next(), nums.next(), nums.next()) {
-        (Some(Ok(a)), Some(Ok(b)), Some(Ok(c))) => Some((a, b, c)),
-        _ => None,
+/// `2.1.226 (Claude Code)` → `(2, 1, 226)`, `codex-cli 0.145.0` → `(0, 145, 0)`.
+///
+/// Measured against both CLIs' real output, which is why it looks at every
+/// word rather than only the first: Claude Code leads with the number and
+/// Codex leads with its own name, and a parser that only knew one of those
+/// would report the other as "unknown" — which is a silent loss of every
+/// version-gated feature, not a visible failure. Anything with no
+/// three-part number in it anywhere stays unknown, never a guess.
+fn parse_version(s: &str) -> Option<(u64, u64, u64)> {
+    s.split_whitespace().find_map(|word| {
+        let mut parts = word.split('.');
+        let a = parts.next()?.parse::<u64>().ok()?;
+        let b = parts.next()?.parse::<u64>().ok()?;
+        // A prerelease suffix is still that release's number: `0.145.0-rc.1`
+        // is a 0.145.0, and reading it as unknown would turn every gated
+        // feature off for anybody testing a release candidate.
+        let third = parts.next()?;
+        let digits: String = third.chars().take_while(char::is_ascii_digit).collect();
+        Some((a, b, digits.parse().ok()?))
+    })
+}
+
+/// Every measured CLI's version in one world, probed together.
+///
+/// One round trip per world rather than per CLI per session: the answer does
+/// not change under a running app, and asking a WSL distro anything costs a
+/// doorway crossing.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Versions {
+    pub claude: Option<(u64, u64, u64)>,
+    pub codex: Option<(u64, u64, u64)>,
+}
+
+impl Versions {
+    fn of(&self, cli: Cli) -> Option<(u64, u64, u64)> {
+        match cli {
+            Cli::Claude => self.claude,
+            Cli::Codex => self.codex,
+        }
     }
 }
 
@@ -606,10 +770,46 @@ impl PtySink for Router {
     }
 }
 
+/// Which session a report belongs to.
+///
+/// The id is the answer whenever it survived the trip — a header for an
+/// `http` hook, an expanded variable for a `command` one. When it did not,
+/// the working directory is the way home: every payload of both CLIs carries
+/// it, no shell rewrites it, and an attempt's worktree belongs to exactly one
+/// session by construction.
+///
+/// Ambiguity is refused rather than resolved. Two live sessions in one
+/// directory is a thing a person can do — two ad-hoc terminals in the same
+/// checkout — and picking one of them would silently attribute a whole
+/// session's work to the wrong card.
+fn session_for(
+    sessions: &HashMap<String, SessionMeta>,
+    id: Option<&str>,
+    cwd: Option<&str>,
+) -> Option<String> {
+    if let Some(id) = id.filter(|id| sessions.contains_key(*id)) {
+        return Some(id.to_string());
+    }
+    let cwd = cwd?;
+    let mut found = None;
+    for s in sessions.values().filter(|s| s.live) {
+        // The session's path carries its world (`wsl://Ubuntu/home/…`); the
+        // agent inside that world only ever knew the plain one.
+        if s.cwd == cwd || s.cwd.ends_with(cwd) {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(s.id.clone());
+        }
+    }
+    found
+}
+
 impl HookHandler for Router {
     fn on_hook(&self, report: HookReport) {
         let HookReport {
             session_id,
+            cwd,
             state,
             activity,
             transcript_path,
@@ -618,12 +818,18 @@ impl HookHandler for Router {
         let at = now_ms();
         let mut timeline: Vec<PendingEvent> = Vec::new();
 
-        let (notify, turn_done) = {
+        let (session_id, notify, turn_done) = {
             let mut sessions = self.sessions.lock().unwrap();
+            // A hook from a session we cannot place: a stale terminal from a
+            // previous run of the app, or two of them sharing a directory.
+            // Ignore it rather than inventing a row for it or guessing which
+            // row it meant.
+            let Some(session_id) =
+                session_for(&sessions, session_id.as_deref(), cwd.as_deref())
+            else {
+                return;
+            };
             let Some(s) = sessions.get_mut(&session_id) else {
-                // A hook from a session we do not track: a stale terminal from
-                // a previous run of the app. Ignore it rather than inventing
-                // a row for it.
                 return;
             };
             s.reports_status = true;
@@ -690,7 +896,11 @@ impl HookHandler for Router {
             } else {
                 false
             };
-            (fire.then(|| (s.title.clone(), s.cwd.clone())), turn_done)
+            (
+                session_id,
+                fire.then(|| (s.title.clone(), s.cwd.clone())),
+                turn_done,
+            )
         };
 
         for e in timeline {
@@ -802,9 +1012,10 @@ pub struct Core {
     hooks: OnceLock<HookServer>,
     data_dir: std::path::PathBuf,
     worktrees: Worktrees,
-    /// The installed Claude Code's version, measured once at startup.
-    /// `None` means unknown, and unknown keeps every version-gated flag off.
-    claude_version: Option<(u64, u64, u64)>,
+    /// The installed CLIs' versions, measured once at startup. `None` for
+    /// one of them means unknown, and unknown keeps every version-gated flag
+    /// off.
+    versions: Versions,
     /// Which notifications to raise — the router's copy of the same cell.
     notify_prefs: Arc<Mutex<NotifyPrefs>>,
     /// Each attempt's worktree shell, while one is live. One shell per
@@ -859,12 +1070,13 @@ pub struct Worlds {
     pub ssh: Vec<String>,
 }
 
-/// What asking a world "are you there, and do you have a claude" found.
-/// `claude: None` with no error is itself an answer: reachable, but the
-/// CLI is not on that world's login-shell PATH.
+/// What asking a world "are you there, and which agents do you have" found.
+/// A version of `None` with no error is itself an answer: reachable, but
+/// that CLI is not on this world's login-shell PATH.
 #[derive(Debug, Clone, Serialize)]
 pub struct WorldProbe {
     pub claude: Option<String>,
+    pub codex: Option<String>,
     pub error: Option<String>,
 }
 
@@ -889,22 +1101,27 @@ pub struct Restored {
     pub saved: Option<crate::worktree::Checkpoint>,
 }
 
-/// One execution environment, resolved: its login environment, its claude,
-/// and where its worktrees live. The local one mirrors the core's own fields;
-/// a WSL distro's is probed through `wsl.exe` on first contact.
+/// One execution environment, resolved: its login environment, its agent
+/// CLIs, and where its worktrees live. The local one mirrors the core's own
+/// fields; a WSL distro's is probed through `wsl.exe` on first contact.
 pub struct HostEnv {
     pub host: Host,
     pub env: ShellEnv,
-    pub claude_version: Option<(u64, u64, u64)>,
+    /// This world's CLIs, not ours. A WSL distro has its own claude and its
+    /// own codex, at its own versions, and the flags a launch may use are
+    /// decided by the binary that will actually run.
+    pub versions: Versions,
     /// `~/.marol/worktrees` *inside the host* — a worktree lives in the
     /// same filesystem as its repository, never across a boundary.
     pub worktree_root: String,
-    /// Where this host's claude finds the status plugin: the app's own dir
-    /// locally, the same dir through `/mnt` for WSL, a remotely provisioned
-    /// copy (URL pointing back through the tunnel) for SSH. `None` when the
-    /// hook listener is down or the tunnel could not be raised — sessions
-    /// run either way, they just show no status.
-    pub hook_plugin_dir: Option<String>,
+    /// How this host's agents reach the status listener: the plugin
+    /// directory for the CLI that loads one, the URL for the CLI that is
+    /// configured with it. The app's own dir locally, the same dir through
+    /// `/mnt` for WSL, a remotely provisioned copy (URL pointing back
+    /// through the tunnel) for SSH. `None` when the hook listener is down or
+    /// the tunnel could not be raised — sessions run either way, they just
+    /// show no status.
+    pub hooks: Option<hooks::Wiring>,
     /// What it takes to hold a session in this world past the app's own life,
     /// or `None` when this world cannot: no tmux in it, or nowhere to put the
     /// config. Resolved beside the environment probe, because both answer
@@ -1061,9 +1278,18 @@ impl Core {
             .map(|raw| raw != "0")
             .unwrap_or(true);
 
-        let claude_version = probe_claude_version(&env).await;
-        if let Some((a, b, c)) = claude_version {
-            eprintln!("[core] claude {a}.{b}.{c}");
+        // Both at once: neither answer depends on the other, and a machine
+        // with both installed should not pay for them one after the next on
+        // the path to the first paint.
+        let (claude, codex) = tokio::join!(
+            probe_version(&env, "claude"),
+            probe_version(&env, "codex")
+        );
+        let versions = Versions { claude, codex };
+        for (name, v) in [("claude", claude), ("codex", codex)] {
+            if let Some((a, b, c)) = v {
+                eprintln!("[core] {name} {a}.{b}.{c}");
+            }
         }
 
         let router = Arc::new(Router {
@@ -1087,7 +1313,7 @@ impl Core {
             hooks: OnceLock::new(),
             data_dir: data_dir.clone(),
             worktrees: Worktrees::new(worktree_root),
-            claude_version,
+            versions,
             notify_prefs,
             shells: Mutex::new(HashMap::new()),
             followups: Mutex::new(HashMap::new()),
@@ -1157,12 +1383,12 @@ impl Core {
             Host::Local => HostEnv {
                 host: Host::Local,
                 env: self.env.clone(),
-                claude_version: self.claude_version,
+                versions: self.versions,
                 worktree_root: self.worktrees.local_root(),
-                hook_plugin_dir: self
-                    .hooks
-                    .get()
-                    .map(|s| s.plugin_dir.to_string_lossy().to_string()),
+                hooks: self.hooks.get().map(|s| hooks::Wiring {
+                    plugin_dir: s.plugin_dir.to_string_lossy().to_string(),
+                    url: s.url(),
+                }),
                 hold: self.local_hold(),
             },
             _ => {
@@ -1170,24 +1396,30 @@ impl Core {
                 let home = env.vars.get("HOME").cloned().ok_or_else(|| {
                     anyhow!("the host's environment came back without a HOME")
                 })?;
-                // The host's claude, not ours — its version gates its flags.
+                // The host's CLIs, not ours — their versions gate their flags.
                 let hr = HostRef {
                     host: h,
                     local: &self.env,
                     env: &env,
                 };
-                let claude_version = hr
-                    .run_ok("claude", &["--version"], None)
-                    .ok()
-                    .and_then(|s| parse_claude_version(&s));
-                let hook_plugin_dir = match h {
+                let probe = |exe: &str| {
+                    hr.run_ok(exe, &["--version"], None)
+                        .ok()
+                        .and_then(|s| parse_version(&s))
+                };
+                let versions = Versions {
+                    claude: probe("claude"),
+                    codex: probe("codex"),
+                };
+                let wiring = match h {
                     Host::Local => unreachable!(),
-                    // The plugin sits on the app's disk; a claude inside WSL
-                    // reads it through the drive mounts.
-                    Host::Wsl { .. } => self
-                        .hooks
-                        .get()
-                        .map(|s| host::win_path_for_wsl(&s.plugin_dir.to_string_lossy())),
+                    // The plugin sits on the app's disk; an agent inside WSL
+                    // reads it through the drive mounts, and posts to the
+                    // same loopback URL this machine is listening on.
+                    Host::Wsl { .. } => self.hooks.get().map(|s| hooks::Wiring {
+                        plugin_dir: host::win_path_for_wsl(&s.plugin_dir.to_string_lossy()),
+                        url: s.url(),
+                    }),
                     // An SSH host cannot see our disk at all: the plugin is
                     // provisioned into the host, and its URL points back
                     // through the reverse tunnel on the standing connection.
@@ -1210,16 +1442,19 @@ impl Core {
                                 return None;
                             }
                         }
-                        Some(dir)
+                        Some(hooks::Wiring {
+                            plugin_dir: dir,
+                            url,
+                        })
                     }),
                 };
                 let hold = world_hold(&hr, &home);
                 HostEnv {
                     host: h.clone(),
                     env,
-                    claude_version,
+                    versions,
                     worktree_root: format!("{home}/.marol/worktrees"),
-                    hook_plugin_dir,
+                    hooks: wiring,
                     hold,
                 }
             }
@@ -1682,22 +1917,27 @@ impl Core {
             .insert(session_id.clone(), meta.clone());
 
         // The profile's standing arguments first, then the mode's flags —
-        // all options, ahead of `--plugin-dir` and the prompt. The mode's
-        // flags are measured for Claude Code only; any other CLI launches
-        // without them rather than being handed a guess. The mode is still
-        // recorded either way — it is what the person approved.
+        // all options, ahead of the hook wiring and the prompt. The mode's
+        // flags are the ones this CLI actually spells; a CLI whose
+        // conventions nobody measured launches without them rather than
+        // being handed a guess. The mode is still recorded either way — it
+        // is what the person approved.
         let mut opts = profile_args;
-        if agent == "claude" {
-            opts.extend(mode.claude_args().iter().map(|s| s.to_string()));
+        if let Some(cli) = Cli::of(&agent) {
+            opts.extend(cli.mode_args(mode).iter().map(|s| s.to_string()));
         }
 
-        // `--continue` is deliberately absent: this worktree has no history
-        // for it to continue, and the prompt is what starts the work.
+        // No resume here, in either spelling: this worktree has no history
+        // to continue, and the prompt is what starts the work.
+        let tail = match positional {
+            Some(p) => Tail::Prompt(p),
+            None => Tail::Nothing,
+        };
         if let Err(e) = self.launch(
             &session_id,
             &agent,
             opts,
-            positional,
+            tail,
             &cwd,
             cols,
             rows,
@@ -1791,15 +2031,9 @@ impl Core {
         // directory, not in our row.
         let session_id = uuid::Uuid::new_v4().to_string();
         let at = now_ms();
-        let opts = if attempt.agent == "claude" {
-            // The permission mode rides along on a resume: it is part of what
-            // was approved for this attempt, not a per-launch choice.
-            let mut o = vec!["--continue".to_string()];
-            o.extend(attempt.mode.claude_args().iter().map(|s| s.to_string()));
-            o
-        } else {
-            Vec::new()
-        };
+        // The permission mode rides along on a resume: it is part of what
+        // was approved for this attempt, not a per-launch choice.
+        let (opts, tail) = resume_line(Cli::of(&attempt.agent), attempt.mode);
         let meta = SessionMeta {
             id: session_id.clone(),
             cwd: attempt.worktree_path.clone(),
@@ -1828,7 +2062,7 @@ impl Core {
             &session_id,
             &attempt.agent,
             opts,
-            None,
+            tail,
             &attempt.worktree_path,
             cols,
             rows,
@@ -2341,10 +2575,10 @@ impl Core {
     /// a skill is whatever somebody wrote — so those are read off disk.
     ///
     /// Every supported CLI's convention appears, not only the one this
-    /// session happens to run. Hooks, checkpoints and the token account are
-    /// all Claude-only by measurement; this is the rare surface where the
-    /// other agents get exactly what Claude gets, and narrowing it to the
-    /// running agent would throw that away for nothing.
+    /// session happens to run — the slots come from `agent::DOCS`, which is
+    /// the same table the rest of the core reads. The question people open
+    /// this tab with is about the repository, not about the session, and
+    /// narrowing it to the running agent would answer a smaller one.
     pub fn agent_docs(&self, cwd: &str) -> Result<Vec<AgentDoc>> {
         let (loc, he) = self.located(cwd)?;
         let hr = he.hr(&self.env);
@@ -2356,11 +2590,7 @@ impl Core {
             .cloned();
         let mut out = Vec::new();
 
-        for (name, agent) in [
-            ("CLAUDE.md", "claude"),
-            ("AGENTS.md", "shared"),
-            ("GEMINI.md", "gemini"),
-        ] {
+        for (name, agent) in agent::DOCS.project_rules {
             let path = hr.join(&loc.path, name);
             out.push(AgentDoc {
                 scope: "project",
@@ -2373,11 +2603,7 @@ impl Core {
         }
 
         if let Some(home) = home.as_deref() {
-            for (dir, name, agent) in [
-                (".claude", "CLAUDE.md", "claude"),
-                (".codex", "AGENTS.md", "codex"),
-                (".gemini", "GEMINI.md", "gemini"),
-            ] {
+            for (dir, name, agent) in agent::DOCS.global_rules {
                 let path = hr.join(&hr.join(home, dir), name);
                 out.push(AgentDoc {
                     scope: "global",
@@ -2392,30 +2618,37 @@ impl Core {
 
         // One directory per skill, each holding a SKILL.md. A directory
         // without one is somebody's notes, not a skill, and stays out.
-        let roots = [
-            ("project", hr.join(&hr.join(&loc.path, ".claude"), "skills")),
-            (
-                "global",
-                home.as_deref()
-                    .map(|h| hr.join(&hr.join(h, ".claude"), "skills"))
-                    .unwrap_or_default(),
-            ),
-        ];
-        for (scope, root) in roots {
-            if root.is_empty() {
-                continue;
-            }
-            for entry in hr.list_dir(&root) {
-                let path = hr.join(&hr.join(&root, &entry), "SKILL.md");
-                if hr.exists(&path) {
-                    out.push(AgentDoc {
-                        scope,
-                        agent: "claude",
-                        kind: "skill",
-                        exists: true,
-                        name: entry,
-                        path,
-                    });
+        //
+        // Both CLIs look in their own `<dir>/skills`, and the file inside is
+        // the same file — a skill written for one is read by the other. So
+        // both roots are walked, and each entry says which CLI's shelf it
+        // was on rather than pretending there is only one shelf.
+        for (dir, agent) in agent::DOCS.skill_roots {
+            let roots = [
+                ("project", hr.join(&hr.join(&loc.path, dir), "skills")),
+                (
+                    "global",
+                    home.as_deref()
+                        .map(|h| hr.join(&hr.join(h, dir), "skills"))
+                        .unwrap_or_default(),
+                ),
+            ];
+            for (scope, root) in roots {
+                if root.is_empty() {
+                    continue;
+                }
+                for entry in hr.list_dir(&root) {
+                    let path = hr.join(&hr.join(&root, &entry), "SKILL.md");
+                    if hr.exists(&path) {
+                        out.push(AgentDoc {
+                            scope,
+                            agent,
+                            kind: "skill",
+                            exists: true,
+                            name: entry,
+                            path,
+                        });
+                    }
                 }
             }
         }
@@ -2519,13 +2752,16 @@ impl Core {
         } else {
             format!("{world}/")
         };
+        let spell = |v: Option<(u64, u64, u64)>| v.map(|(a, b, c)| format!("{a}.{b}.{c}"));
         match self.located(&raw) {
             Ok((_, he)) => WorldProbe {
-                claude: he.claude_version.map(|(a, b, c)| format!("{a}.{b}.{c}")),
+                claude: spell(he.versions.claude),
+                codex: spell(he.versions.codex),
                 error: None,
             },
             Err(e) => WorldProbe {
                 claude: None,
+                codex: None,
                 error: Some(format!("{e:#}")),
             },
         }
@@ -2899,7 +3135,7 @@ impl Core {
 
         // On the record before it can exit — see `finish_opening`.
         self.sessions.lock().unwrap().insert(id.clone(), meta.clone());
-        if let Err(e) = self.launch(&id, &agent, extra_args, None, &cwd, cols, rows, None) {
+        if let Err(e) = self.launch(&id, &agent, extra_args, Tail::Nothing, &cwd, cols, rows, None) {
             self.sessions.lock().unwrap().remove(&id);
             return Err(e);
         }
@@ -2924,22 +3160,18 @@ impl Core {
             return Err(anyhow!("session {id} already has a terminal"));
         }
 
-        // `--continue` picks up the most recent conversation in this
-        // directory, which is what reopening means to the user.
-        let mut args = if meta.agent == "claude" {
-            vec!["--continue".to_string()]
-        } else {
-            Vec::new()
-        };
-        // An attempt session resumes with the permission mode chosen for the
-        // attempt — approved once, kept until the attempt ends.
-        if meta.agent == "claude" {
-            if let Some(attempt_id) = &meta.attempt_id {
-                if let Ok(Some(attempt)) = self.store.get_attempt(attempt_id) {
-                    args.extend(attempt.mode.claude_args().iter().map(|s| s.to_string()));
-                }
-            }
-        }
+        // Each CLI's own way of picking up the most recent conversation in
+        // this directory, which is what reopening means to the user. An
+        // attempt session resumes with the permission mode chosen for the
+        // attempt — approved once, kept until the attempt ends; an ad-hoc
+        // session has no attempt and so no mode to carry.
+        let mode = meta
+            .attempt_id
+            .as_deref()
+            .and_then(|id| self.store.get_attempt(id).ok().flatten())
+            .map(|a| a.mode)
+            .unwrap_or_default();
+        let (args, tail) = resume_line(Cli::of(&meta.agent), mode);
 
         // Marked live before the launch, not after: a child that exits at
         // once reports Exited in between, and writing "starting, live" over
@@ -2971,7 +3203,7 @@ impl Core {
             s.live = true;
             s.last_active_at = now_ms();
         }
-        if let Err(e) = self.launch(id, &meta.agent, args, None, &meta.cwd, cols, rows, None) {
+        if let Err(e) = self.launch(id, &meta.agent, args, tail, &meta.cwd, cols, rows, None) {
             if let Some(s) = self.sessions.lock().unwrap().get_mut(id) {
                 s.status = Status::Saved;
                 s.live = false;
@@ -3001,26 +3233,40 @@ impl Core {
         id: &str,
         agent: &str,
         opts: Vec<String>,
-        positional: Option<String>,
+        tail: Tail,
         cwd: &str,
         cols: u16,
         rows: u16,
         setup: Option<&SetupWrap>,
     ) -> Result<()> {
         // Which world this session's directory lives in decides everything
-        // below: whose claude, whose PATH, and whether the whole command
+        // below: whose CLI, whose PATH, and whether the whole command
         // line gets wrapped through the doorway.
         let loc = host::locate(cwd)?;
         let he = self.host_env(&loc.host)?;
 
+        let cli = Cli::of(agent);
         let mut session_env = Vec::new();
-        // Which plugin dir — and whether there is one — was settled when the
-        // host was first contacted; see `host_env`. Only the session's
-        // identity is per-launch.
-        let plugin_dir = he.hook_plugin_dir.clone();
-        if plugin_dir.is_some() {
+        // Which session this is, for whatever ends up reporting on it.
+        // Every hook reports under this id — Claude Code expands it into a
+        // header, Codex into the query of its curl — and it is set for any
+        // session in a world that has a listener at all, whether or not
+        // this app knows how to wire that CLI up: it is a fact about the
+        // session rather than about the CLI, and somebody's own hook is
+        // entitled to read it too.
+        if he.hooks.is_some() {
             session_env.push(("MAROL_SESSION_ID".to_string(), id.to_string()));
         }
+
+        // Whether this world can be wired at all was settled when the host
+        // was first contacted; see `host_env`. Whether *this CLI* can be is
+        // its own version's business, and unknown means no — an unrecognised
+        // flag is the one failure a person cannot work around from inside
+        // the terminal, because there is no terminal.
+        let hook_args = match (cli, &he.hooks) {
+            (Some(cli), Some(wiring)) if cli.hooks_ok(he.versions.of(cli)) => cli.hook_args(wiring),
+            _ => Vec::new(),
+        };
 
         // Cross-session messaging addresses a session by name, and left to
         // itself the CLI derives one from the worktree's directory — a slug
@@ -3028,16 +3274,17 @@ impl Core {
         // named what its own list calls it: 「修好登入 #1」, reachable by the
         // name a person would actually say. Version-gated on the claude that
         // will actually run — the host's — because an older CLI refuses to
-        // start on a flag it does not know.
+        // start on a flag it does not know. Codex has no equivalent, and is
+        // handed nothing rather than a guess.
         let mut opts = opts;
-        if agent == "claude" && he.claude_version >= Some(NAMED_SESSIONS_SINCE) {
+        if cli == Some(Cli::Claude) && he.versions.claude >= Some(NAMED_SESSIONS_SINCE) {
             if let Some(title) = self.sessions.lock().unwrap().get(id).map(|s| s.title.clone()) {
                 opts.push("--name".to_string());
                 opts.push(title);
             }
         }
 
-        let args = build_args(agent, opts, plugin_dir.as_deref(), positional);
+        let args = build_args(opts, hook_args, tail);
 
         // A local host needs a local POSIX shell for the setup wrap; a WSL
         // host brings its own.
@@ -3742,15 +3989,26 @@ impl Core {
             .to_string()
     }
 
-    /// The installed Claude Code's version, as measured at startup.
-    pub fn claude_version(&self) -> Option<String> {
-        self.claude_version.map(|(a, b, c)| format!("{a}.{b}.{c}"))
+    /// One measured CLI's version, as read at startup.
+    pub fn cli_version(&self, agent: &str) -> Option<String> {
+        Cli::of(agent)
+            .and_then(|cli| self.versions.of(cli))
+            .map(|(a, b, c)| format!("{a}.{b}.{c}"))
+    }
+
+    /// Whether a measured CLI is new enough for this app to wire its status
+    /// hooks up. False also means "not installed", which is the same answer
+    /// as far as the panel that reports it is concerned: no status here.
+    pub fn reports_status(&self, agent: &str) -> bool {
+        Cli::of(agent).is_some_and(|cli| {
+            self.versions.of(cli).is_some() && cli.hooks_ok(self.versions.of(cli))
+        })
     }
 
     /// Whether the installed claude supports session names and, with them,
     /// cross-session messaging between this desk's sessions.
     pub fn named_sessions(&self) -> bool {
-        self.claude_version >= Some(NAMED_SESSIONS_SINCE)
+        self.versions.claude >= Some(NAMED_SESSIONS_SINCE)
     }
 
     /* ------------------------- notifications ----------------------- */
@@ -3977,16 +4235,19 @@ impl Core {
     /// that is not claude, or a claude too old to say) simply never appear
     /// in the books: honest absence, not a zero.
     pub(crate) fn usage_after_turn(self: &Arc<Self>, session_id: &str) {
-        let (cwd, transcript) = {
+        let (cwd, transcript, ledger) = {
             let sessions = self.sessions.lock().unwrap();
             let Some(s) = sessions.get(session_id) else { return };
             let Some(tp) = s.transcript_path.clone() else { return };
-            (s.cwd.clone(), tp)
+            // A session with a transcript is a session whose CLI is in the
+            // table — the path came out of that CLI's own hook payload.
+            let Some(cli) = Cli::of(&s.agent) else { return };
+            (s.cwd.clone(), tp, cli.ledger())
         };
         let core = Arc::clone(self);
         let sid = session_id.to_string();
         std::thread::spawn(move || {
-            if let Err(e) = core.read_usage(&sid, &cwd, &transcript) {
+            if let Err(e) = core.read_usage(&sid, &cwd, &transcript, ledger) {
                 eprintln!("[core] usage read for {sid} failed: {e:#}");
             }
         });
@@ -3995,7 +4256,17 @@ impl Core {
     /// Read what the transcript has grown since last time and fold it into
     /// the session's account. The offset only ever advances to a line
     /// boundary — a half-written line is the next read's problem.
-    fn read_usage(&self, session_id: &str, cwd: &str, transcript: &str) -> Result<()> {
+    ///
+    /// How the fold works is the ledger's business, and getting it wrong is
+    /// invisible rather than loud: a running total added to itself once per
+    /// turn still looks like a number.
+    fn read_usage(
+        &self,
+        session_id: &str,
+        cwd: &str,
+        transcript: &str,
+        ledger: Ledger,
+    ) -> Result<()> {
         let (_, he) = self.located(cwd)?;
         let hr = he.hr(&self.env);
         let from = self
@@ -4012,16 +4283,28 @@ impl Core {
             Some(i) => i + 1,
             None => return Ok(()),
         };
-        let (delta, context) = parse_usage(&String::from_utf8_lossy(&bytes[..consumed]));
+        let spend = parse_usage(ledger, &String::from_utf8_lossy(&bytes[..consumed]));
         let usage = {
             let mut states = self.usage_state.lock().unwrap();
             let st = states.entry(session_id.to_string()).or_default();
             st.offset = from + consumed as u64;
-            st.acc.input += delta.input;
-            st.acc.output += delta.output;
-            st.acc.cache_read += delta.cache_read;
-            st.acc.cache_write += delta.cache_write;
-            if let Some(ctx) = context {
+            match (ledger, spend.account) {
+                (Ledger::PerMessage, Some(d)) => {
+                    st.acc.input += d.input;
+                    st.acc.output += d.output;
+                    st.acc.cache_read += d.cache_read;
+                    st.acc.cache_write += d.cache_write;
+                }
+                // The row is already the whole session's total; the previous
+                // total is superseded, not added to.
+                (Ledger::Cumulative, Some(total)) => {
+                    let context = st.acc.context;
+                    st.acc = total;
+                    st.acc.context = context;
+                }
+                (_, None) => {}
+            }
+            if let Some(ctx) = spend.context {
                 st.acc.context = ctx;
             }
             st.acc
@@ -4214,21 +4497,44 @@ mod tests {
     use super::*;
     use crate::store::StoredTab;
 
-    /// CI 守門的第二半:找到的 claude 要真的答得出 `--version`,而且版本
+    /// CI 守門的第二半:找到的 CLI 要真的答得出 `--version`,而且版本
     /// 字串解析得出來 ——「偵測到」不是檔案存在,是問得到話。跟著
-    /// shell_env 的守門測試一起,由 MAROL_EXPECT_CLAUDE=1 啟用。
+    /// shell_env 的守門測試一起,由 MAROL_EXPECT_CLAUDE / MAROL_EXPECT_CODEX
+    /// 啟用,一支一個開關:一台只裝了其中一支的 runner 該報那一支的實話。
     #[test]
-    fn a_promised_real_claude_answers_the_version_probe() {
-        if std::env::var("MAROL_EXPECT_CLAUDE").as_deref() != Ok("1") {
-            eprintln!("skip: MAROL_EXPECT_CLAUDE != 1");
-            return;
-        }
+    fn a_promised_real_cli_answers_the_version_probe() {
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
         let env = rt.block_on(crate::shell_env::resolve());
-        let v = rt.block_on(probe_claude_version(&env));
-        assert!(v.is_some(), "claude --version did not run or did not parse");
-        let (a, b, c) = v.unwrap();
-        eprintln!("claude {a}.{b}.{c} answered the probe");
+        let mut ran = false;
+        for (agent, gate) in [("claude", "MAROL_EXPECT_CLAUDE"), ("codex", "MAROL_EXPECT_CODEX")] {
+            if std::env::var(gate).as_deref() != Ok("1") {
+                eprintln!("skip {agent}: {gate} != 1");
+                continue;
+            }
+            ran = true;
+            let v = rt.block_on(probe_version(&env, agent));
+            assert!(
+                v.is_some(),
+                "{agent} --version did not run or did not parse"
+            );
+            let (a, b, c) = v.unwrap();
+            eprintln!("{agent} {a}.{b}.{c} answered the probe");
+
+            // Version-gated features are decided from this number, so a
+            // probe that parses but comes back too old is worth naming here
+            // rather than discovering as a card that never shows status.
+            let cli = Cli::of(agent).expect("a measured CLI");
+            if !cli.hooks_ok(v) {
+                panic!(
+                    "{agent} {a}.{b}.{c} predates the hook wiring this app uses ({:?}); \
+                     sessions would run without status",
+                    cli.hooks_since()
+                );
+            }
+        }
+        if !ran {
+            eprintln!("skip: no MAROL_EXPECT_* gate is set");
+        }
     }
 
     /// The port an SSH host's hook tunnel lands on, and the three things that
@@ -4327,21 +4633,65 @@ mod tests {
             r#"{"type":"assistant","message":{"usage":{"input_tokens":2,"output_tokens":30,"cache_read_input_tokens":2000,"cache_creation_input_tokens":8}}}"#,
         ]
         .join("\n");
-        let (sum, ctx) = parse_usage(&lines);
+        let spend = parse_usage(Ledger::PerMessage, &lines);
+        let sum = spend.account.expect("a per-message stretch always accounts");
         assert_eq!(sum.input, 17);
         assert_eq!(sum.output, 330, "the sidechain's spend is real spend");
         assert_eq!(sum.cache_read, 3000);
         assert_eq!(sum.cache_write, 58);
         // The last main-line row: 2 + 2000 + 8. The sidechain in between
         // must not have hijacked the context.
-        assert_eq!(ctx, Some(2010));
+        assert_eq!(spend.context, Some(2010));
     }
 
     #[test]
     fn a_transcript_with_no_assistant_rows_has_no_context_yet() {
-        let (sum, ctx) = parse_usage(r#"{"type":"user","message":{}}"#);
-        assert_eq!(sum, Usage::default());
-        assert_eq!(ctx, None);
+        let spend = parse_usage(Ledger::PerMessage, r#"{"type":"user","message":{}}"#);
+        assert_eq!(spend.account, Some(Usage::default()));
+        assert_eq!(spend.context, None);
+    }
+
+    /// Codex's rollout writes running totals, so the account is the **last**
+    /// row rather than the sum of them. Reading it the other way is the
+    /// mistake that does not look like one: a session's bill would grow by
+    /// its whole history every turn, and every number on the panel would
+    /// still be a plausible number.
+    #[test]
+    fn a_cumulative_ledger_is_read_as_a_total_not_as_a_delta() {
+        let lines = [
+            r#"{"type":"session_meta","payload":{"id":"x"}}"#,
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":900,"output_tokens":50},"last_token_usage":{"input_tokens":1000}}}}"#,
+            "half a line, still being written",
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":3000,"cached_input_tokens":2500,"cache_write_input_tokens":400,"output_tokens":120},"last_token_usage":{"input_tokens":2000}}}}"#,
+        ]
+        .join("\n");
+        let spend = parse_usage(Ledger::Cumulative, &lines);
+        let acc = spend.account.expect("the rows said what it cost");
+        // The later row *is* the account. 1000 + 3000 would be the bug.
+        assert_eq!(acc.cache_read, 2500);
+        assert_eq!(acc.cache_write, 400);
+        // The cached and written parts are counted inside `input_tokens`, so
+        // the fresh column is the remainder — and the three still add back
+        // up to the prompt Codex reported.
+        assert_eq!(acc.input, 100, "the cache was double-counted");
+        assert_eq!(acc.input + acc.cache_read + acc.cache_write, 3000);
+        assert_eq!(acc.output, 120);
+        // The prompt the next turn grows from is the last request's, not
+        // the running total.
+        assert_eq!(spend.context, Some(2000));
+    }
+
+    /// A stretch that said nothing about cost must leave the account alone.
+    /// For a cumulative ledger that is the difference between "quiet turn"
+    /// and "the session suddenly cost nothing".
+    #[test]
+    fn a_cumulative_stretch_with_no_counts_leaves_the_account_standing() {
+        let spend = parse_usage(
+            Ledger::Cumulative,
+            r#"{"type":"event_msg","payload":{"type":"agent_message","message":"hi"}}"#,
+        );
+        assert_eq!(spend.account, None);
+        assert_eq!(spend.context, None);
     }
 
     /// The invoke boundary check for the editable diff: everything a diff
@@ -4434,17 +4784,17 @@ mod tests {
         assert!(!Status::Exited.needs_you());
     }
 
-    /// The prompt goes last, after every option. `--plugin-dir` is appended
+    /// The prompt goes last, after every option. The hook wiring is appended
     /// by us, so building the vector in the obvious order — user args, then
     /// prompt, then ours — would put a positional argument in front of an
     /// option.
     #[test]
     fn the_prompt_is_the_last_argument_on_the_command_line() {
+        let hook = Cli::Claude.hook_args(&wiring());
         let args = build_args(
-            "claude",
             Vec::new(),
-            Some("/data/plugin"),
-            Some("[Marol 任務] 修好登入\n\n多行的 prompt".into()),
+            hook,
+            Tail::Prompt("[Marol 任務] 修好登入\n\n多行的 prompt".into()),
         );
         assert_eq!(args[0], "--plugin-dir");
         assert_eq!(args[1], "/data/plugin");
@@ -4454,33 +4804,155 @@ mod tests {
 
     #[test]
     fn reopening_passes_continue_as_an_option_and_sends_no_prompt() {
-        let args = build_args(
-            "claude",
-            vec!["--continue".to_string()],
-            Some("/data/plugin"),
-            None,
-        );
+        let (opts, tail) = resume_line(Some(Cli::Claude), PermissionMode::Normal);
+        let args = build_args(opts, Cli::Claude.hook_args(&wiring()), tail);
         assert_eq!(args, vec!["--continue", "--plugin-dir", "/data/plugin"]);
     }
 
-    /// A CLI that does not understand `--plugin-dir` must not be handed it:
-    /// it would refuse to start, and status reporting is a nicety while the
-    /// session itself is not.
+    /// The same sentence in Codex's grammar, where resuming is a subcommand
+    /// that takes `[SESSION_ID] [PROMPT]` of its own. Nothing of ours may
+    /// follow it: an argument there is not rejected, it is read as the name
+    /// of a session to resume.
     #[test]
-    fn another_agent_is_not_handed_claude_codes_flags() {
-        let args = build_args("codex", vec!["--model".into(), "o3".into()], Some("/p"), None);
+    fn a_codex_resume_puts_every_option_in_front_of_the_subcommand() {
+        let (opts, tail) = resume_line(Some(Cli::Codex), PermissionMode::AcceptEdits);
+        let args = build_args(opts, Cli::Codex.hook_args(&wiring()), tail);
+        let resume = args
+            .iter()
+            .position(|a| a == "resume")
+            .expect("a codex resume names its subcommand");
+        assert_eq!(args[resume + 1], "--last");
+        assert_eq!(resume + 2, args.len(), "nothing may follow the subcommand");
+        for flag in ["--sandbox", "-c"] {
+            let at = args.iter().position(|a| a == flag).expect(flag);
+            assert!(at < resume, "{flag} landed after the subcommand");
+        }
+        // And no `--continue`, which is not a thing Codex has.
+        assert!(!args.iter().any(|a| a == "--continue"));
+    }
+
+    /// A CLI nobody measured is opened in its directory and left alone: no
+    /// hook wiring it would refuse to start on, no resume flag it does not
+    /// have, no permission mode translated into a guess.
+    #[test]
+    fn an_unmeasured_agent_is_handed_nothing_of_ours() {
+        assert_eq!(Cli::of("gemini"), None);
+        let (opts, tail) = resume_line(Cli::of("gemini"), PermissionMode::Yolo);
+        let args = build_args(
+            {
+                let mut o = vec!["--model".to_string(), "o3".to_string()];
+                o.extend(opts);
+                o
+            },
+            Vec::new(),
+            tail,
+        );
         assert_eq!(args, vec!["--model", "o3"]);
+    }
+
+    fn wiring() -> hooks::Wiring {
+        hooks::Wiring {
+            plugin_dir: "/data/plugin".to_string(),
+            url: "http://127.0.0.1:1234/h/tok".to_string(),
+        }
+    }
+
+    /// Where a report lands when the session id did not survive the trip.
+    ///
+    /// The id wins whenever it names a session we have. Otherwise the
+    /// working directory is the way home — and only when it names exactly
+    /// one, because attributing a whole session's work to the wrong card is
+    /// worse than showing no status at all.
+    #[test]
+    fn a_report_finds_its_session_by_id_first_and_by_directory_only_when_sure() {
+        let mut sessions = HashMap::new();
+        for (id, cwd, live) in [
+            ("s-attempt", "/home/me/.marol/worktrees/login-1", true),
+            ("s-wsl", "wsl://Ubuntu/home/me/.marol/worktrees/pay-1", true),
+            ("s-adhoc-a", "/repo", true),
+            ("s-adhoc-b", "/repo", true),
+            ("s-closed", "/gone", false),
+        ] {
+            let mut m = meta(id);
+            m.cwd = cwd.to_string();
+            m.live = live;
+            sessions.insert(id.to_string(), m);
+        }
+
+        // The id, when it is one we know.
+        assert_eq!(
+            session_for(&sessions, Some("s-attempt"), Some("/anywhere")).as_deref(),
+            Some("s-attempt")
+        );
+        // A stale id from a previous run falls through to the directory.
+        assert_eq!(
+            session_for(
+                &sessions,
+                Some("from-the-last-run"),
+                Some("/home/me/.marol/worktrees/login-1")
+            )
+            .as_deref(),
+            Some("s-attempt")
+        );
+        // No id at all: the directory alone.
+        assert_eq!(
+            session_for(&sessions, None, Some("/home/me/.marol/worktrees/login-1")).as_deref(),
+            Some("s-attempt")
+        );
+        // The agent inside a world only ever knew the plain path; the row
+        // carries the world in front of it.
+        assert_eq!(
+            session_for(&sessions, None, Some("/home/me/.marol/worktrees/pay-1")).as_deref(),
+            Some("s-wsl")
+        );
+        // Two live sessions in one directory: refused, not guessed.
+        assert_eq!(session_for(&sessions, None, Some("/repo")), None);
+        // A session with no terminal is not a candidate — its hooks are over.
+        assert_eq!(session_for(&sessions, None, Some("/gone")), None);
+        // And nothing to go on is nothing to place it on.
+        assert_eq!(session_for(&sessions, None, None), None);
+    }
+
+    fn meta(id: &str) -> SessionMeta {
+        SessionMeta {
+            id: id.to_string(),
+            cwd: String::new(),
+            title: id.to_string(),
+            agent: "claude".to_string(),
+            status: Status::Running,
+            created_at: 0,
+            last_active_at: 0,
+            live: true,
+            reports_status: false,
+            activity: None,
+            activity_since: 0,
+            completed: false,
+            attempt_id: None,
+            has_followup: false,
+            preview_port: None,
+            usage: None,
+            transcript_path: None,
+        }
     }
 
     /// The gate that keeps `--name` off an older CLI: unknown or old reads
     /// as "do not", because the flag stops that claude from starting at all.
+    ///
+    /// Both CLIs' real `--version` output is here, because they do not
+    /// agree about it: Claude Code leads with the number, Codex leads with
+    /// its own name. A parser that only knew the first would read every
+    /// Codex as "unknown" — which is not a visible failure, it is every
+    /// version-gated feature silently off.
     #[test]
     fn the_name_flag_is_gated_on_a_measured_version() {
-        assert_eq!(parse_claude_version("2.1.226 (Claude Code)"), Some((2, 1, 226)));
-        assert_eq!(parse_claude_version("10.0.0"), Some((10, 0, 0)));
-        assert_eq!(parse_claude_version(""), None);
-        assert_eq!(parse_claude_version("claude: command not found"), None);
-        assert_eq!(parse_claude_version("2.1"), None);
+        assert_eq!(parse_version("2.1.226 (Claude Code)"), Some((2, 1, 226)));
+        assert_eq!(parse_version("10.0.0"), Some((10, 0, 0)));
+        assert_eq!(parse_version("codex-cli 0.145.0"), Some((0, 145, 0)));
+        assert_eq!(parse_version("0.146.0-alpha.3"), Some((0, 146, 0)));
+        assert_eq!(parse_version(""), None);
+        assert_eq!(parse_version("claude: command not found"), None);
+        assert_eq!(parse_version("codex: command not found"), None);
+        assert_eq!(parse_version("2.1"), None);
 
         let since = Some(NAMED_SESSIONS_SINCE);
         assert!(Some((2, 1, 224)) >= since);

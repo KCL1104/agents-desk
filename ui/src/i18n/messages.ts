@@ -426,7 +426,12 @@ export const en = {
   'env.sourceProcess': 'process env (degraded)',
   'env.varCount': 'variables',
   'env.claude': 'claude',
-  'env.claudeMissing': 'not found',
+  'env.codex': 'codex',
+  'env.cliMissing': 'not found',
+  // Found and wired for status are different facts: a CLI that is here but
+  // too old to be wired runs perfectly well and tells this desk nothing.
+  'env.cliReports': 'status ✓',
+  'env.cliQuiet': 'no status',
   'env.db': 'database',
   'env.degraded':
     'Could not read the login shell environment, so this process’s own was used instead. npx-style MCP servers may fail to start.',
@@ -523,7 +528,7 @@ export const en = {
   'world.pick': 'Where new cards and sessions open, WSL distros and SSH hosts included',
   'world.hint': 'New cards and sessions open here. Each card keeps its own world.',
   'world.probing': 'reaching…',
-  'world.noClaude': 'no claude on this world’s PATH',
+  'world.noAgent': 'no claude or codex on this world’s PATH',
   /* ------------------------ find in terminal -------------------------- */
   'term.find': 'Find in terminal',
   'term.findHint': 'Enter finds the next match, Shift+Enter the previous, Esc closes',
@@ -926,7 +931,10 @@ export const zhTW: Record<MessageKey, string> = {
   'env.sourceProcess': 'process env（降級）',
   'env.varCount': '變數數量',
   'env.claude': 'claude',
-  'env.claudeMissing': '找不到',
+  'env.codex': 'codex',
+  'env.cliMissing': '找不到',
+  'env.cliReports': '狀態回報 ✓',
+  'env.cliQuiet': '沒有狀態回報',
   'env.db': '資料庫',
   'env.degraded':
     '無法從 login shell 取得環境，已退回本行程的環境。npx 型的 MCP server 可能起不來。',
@@ -1015,7 +1023,7 @@ export const zhTW: Record<MessageKey, string> = {
   'world.pick': '新卡片與新 session 開在哪，包含 WSL distro 與 SSH host',
   'world.hint': '新開的東西預設在這裡。每張卡各自保有自己的世界。',
   'world.probing': '連線中…',
-  'world.noClaude': '這個世界的 PATH 上找不到 claude',
+  'world.noAgent': '這個世界的 PATH 上找不到 claude 或 codex',
   /* ------------------------ find in terminal -------------------------- */
   'term.find': '搜尋終端機',
   'term.findHint': 'Enter 找下一個、Shift+Enter 找上一個、Esc 關閉',

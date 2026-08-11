@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+#[path = "../src/agent.rs"]
+mod agent;
 #[path = "../src/config.rs"]
 mod config;
 #[path = "../src/core.rs"]
@@ -100,6 +102,28 @@ printf '\033[?2004h'
 exec cat > "$MAROL_STUB_LOG/stdin.${MAROL_SESSION_ID:-unknown}.$$"
 "#;
 
+/// The same stand-in wearing Codex's name and Codex's `--version` shape.
+///
+/// The string matters: Claude Code leads with the number and Codex leads
+/// with its own name, and the version gate that decides whether the hook
+/// config goes on the command line reads both through one parser. A stub
+/// that answered in Claude Code's shape would let a parser that only knew
+/// that shape pass.
+const CODEX_STUB: &str = r#"#!/bin/bash
+if [ "$1" = "--version" ]; then echo "codex-cli 0.147.0"; exit 0; fi
+printf '%s\0' "$PWD" "$@" > "$MAROL_STUB_LOG/${MAROL_SESSION_ID:-unknown}.$$"
+printf '\033[?2004h'
+exec cat > "$MAROL_STUB_LOG/stdin.${MAROL_SESSION_ID:-unknown}.$$"
+"#;
+
+/// A CLI whose conventions nobody has measured. It records what it was
+/// given for the tests that assert it was given nothing of ours.
+const UNMEASURED_STUB: &str = r#"#!/bin/bash
+if [ "$1" = "--version" ]; then echo "0.9.0"; exit 0; fi
+printf '%s\0' "$PWD" "$@" > "$MAROL_STUB_LOG/${MAROL_SESSION_ID:-unknown}.$$"
+exec cat > "$MAROL_STUB_LOG/stdin.${MAROL_SESSION_ID:-unknown}.$$"
+"#;
+
 /// A stand-in for a Claude Code release from before session names existed.
 /// What matters is what it is NOT handed: `--name` would stop it starting.
 const OLD_STUB: &str = r#"#!/bin/bash
@@ -134,7 +158,11 @@ impl Harness {
         let logs = root.join("logs");
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::create_dir_all(&logs).unwrap();
-        for (agent, stub) in [("claude", claude_stub), ("codex", STUB)] {
+        for (agent, stub) in [
+            ("claude", claude_stub),
+            ("codex", CODEX_STUB),
+            ("gemini", UNMEASURED_STUB),
+        ] {
             let p = bin.join(agent);
             std::fs::write(&p, stub).unwrap();
             #[cfg(unix)]
@@ -645,16 +673,16 @@ fn reopening_an_attempt_continues_instead_of_asking_again() {
     );
 }
 
-/// Honest degradation: we only measured Claude Code's argument conventions.
+/// Honest degradation: only two CLIs' argument conventions are measured.
 /// For anything else the session is still real, and the prompt is built and
 /// handed to the person instead of guessed at.
 #[test]
 fn an_agent_whose_conventions_we_have_not_measured_is_not_sent_a_prompt() {
-    let h = Harness::new("codex");
+    let h = Harness::new("unmeasured");
     let _guard = h.rt.enter();
     let task = h.card("Fix login", "make it work");
 
-    let opened = h.start(&task, "codex");
+    let opened = h.start(&task, "gemini");
 
     assert!(!opened.prompt_sent);
     // Built and available to copy, just not delivered.
@@ -996,17 +1024,17 @@ fn a_followup_reaches_the_terminal_whole_and_lands_on_the_timeline() {
 /// nothing lands on the timeline claiming it was sent.
 #[test]
 fn a_followup_to_an_unmeasured_cli_is_refused_rather_than_guessed() {
-    let h = Harness::new("fucodex");
+    let h = Harness::new("fugemini");
     let _guard = h.rt.enter();
     let task = h.card("Fix login", "make it work");
-    let a = h.start(&task, "codex");
+    let a = h.start(&task, "gemini");
     h.launches(&a.session_id, 1);
 
     let err = h
         .core
         .send_followup(&a.session_id, "改一下")
-        .expect_err("codex's input conventions are not measured");
-    assert!(err.to_string().contains("codex"), "unhelpful: {err}");
+        .expect_err("gemini's input conventions are not measured");
+    assert!(err.to_string().contains("gemini"), "unhelpful: {err}");
 
     std::thread::sleep(Duration::from_millis(200));
     let rows = h.core.attempt_events(&a.attempt_id).unwrap();
@@ -1984,11 +2012,91 @@ fn resuming_a_yolo_attempt_keeps_the_mode() {
     );
 }
 
-/// Only Claude Code's flags are measured. Another CLI launches without them
-/// no matter what the mode says — a flag guessed wrong can mean anything.
+/// Only the measured CLIs' flags exist. Another CLI launches without any of
+/// them no matter what the mode says — a flag guessed wrong can mean
+/// anything, including "print this and exit".
 #[test]
-fn another_cli_is_not_handed_claudes_permission_flags() {
-    let h = Harness::new("yolocodex");
+fn another_cli_is_not_handed_a_measured_clis_permission_flags() {
+    let h = Harness::new("yologemini");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+
+    let opened = h
+        .core
+        .start_attempt(&task, "gemini".into(), None, PermissionMode::Yolo, 100, 30)
+        .unwrap()
+        .attempt
+        .unwrap();
+
+    assert!(
+        h.args_of(&opened.session_id).is_empty(),
+        "an unmeasured CLI was handed flags that belong to another"
+    );
+}
+
+/// Codex's own spelling of the same three things — the prompt on the command
+/// line, the mode as a sandbox and an approval policy, and the hook config
+/// as `-c` overrides — all in the order that survives its parser.
+#[test]
+fn codex_gets_the_prompt_its_own_mode_flags_and_its_own_hook_config() {
+    let h = Harness::new("codexlaunch");
+    let _guard = h.rt.enter();
+    let task = h.card("Fix login", "make it work");
+
+    let opened = h
+        .core
+        .start_attempt(
+            &task,
+            "codex".into(),
+            None,
+            PermissionMode::AcceptEdits,
+            100,
+            30,
+        )
+        .unwrap()
+        .attempt
+        .unwrap();
+
+    assert!(opened.prompt_sent, "codex takes its prompt positionally");
+    let args = h.args_of(&opened.session_id);
+
+    // Claude Code's flags must not have leaked across: they mean nothing
+    // here, and `--permission-mode` would stop codex before it drew a
+    // terminal.
+    for claudes in ["--permission-mode", "--plugin-dir", "--continue", "--name"] {
+        assert!(!args.iter().any(|a| a == claudes), "{claudes} in {args:?}");
+    }
+    // Its own, in its own words.
+    assert!(args.iter().any(|a| a == "--sandbox"), "{args:?}");
+    assert!(args.iter().any(|a| a == "workspace-write"), "{args:?}");
+    assert!(args.iter().any(|a| a == "--ask-for-approval"), "{args:?}");
+
+    // The hook config rides as `-c` overrides, one per event, and every one
+    // of them names the listener this desk is running.
+    let overrides: Vec<&String> = args
+        .iter()
+        .zip(args.iter().skip(1))
+        .filter(|(flag, _)| *flag == "-c")
+        .map(|(_, value)| value)
+        .collect();
+    assert!(!overrides.is_empty(), "codex was wired for no hooks: {args:?}");
+    for value in &overrides {
+        assert!(value.starts_with("hooks."), "not a hooks override: {value}");
+        assert!(value.contains("127.0.0.1"), "no listener in {value}");
+    }
+
+    // And the prompt is last, after every one of them.
+    let last = args.last().expect("a command line");
+    assert!(last.contains("make it work"), "the prompt is not last: {args:?}");
+}
+
+/// Reopening a codex attempt resumes through its subcommand, with the
+/// approved mode still on, and without a second copy of the prompt — the
+/// same three promises `--continue` keeps for Claude Code, kept in the other
+/// CLI's grammar.
+#[test]
+fn reopening_a_codex_attempt_resumes_through_its_subcommand() {
+    let h = Harness::new("codexreopen");
     let _guard = h.rt.enter();
     let task = h.card("Fix login", "make it work");
 
@@ -1998,10 +2106,28 @@ fn another_cli_is_not_handed_claudes_permission_flags() {
         .unwrap()
         .attempt
         .unwrap();
+    h.launches(&opened.session_id, 1);
 
+    h.core.close_session(&opened.session_id).unwrap();
+    h.core.reopen_attempt(&opened.attempt_id, 100, 30).unwrap();
+    let second = h.launches(&opened.session_id, 2).pop().unwrap();
+
+    let at = second
+        .args
+        .iter()
+        .position(|a| a == "resume")
+        .unwrap_or_else(|| panic!("no resume in {:?}", second.args));
+    assert_eq!(second.args[at + 1], "--last");
+    assert_eq!(at + 2, second.args.len(), "codex reads what follows `resume` as a session to resume: {:?}", second.args);
     assert!(
-        h.args_of(&opened.session_id).is_empty(),
-        "codex was handed flags that belong to claude"
+        second.args.iter().any(|a| a == "--dangerously-bypass-approvals-and-sandbox"),
+        "the resume dropped the approved mode: {:?}",
+        second.args
+    );
+    assert!(
+        !second.args.iter().any(|a| a.contains("[Marol")),
+        "the prompt was sent a second time: {:?}",
+        second.args
     );
 }
 

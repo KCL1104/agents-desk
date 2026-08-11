@@ -87,6 +87,15 @@ export interface AttemptFile {
   work: string | null;
 }
 
+/** What asking a world "are you there, and which agents do you have" found.
+    Mirrors core.rs WorldProbe. A version of `null` with no error is itself
+    an answer: reachable, but that CLI is not on this world's PATH. */
+export interface WorldProbe {
+  claude: string | null;
+  codex: string | null;
+  error: string | null;
+}
+
 /** What opening an attempt produced. Mirrors core.rs OpenedAttempt. */
 export interface OpenedAttempt {
   attempt_id: string;
@@ -235,12 +244,11 @@ export const api = {
       aliases from ~/.ssh/config. Enumerated, never invented; local reads
       only — a dead remote cannot slow this down. */
   listWorlds: () => invoke<{ wsl: string[]; ssh: string[] }>('list_worlds'),
-  /** Reach one world (''=local, 'wsl://X', 'ssh://Y'): its claude's
-      version, null when the CLI is absent there, or the whole reason the
-      world could not be reached. Lazy by design — a person's pick, never
-      startup. */
-  probeWorld: (world: string) =>
-    invoke<{ claude: string | null; error: string | null }>('probe_world', { world }),
+  /** Reach one world (''=local, 'wsl://X', 'ssh://Y'): the version of each
+      measured CLI there, null when that CLI is absent, or the whole reason
+      the world could not be reached. Lazy by design — a person's pick,
+      never startup. */
+  probeWorld: (world: string) => invoke<WorldProbe>('probe_world', { world }),
 
   /** One diff file as full text, both sides — what the in-place editor
       edits, where a patch string could only be read. */

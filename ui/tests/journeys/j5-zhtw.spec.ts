@@ -118,7 +118,7 @@ test('J5 · the zh-TW journey, end to end', async ({ page }) => {
     const modal = page.locator('.modal');
     await expect(modal).toContainText(zh('welcome.title'));
     await expect(page.getByTestId('welcome-card')).toHaveText(zh('welcome.newCard'));
-    await expect(page.getByTestId('welcome-codex')).toContainText(zh('env.claudeMissing'));
+    await expect(page.getByTestId('welcome-codex')).toContainText(zh('env.cliMissing'));
     // 契約 (5)：<html lang> 跟著語言走。app 寫的是 locale 標籤本身 ——
     // zh-TW（BCP 47 的正體中文），不是 script 子標籤 zh-Hant；照真話釘。
     await expect

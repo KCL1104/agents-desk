@@ -31,9 +31,17 @@ struct Recorder {
 
 impl HookHandler for Recorder {
     fn on_hook(&self, report: HookReport) {
+        // A report whose session id never made it through the shell is
+        // recorded under its working directory, which is how the production
+        // router places it too. Either way it is a string that identifies
+        // one session, which is all this recorder needs.
+        let who = report
+            .session_id
+            .clone()
+            .or_else(|| report.cwd.clone())
+            .unwrap_or_default();
         eprintln!(
-            "  hook: {} -> {:?}{}",
-            report.session_id,
+            "  hook: {who} -> {:?}{}",
             report.state,
             report
                 .activity
@@ -42,15 +50,9 @@ impl HookHandler for Recorder {
                 .unwrap_or_default()
         );
         if let Some(a) = report.activity.clone() {
-            self.activities
-                .lock()
-                .unwrap()
-                .push((report.session_id.clone(), a));
+            self.activities.lock().unwrap().push((who.clone(), a));
         }
-        self.states
-            .lock()
-            .unwrap()
-            .push((report.session_id, report.state));
+        self.states.lock().unwrap().push((who, report.state));
     }
 }
 

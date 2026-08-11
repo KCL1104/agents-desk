@@ -65,7 +65,7 @@ export function WelcomeDialog({ boot, onReprobe, onNewTask, onNewSession, onClos
                 : '✓'}
             </span>
           ) : (
-            <span className="stat-value mono muted">{t('env.claudeMissing')}</span>
+            <span className="stat-value mono muted">{t('env.cliMissing')}</span>
           )}
         </div>
       ))}

@@ -100,9 +100,16 @@ test.describe('worlds', () => {
     await page.evaluate(() => {
       window.__mock.worldProbes.set('ssh://devbox', {
         claude: null,
+        codex: null,
         error: 'ssh: connect to host devbox port 22: Connection refused',
       });
-      window.__mock.worldProbes.set('wsl://Ubuntu', { claude: null, error: null });
+      // Reachable, and with only one of the two agents on its PATH.
+      window.__mock.worldProbes.set('wsl://Ubuntu', {
+        claude: null,
+        codex: '0.145.0',
+        error: null,
+      });
+      window.__mock.worldProbes.set('', { claude: null, codex: null, error: null });
     });
 
     await page.getByTestId('world-chip').click();
@@ -114,9 +121,14 @@ test.describe('worlds', () => {
     );
     await expect(page.getByTestId('world-chip')).toContainText('SSH: devbox');
 
-    // A reachable world without claude is its own honest answer.
+    // A reachable world names the agents it does have, so a world that can
+    // run half the board reads as half rather than as nothing.
     await page.getByTestId('world-wsl-Ubuntu').click();
-    await expect(page.getByTestId('world-wsl-Ubuntu')).toContainText('找不到 claude');
+    await expect(page.getByTestId('world-wsl-Ubuntu')).toContainText('codex 0.145.0');
+
+    // And a world with neither says so in words, not as a blank.
+    await page.getByTestId('world-local').click();
+    await expect(page.getByTestId('world-local')).toContainText('找不到 claude 或 codex');
   });
 
   test('the new-session dialog composes the world the same way', async ({ page }) => {

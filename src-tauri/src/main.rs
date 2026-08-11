@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agent;
 mod config;
 mod core;
 mod host;
@@ -233,13 +234,22 @@ fn boot_status(state: State<'_, AppState>) -> serde_json::Value {
             "envVarCount": c.env.vars.len(),
             "path": c.env.path(),
             "claude": c.env.which("claude").map(|p| p.to_string_lossy().to_string()),
-            "claudeVersion": c.claude_version(),
+            "claudeVersion": c.cli_version("claude"),
+            "codex": c.env.which("codex").map(|p| p.to_string_lossy().to_string()),
+            "codexVersion": c.cli_version("codex"),
             // Every agent CLI this environment can actually see — the
             // first-run panel's detection report, from the same resolved
-            // PATH the sessions get.
+            // PATH the sessions get. `version` is filled in for the CLIs
+            // whose conventions this app knows, and `reports` says whether
+            // the one installed here is new enough to be wired for status:
+            // "found" and "will show you what it is doing" are different
+            // facts, and a panel that only reported the first would be
+            // silent about the commonest reason a card sits blank.
             "agents": core::BARE_AGENTS.iter().map(|a| serde_json::json!({
                 "name": a,
                 "path": c.env.which(a).map(|p| p.to_string_lossy().to_string()),
+                "version": c.cli_version(a),
+                "reports": c.reports_status(a),
             })).collect::<Vec<_>>(),
             // Whether this desk's claude sessions can name themselves and,
             // with that, message each other across cards.

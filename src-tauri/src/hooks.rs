@@ -1,16 +1,22 @@
-//! Session status via Claude Code hooks.
+//! Session status via the agents' own hooks.
 //!
 //! The app needs to know when a session is waiting for you, and what it is
 //! doing while it is not — that is what makes several agents at once
 //! manageable. Scraping the terminal for it would mean parsing ANSI and would
-//! break the next time the TUI changes, so instead we ask Claude Code to
-//! tell us.
+//! break the next time a TUI changes, so instead we ask the CLI to tell us.
 //!
-//! Three decisions here were settled by measurement, not by documentation:
+//! Both measured CLIs post to the same listener, in the same shape, and are
+//! configured in the way each one actually offers — never by editing a file
+//! the person owns. Claude Code loads a **plugin** named by `--plugin-dir`;
+//! `--settings` was rejected because it overrides same-named keys, so
+//! injecting a `hooks` key there would silently disable the user's own hooks.
+//! Codex has no per-launch plugin flag, so its hooks ride in as `-c`
+//! overrides — config for one launch, touching nothing on disk. See
+//! `agent.rs` for which is which.
 //!
-//!   * Hooks ship as a **plugin** loaded with `--plugin-dir`, not via
-//!     `--settings`. `--settings` overrides same-named keys, so injecting a
-//!     `hooks` key there would silently disable the user's own hooks.
+//! Three decisions on the Claude Code side were settled by measurement, not
+//! by documentation:
+//!
 //!   * Most events use the **`http`** hook type: no subprocess per tool call,
 //!     and the request body carries the full payload including `tool_name`
 //!     and `tool_input`. Session identity rides in a header, expanded from
@@ -18,9 +24,14 @@
 //!   * **`SessionStart` is the exception** — an `http` hook on it never
 //!     fires, while a `command` hook does. It runs once per session, so the
 //!     one subprocess costs nothing.
+//!   * A `command` hook must always exit 0: a non-zero exit *blocks* the
+//!     action it fired on, so a stopped app must never be able to wedge a
+//!     session.
 //!
-//! A `command` hook must always exit 0: a non-zero exit *blocks* the action it
-//! fired on, so a stopped app must never be able to wedge a session.
+//! Codex offers only `command` hooks, so it pays a `curl` per tool call. That
+//! is its price rather than a choice of ours, and it is why every Codex hook
+//! carries a short timeout: the default is ten minutes, and a listener that
+//! has gone away must cost a session a blink, not a coffee break.
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -68,14 +79,35 @@ pub struct Activity {
 
 #[derive(Debug, Clone)]
 pub struct HookReport {
-    pub session_id: String,
+    /// The session this claims to be from, when the id reached the hook
+    /// intact. `None` when it did not — see `expanded`.
+    pub session_id: Option<String>,
+    /// The directory the agent is working in, from the payload. Every hook
+    /// of both CLIs carries it, and it is the only way home for a report
+    /// whose session id never got expanded.
+    pub cwd: Option<String>,
     pub state: HookState,
     pub activity: Option<Activity>,
-    /// Where Claude Code keeps this conversation's JSONL — the one honest
-    /// source of token usage. A common field of every hook payload; carried
-    /// here so nobody has to reconstruct the path by guessing at claude's
-    /// escaping rules.
+    /// Where the CLI keeps this conversation's JSONL — the one honest
+    /// source of token usage. A common field of every hook payload of both
+    /// CLIs; carried here so nobody has to reconstruct the path by guessing
+    /// at either one's escaping rules.
     pub transcript_path: Option<String>,
+}
+
+/// What one world needs in order to point a CLI at this listener.
+///
+/// Both halves are per-world, not per-session: an SSH host gets a plugin
+/// written into its own filesystem and a URL that comes back through the
+/// reverse tunnel, and a WSL distro reads this machine's plugin through the
+/// drive mounts. Which of the two a given CLI uses is `agent.rs`'s business.
+#[derive(Debug, Clone)]
+pub struct Wiring {
+    /// The directory `--plugin-dir` names, spelled the way that world spells
+    /// paths.
+    pub plugin_dir: String,
+    /// The endpoint the hooks post to, from inside that world.
+    pub url: String,
 }
 
 pub trait HookHandler: Send + Sync + 'static {
@@ -342,18 +374,45 @@ async fn read_request(
 
     let payload = serde_json::from_slice::<serde_json::Value>(&body).ok();
     let activity = payload.as_ref().and_then(activity_from_payload);
-    let transcript_path = payload
-        .as_ref()
-        .and_then(|v| v.get("transcript_path"))
-        .and_then(|v| v.as_str())
-        .map(String::from);
+    let str_field = |key: &str| {
+        payload
+            .as_ref()
+            .and_then(|v| v.get(key))
+            .and_then(|v| v.as_str())
+            .map(String::from)
+    };
+
+    let session_id = session_id.filter(|s| expanded(s));
+    let cwd = str_field("cwd");
+    // One or the other has to be there, or the report has nothing to land on
+    // and inventing a session for it would be worse than dropping it.
+    if session_id.is_none() && cwd.is_none() {
+        return None;
+    }
 
     Some(HookReport {
-        session_id: session_id?,
+        session_id,
+        cwd,
         state: state?,
         activity,
-        transcript_path,
+        transcript_path: str_field("transcript_path"),
     })
+}
+
+/// Whether a session id is a session id rather than the name of one.
+///
+/// A `command` hook's URL is a string the CLI hands to a shell, so
+/// `$MAROL_SESSION_ID` becomes the id — on a shell that spells variables
+/// that way. On `cmd.exe` it stays four­teen literal characters, and a report
+/// filed under `$MAROL_SESSION_ID` would be filed under a session that
+/// cannot exist. Better to admit the id did not arrive and fall back to the
+/// working directory, which every payload carries and no shell rewrites.
+///
+/// The test is deliberately about the *shape* of a variable reference rather
+/// than a list of the two spellings: session ids here are uuids, so a `$` or
+/// a `%` anywhere in one means something did not expand.
+fn expanded(id: &str) -> bool {
+    !id.is_empty() && !id.contains('$') && !id.contains('%')
 }
 
 fn find_header_end(buf: &[u8]) -> Option<usize> {
@@ -457,6 +516,102 @@ fn hooks_json(url: &str) -> serde_json::Value {
             "SessionEnd": [{ "hooks": [http_reporter(url, "ended")] }]
         }
     })
+}
+
+/* ------------------------------------------------------------------ */
+/* Codex                                                               */
+/* ------------------------------------------------------------------ */
+
+/// Which Codex event reports which state, and what it may match on.
+///
+/// The events are Codex's names, not ours, and the mapping is the same one
+/// the Claude Code plugin makes — the same six moments, reported the same
+/// way, so a card cannot tell which CLI is behind it.
+///
+/// `waiting_input` has no entry, and that is honest rather than an omission:
+/// Claude Code raises an idle prompt and says so, Codex does not, and a
+/// state nothing can ever report is a state the card would wait for forever.
+///
+/// The last field is the seconds a hook may take. Codex's default is six
+/// hundred — fine for a linter, absurd for a status ping — and `SessionEnd`
+/// is capped at three by Codex itself, so it is asked for less than that
+/// rather than for a number that will be quietly reduced.
+const CODEX_EVENTS: [(&str, Option<&str>, &str, u32); 6] = [
+    ("SessionStart", None, "started", 5),
+    ("UserPromptSubmit", None, "running", 5),
+    // The one that carries what the agent is actually doing.
+    ("PreToolUse", Some("*"), "running", 5),
+    // The one that matters most: the agent cannot continue without you.
+    ("PermissionRequest", Some("*"), "waiting_permission", 5),
+    ("Stop", None, "idle", 5),
+    ("SessionEnd", None, "ended", 2),
+];
+
+/// The one-liner every Codex hook runs.
+///
+/// Four properties, each of which had a wrong version:
+///
+///   * **The payload is forwarded.** Codex has no `http` hook type, so the
+///     JSON that carries `tool_name`, `tool_input` and `transcript_path`
+///     arrives on the hook's stdin — `--data-binary @-` is what puts it in
+///     the request body where the listener already knows how to read it.
+///   * **It exits 0.** `|| exit 0` rather than `|| true`, because this
+///     string is handed to whichever shell the platform has: `exit 0` means
+///     the same thing in `sh` and in `cmd.exe`, where `true` is not a
+///     command at all.
+///   * **It is bounded.** An unreachable listener costs the agent two
+///     seconds, once, rather than the hook timeout.
+///   * **It has no single quotes.** The whole line goes into a TOML literal
+///     string, which is the only kind that leaves a `$` alone — and a
+///     literal string ends at the first `'`. Hence `-H content-type:...`
+///     unquoted, which needs no quoting because it contains no space.
+fn codex_command(url: &str, state: &str, max_time: u32) -> String {
+    format!(
+        "curl -sS --max-time {max_time} -X POST -H content-type:application/json \
+         --data-binary @- \"{url}?sid=$MAROL_SESSION_ID&state={state}\" -o /dev/null || exit 0"
+    )
+}
+
+/// The hooks table as Codex's config spells it, one `-c key=value` per event.
+///
+/// TOML, not JSON: `-c` parses its value as TOML, and the two disagree about
+/// inline tables in a way that is silent — `{"a": 1}` is valid JSON and not
+/// valid TOML, and Codex's own documented fallback is to keep an unparseable
+/// value as a literal string, so a mistake here configures nothing at all
+/// rather than failing. The parity workflow runs the real CLI against these
+/// arguments and reads back `codex doctor`'s verdict for exactly that reason.
+///
+/// **Every launch passes the same text**, and that is the point rather than
+/// an accident. Measured against Codex 0.147: a hook configured this way
+/// does not run until it has been reviewed and trusted, and trust is
+/// recorded against the hook's own hash. A definition carrying a session id
+/// would be a different hook every time, and so would ask to be reviewed
+/// once per attempt, forever. The id is therefore left as
+/// `$MAROL_SESSION_ID` for the shell to expand — measured too: it arrives
+/// expanded — and the listener knows what to do when a shell does not.
+///
+/// So the first Codex session on a machine says its hooks need review, in
+/// its own terminal, in its own words, and one `/hooks` answers it for every
+/// session afterwards. That prompt is Codex's, not ours, and it is left
+/// where the person can see it: this app does not pass
+/// `--dangerously-bypass-hook-trust`, which would also wave through any
+/// hooks the repository itself carries.
+pub fn codex_config_args(url: &str) -> Vec<String> {
+    let mut out = Vec::with_capacity(CODEX_EVENTS.len() * 2);
+    for (event, matcher, state, timeout) in CODEX_EVENTS {
+        let matcher = match matcher {
+            Some(m) => format!("matcher=\"{m}\","),
+            None => String::new(),
+        };
+        // Always shorter than the hook's own budget, so a slow listener is
+        // curl giving up rather than Codex reporting a failed hook.
+        let command = codex_command(url, state, timeout.saturating_sub(1).min(2));
+        out.push("-c".to_string());
+        out.push(format!(
+            "hooks.{event}=[{{{matcher}hooks=[{{type=\"command\",command='{command}',timeout={timeout}}}]}}]"
+        ));
+    }
+    out
 }
 
 /// The plugin as files, for provisioning into a host that cannot see our
@@ -691,6 +846,116 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(a.detail.chars().count(), 160);
+    }
+
+    /* ----------------------------- codex ----------------------------- */
+
+    /// Every state Codex is configured to emit is one the listener parses,
+    /// and every event reports one. The Claude Code half has had this test
+    /// since the plugin existed; the failure it catches — a typo in a state
+    /// name, silently dropped at the door — is identical here.
+    #[test]
+    fn every_state_codex_emits_is_one_the_server_understands() {
+        let args = codex_config_args(URL);
+        assert_eq!(args.len(), CODEX_EVENTS.len() * 2, "one -c per event");
+        for pair in args.chunks(2) {
+            assert_eq!(pair[0], "-c");
+            let state = pair[1]
+                .split("state=")
+                .nth(1)
+                .and_then(|s| s.split(['&', '"']).next())
+                .expect("carries a state");
+            assert!(
+                HookState::parse(state).is_some(),
+                "codex would emit `{state}`, which the server would drop"
+            );
+        }
+    }
+
+    /// The four properties of the one-liner, checked on the text that
+    /// actually ships rather than on the format string that made it.
+    #[test]
+    fn a_codex_hook_forwards_its_payload_exits_zero_and_is_bounded() {
+        for pair in codex_config_args(URL).chunks(2) {
+            let value = &pair[1];
+            assert!(
+                value.contains("--data-binary @-"),
+                "the payload never reaches the body: {value}"
+            );
+            assert!(
+                value.contains("|| exit 0"),
+                "a non-zero exit is a failed hook in front of the person: {value}"
+            );
+            assert!(value.contains("--max-time"), "unbounded curl: {value}");
+            // A single quote would end the TOML literal string the command
+            // lives in, and everything after it would be parsed as TOML.
+            let command = value
+                .split_once("command='")
+                .and_then(|(_, rest)| rest.split_once('\''))
+                .map(|(cmd, _)| cmd)
+                .expect("the command is a TOML literal string");
+            assert!(!command.contains('\''), "{command}");
+            assert!(command.contains(URL), "{command}");
+        }
+    }
+
+    /// Codex's default hook timeout is ten minutes. A status ping that can
+    /// hold a tool call for ten minutes is worse than no status at all, and
+    /// `SessionEnd` is capped at three seconds by Codex itself — asking for
+    /// more there is asking to be quietly overruled.
+    #[test]
+    fn no_codex_hook_can_hold_a_session_for_longer_than_a_breath() {
+        for (event, _, _, timeout) in CODEX_EVENTS {
+            assert!(timeout <= 5, "{event} may hold a tool call for {timeout}s");
+            if event == "SessionEnd" {
+                assert!(timeout <= 3, "codex caps SessionEnd at 3s");
+            }
+        }
+        // And curl always gives up before the hook's own budget runs out, so
+        // the failure a person sees is nothing rather than a hook error.
+        for pair in codex_config_args(URL).chunks(2) {
+            let value = &pair[1];
+            let max_time: u32 = value
+                .split("--max-time ")
+                .nth(1)
+                .and_then(|s| s.split(' ').next())
+                .and_then(|s| s.parse().ok())
+                .expect("a bounded curl");
+            let timeout: u32 = value
+                .rsplit("timeout=")
+                .next()
+                .and_then(|s| s.split(['}', ',']).next())
+                .and_then(|s| s.parse().ok())
+                .expect("a hook timeout");
+            assert!(max_time < timeout, "{value}");
+        }
+    }
+
+    /// The identity carried by every launch is the *name* of the variable,
+    /// not its value. Codex records hook trust against the hook's hash, so
+    /// baking a session id in would be a fresh hook — and a fresh review —
+    /// for every attempt anybody ever starts.
+    #[test]
+    fn the_codex_hook_definition_is_the_same_text_for_every_session() {
+        let a = codex_config_args(URL);
+        let b = codex_config_args(URL);
+        assert_eq!(a, b);
+        assert!(
+            a.iter().any(|v| v.contains("$MAROL_SESSION_ID")),
+            "the session id is baked in rather than expanded: {a:?}"
+        );
+    }
+
+    /// A shell that does not spell variables with `$` hands the listener the
+    /// name instead of the id. Filing the report under that name would put
+    /// it on a session that cannot exist; the working directory is the way
+    /// home, and it is in every payload.
+    #[test]
+    fn an_unexpanded_session_id_is_refused_rather_than_believed() {
+        assert!(expanded("6f1c9a2e4b7d4f0a"));
+        assert!(!expanded(""));
+        assert!(!expanded("$MAROL_SESSION_ID"));
+        assert!(!expanded("%MAROL_SESSION_ID%"));
     }
 
     #[test]

@@ -62,9 +62,10 @@ test.describe('the token account', () => {
     await expect(chip).toHaveAttribute('title', /780,967,984/);
   });
 
-  /** No transcript, no numbers: a codex session never grows an account. */
+  /** No transcript, no numbers: an agent this desk cannot read an account
+      off never grows one, and a zero would be a claim rather than a gap. */
   test('an agent with no transcript shows nothing rather than a zero', async ({ page }) => {
-    await boardWithAttempt(page, 'codex');
+    await boardWithAttempt(page, 'gemini');
     await page.getByTestId('inspect-k1').click();
     await expect(page.getByTestId('inspector')).toBeVisible();
     await expect(page.getByTestId('inspector-usage')).toHaveCount(0);

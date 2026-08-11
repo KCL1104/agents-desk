@@ -152,16 +152,11 @@ impl PermissionMode {
         }
     }
 
-    /// The flags this mode adds to a Claude Code launch. Only Claude Code's
-    /// flags are measured; other CLIs get no flags rather than a guess.
-    pub fn claude_args(self) -> &'static [&'static str] {
-        match self {
-            Self::Normal => &[],
-            Self::AcceptEdits => &["--permission-mode", "acceptEdits"],
-            Self::Yolo => &["--dangerously-skip-permissions"],
-        }
-    }
 }
+// How a mode is spelled on a command line is a property of the CLI, not of
+// the mode, and lives with the rest of that CLI's conventions in `agent.rs`.
+// The mode itself is stored here because it is what a person approved for an
+// attempt — a fact about the attempt, true whichever agent runs it.
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StoredTask {

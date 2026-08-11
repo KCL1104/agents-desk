@@ -62,9 +62,9 @@ test.describe('permission modes', () => {
   });
 
   /**
-   * Only Claude Code's permission flags are measured, so only its sessions
-   * get the choice — and a mode picked for claude must not ride silently
-   * into a CLI it was never measured against.
+   * Only a measured CLI's permission flags exist, so only its sessions get
+   * the choice — and a mode picked for one must not ride silently into a CLI
+   * it was never measured against.
    */
   test('an unmeasured CLI gets no mode choice, and a picked mode does not follow it', async ({
     page,
@@ -72,7 +72,7 @@ test.describe('permission modes', () => {
     await boardWithCard(page);
 
     await page.getByTestId('attempt-mode').selectOption('yolo');
-    await page.getByTestId('attempt-agent').selectOption('codex');
+    await page.getByTestId('attempt-agent').selectOption('gemini');
     await expect(page.getByTestId('attempt-mode')).toHaveCount(0);
 
     await page.getByTestId('attempt-start').click();
@@ -80,5 +80,38 @@ test.describe('permission modes', () => {
       () => window.__mock.calls.find((c) => c.cmd === 'open_attempt')?.args,
     );
     expect((call as { mode: string }).mode).toBe('normal');
+  });
+
+  /**
+   * The other side of the same rule: a CLI whose flags *are* measured keeps
+   * the choice when you switch to it, and the mode reaches the backend
+   * unchanged. The two CLIs spell a mode differently — a permission mode
+   * against a sandbox and an approval policy — and which spelling goes on
+   * the command line is the backend's business, not this dialog's. What the
+   * dialog owes is that the choice does not quietly vanish.
+   */
+  test('switching between measured CLIs keeps the mode choice and the mode', async ({
+    page,
+  }) => {
+    await boardWithCard(page);
+
+    await page.getByTestId('attempt-mode').selectOption('accept_edits');
+    await page.getByTestId('attempt-agent').selectOption('codex');
+    await expect(page.getByTestId('attempt-mode')).toBeVisible();
+    await expect(page.getByTestId('attempt-mode')).toHaveValue('accept_edits');
+    await expect(page.getByTestId('accept-hint')).toBeVisible();
+
+    // And the prompt still goes in on the command line — the second
+    // measured CLI is measured for that too.
+    await expect(page.getByTestId('attempt-manual')).toHaveCount(0);
+
+    await page.getByTestId('attempt-start').click();
+    const call = await page.evaluate(
+      () => window.__mock.calls.find((c) => c.cmd === 'open_attempt')?.args,
+    );
+    expect(call as { mode: string; agent: string }).toMatchObject({
+      mode: 'accept_edits',
+      agent: 'codex',
+    });
   });
 });

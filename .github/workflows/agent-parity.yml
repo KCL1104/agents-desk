@@ -1,0 +1,198 @@
+name: Agent parity
+
+# Both agents this app knows how to drive, held to the CLIs people actually
+# install.
+#
+# ---------------------------------------------------------------------------
+# Why this workflow exists at all
+# ---------------------------------------------------------------------------
+#
+# `src-tauri/src/agent.rs` is a table of somebody else's conventions: which
+# argument carries the first prompt, which flag resumes a conversation, how a
+# permission mode is spelled, where the status hooks are configured. Every
+# entry in it is true of a version of a CLI that this repository does not
+# ship and cannot pin.
+#
+# Tables like that rot silently. A renamed flag is not a failing test here —
+# it is a session that exits before it draws a terminal, on somebody's desk,
+# the morning after they upgraded. A config key that quietly stopped being
+# recognised is worse: Codex keeps an unparseable `-c` value as a literal
+# string rather than refusing it, so the launch succeeds, the session runs,
+# and the card simply never shows status. Nothing in this repository would
+# look wrong.
+#
+# So the table is measured rather than trusted, on a schedule, against the
+# real thing:
+#
+#   * every dashed token the app can emit has to appear in that CLI's own
+#     `--help`, and so does every value it pairs with one — `--sandbox`
+#     surviving a rename of `workspace-write` fails exactly as hard as
+#     losing the flag
+#   * `codex resume` has to still be a subcommand and `--continue` still an
+#     option, because the two go in opposite ends of the command line
+#   * Codex's own `doctor` has to report the exact `-c` arguments this app
+#     passes as config it loaded — and a deliberately broken one as config
+#     it refused, or the first half proves nothing
+#   * a real `codex` started with those arguments has to reach the app's
+#     real hook listener, with the session id expanded by the shell and the
+#     payload in the request body
+#
+# None of it needs credentials. `codex exec` fires `SessionStart` and
+# `UserPromptSubmit` before the first request goes out; the request then
+# fails on authentication, long after the part being measured. The Claude
+# Code half of the same chain is covered by `tests/hooks.rs`, which does need
+# a signed-in CLI and skips here — `claude-detect.yml` is what guards its
+# detection, including the WSL doorway this workflow does not enter.
+#
+# The weekly run is the point of the schedule: an upstream release can break
+# this with no commit here, and a Tuesday failure on a green tree says the
+# CLI moved, not that we did.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src-tauri/**"
+      - "ui/src/agents.ts"
+      - "ui/tests/mock-tauri.ts"
+      - ".github/workflows/agent-parity.yml"
+  pull_request:
+    paths:
+      - "src-tauri/**"
+      - "ui/src/agents.ts"
+      - "ui/tests/mock-tauri.ts"
+      - ".github/workflows/agent-parity.yml"
+  schedule:
+    # Tuesday, so a failure lands on a different morning from claude-detect's
+    # Monday and the two are never mistaken for one another.
+    - cron: "23 4 * * 2"
+
+concurrency:
+  group: agent-parity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  parity:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Every platform reports for itself: which CLI moved, and where, is the
+      # whole question, and one red leg must not hide the others.
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 to match the release build.
+          - { os: ubuntu-22.04, unix: true }
+          - { os: macos-latest, unix: true }
+          # Windows runs the half it honestly can — see the runtime step.
+          - { os: windows-latest, unix: false }
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install both agent CLIs
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          npm install -g @openai/codex
+
+      # A login shell rebuilds PATH from the profile chain and would not see
+      # the hosted toolcache — and the app's own resolution *is* a login
+      # shell probe. /usr/local/bin is on every login PATH (Debian's
+      # /etc/profile, macOS's path_helper), so the links make this leg test
+      # what a real machine has: reachable CLIs and the node they exec.
+      #
+      # On Windows there is no login shell to rebuild anything; the process
+      # environment is the real one, and npm writes `codex.cmd` with no bare
+      # `codex` beside it — which is exactly the PATHEXT walk this leg is
+      # here to exercise.
+      - name: Put the CLIs where a login shell looks (unix)
+        if: matrix.unix
+        run: |
+          sudo mkdir -p /usr/local/bin
+          sudo ln -sf "$(command -v claude)" /usr/local/bin/claude
+          sudo ln -sf "$(command -v codex)" /usr/local/bin/codex
+          sudo ln -sf "$(command -v node)" /usr/local/bin/node
+
+      - name: Sanity — the shell itself can run them
+        shell: bash
+        run: |
+          claude --version
+          codex --version
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: parity-${{ matrix.os }}
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            xdg-utils
+
+      # The crate's default features embed the frontend at compile time;
+      # without ui/dist, tauri-build fails before a single test runs.
+      - name: Build frontend
+        run: |
+          npm --prefix ui ci
+          npm --prefix ui run build
+
+      # The gate this workflow is named for: every flag and every flag's
+      # values, on every platform, because a CLI can rename one on one of
+      # them alone. Also the version probe, which is what every gated
+      # feature is decided from — a probe that stops parsing is every one of
+      # them silently off.
+      - name: Flags, values and versions
+        working-directory: src-tauri
+        env:
+          MAROL_EXPECT_CLAUDE: "1"
+          MAROL_EXPECT_CODEX: "1"
+        shell: bash
+        run: |
+          cargo test --locked --test agent_parity \
+            every_flag_this_app_passes_is_one_the_installed_cli_accepts -- --nocapture
+          cargo test --locked --bins \
+            a_promised_real_cli_answers_the_version_probe -- --nocapture
+
+      # The runtime half: Codex loading the config this app passes, and the
+      # whole chain from its hooks to this app's listener. Unix only, and
+      # for the same reason the rest of this repository's integration tests
+      # are: the hook one-liner is run by whatever shell the platform hands
+      # it, `curl` has to be there to run, and a Windows leg failing on
+      # `cmd.exe` quoting would be reporting on something no user has asked
+      # this app to do yet. The `$MAROL_SESSION_ID` fallback that case needs
+      # is unit-tested instead.
+      - name: Codex config and the hook pipeline
+        if: matrix.unix
+        working-directory: src-tauri
+        env:
+          MAROL_EXPECT_CODEX: "1"
+        run: |
+          cargo test --locked --test agent_parity codex_loads_the_hook_config -- --nocapture
+          cargo test --locked --test agent_parity a_real_codex_reports_through -- --nocapture
+
+      # Windows compiles what it does not run, which still catches the
+      # realistic failure here: a `#[cfg]` arm rotting because nobody ever
+      # built it.
+      - name: Integration tests compile
+        if: ${{ !matrix.unix }}
+        working-directory: src-tauri
+        run: cargo build --locked --tests

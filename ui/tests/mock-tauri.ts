@@ -132,7 +132,10 @@ declare global {
       /** What the world switch enumerates. */
       worlds: { wsl: string[]; ssh: string[] };
       /** Seeded by tests: per-world probe answers. */
-      worldProbes: Map<string, { claude: string | null; error: string | null }>;
+      worldProbes: Map<
+        string,
+        { claude: string | null; codex?: string | null; error: string | null }
+      >;
       maxConcurrent: number;
       /** How many attempts hold a terminal right now. */
       running(): number;
@@ -223,7 +226,10 @@ export function installMock(): void {
     /** What the world switch enumerates — a Windows machine's shape. */
     worlds: { wsl: ['Ubuntu'], ssh: ['devbox'] } as { wsl: string[]; ssh: string[] },
     /** Seeded by tests: what probing a world answers. */
-    worldProbes: new Map<string, { claude: string | null; error: string | null }>(),
+    worldProbes: new Map<
+      string,
+      { claude: string | null; codex?: string | null; error: string | null }
+    >(),
     calls: [] as Array<{ cmd: string; args: unknown }>,
     listeners: new Map<string, number[]>(),
     cbSeq: 0,
@@ -352,6 +358,13 @@ export function installMock(): void {
   const resolveAgent = (name: string) =>
     mock.profiles.find((p) => p.name === name)?.agent ?? name;
 
+  /** The CLIs whose conventions the core knows — the prompt is sent for
+      them, a follow-up can go in through the terminal, and a permission
+      mode means something on their command line. Mirrors
+      `src-tauri/src/agent.rs`; spelled out here rather than imported
+      because this script is serialised into the page. */
+  const measured = (agent: string) => agent === 'claude' || agent === 'codex';
+
   const makeSession = (cwd: string, agent: string): MockSession => {
     // A counter, not the array length: parking removes rows, and a freed
     // id must never be reissued to a different terminal.
@@ -385,6 +398,8 @@ export function installMock(): void {
       path: '/usr/local/bin:/usr/bin:/bin',
       claude: '/usr/local/bin/claude',
       claudeVersion: '2.1.226',
+      codex: null,
+      codexVersion: null,
       // The detection report the first-run panel renders: claude found,
       // the rest absent — the commonest real machine. Seedable per test
       // (__mockAgents),讀在呼叫當下 —— 「重新偵測」按下去重跑的就是
@@ -392,8 +407,8 @@ export function installMock(): void {
       agents: (JSON.parse(
         sessionStorage.getItem('__mockAgents') ?? 'null',
       ) as Array<{ name: string; path: string | null }> | null) ?? [
-        { name: 'claude', path: '/usr/local/bin/claude' },
-        { name: 'codex', path: null },
+        { name: 'claude', path: '/usr/local/bin/claude', version: '2.1.226', reports: true },
+        { name: 'codex', path: null, version: null, reports: false },
         { name: 'gemini', path: null },
         { name: 'aider', path: null },
       ],
@@ -586,10 +601,10 @@ export function installMock(): void {
           `[Marol 任務] ${t?.title ?? ''}\n\n` +
           `你在一個專為這張卡開的 git worktree：分支 marol/card-${seq}，` +
           `從 ${t?.base_branch ?? 'main'} @ abcd1234 開出。\n\n---\n\n${t?.prompt ?? ''}\n`,
-        // Only Claude Code's argument conventions have been measured. A
+        // Only the CLIs in the conventions table are sent a prompt. A
         // profile resolves to the CLI underneath before the question is
         // asked.
-        willSend: resolveAgent(String(args.agent)) === 'claude',
+        willSend: measured(resolveAgent(String(args.agent))),
       };
     },
 
@@ -675,7 +690,7 @@ export function installMock(): void {
       session.attempt_id = attemptId;
       // A brand-new worktree always opens on the folder-trust prompt, and no
       // hook reports it — the core sets this directly.
-      session.status = agent === 'claude' ? 'awaiting_trust' : 'starting';
+      session.status = measured(agent) ? 'awaiting_trust' : 'starting';
       mock.sessions.push(session);
       mock.snapshots.set(session.id, { data: '', seq: 0 });
 
@@ -706,7 +721,7 @@ export function installMock(): void {
         branch: `marol/card-${seq}`,
         worktree_path: session.cwd,
         prompt,
-        prompt_sent: agent === 'claude',
+        prompt_sent: measured(agent),
       };
   }
 
@@ -873,7 +888,7 @@ export function installMock(): void {
     probe_world: (args) => {
       const world = String(args.world ?? '');
       return (
-        mock.worldProbes.get(world) ?? { claude: '2.1.226', error: null }
+        mock.worldProbes.get(world) ?? { claude: '2.1.226', codex: null, error: null }
       );
     },
 
@@ -1020,7 +1035,7 @@ export function installMock(): void {
       const s = mock.sessions.find((x) => x.id === args.id);
       if (!s) throw new Error(`no such session: ${String(args.id)}`);
       if (!s.live) throw new Error(`no terminal for session ${s.id}`);
-      if (s.agent !== 'claude') {
+      if (!measured(s.agent)) {
         throw new Error(`\`${s.agent}\`'s input conventions have not been measured`);
       }
       mock.queuedFollowups.set(s.id, String(args.text));
@@ -1070,7 +1085,7 @@ export function installMock(): void {
       if (!s) throw new Error(`no such session: ${String(args.id)}`);
       // The core only sends into CLIs whose input conventions are measured,
       // and only through a live terminal — the mock must refuse the same way.
-      if (s.agent !== 'claude') {
+      if (!measured(s.agent)) {
         throw new Error(`\`${s.agent}\`'s input conventions have not been measured`);
       }
       if (!s.live) throw new Error(`no terminal for session ${s.id}`);

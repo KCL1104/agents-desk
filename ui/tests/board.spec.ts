@@ -97,14 +97,15 @@ test.describe('board', () => {
   });
 
   /**
-   * Hooks are Claude Code's. For any other agent the card's calm face is
-   * unverified, and 「安靜」 read as 「沒事」 is exactly the lie the two-axis
-   * board exists to avoid — so the card says it cannot tell.
+   * Hooks belong to the CLIs that have them. For an agent without one the
+   * card's calm face is unverified, and 「安靜」 read as 「沒事」 is exactly
+   * the lie the two-axis board exists to avoid — so the card says it cannot
+   * tell.
    */
   test('a hookless agent’s card admits it has no status signal', async ({ page }) => {
     await boot(page);
     await newCard(page, '修好登入');
-    await start(page, 'k1', 'codex');
+    await start(page, 'k1', 'gemini');
     await page.getByTestId('view-board').click();
 
     await expect(page.getByTestId('nosignal-k1')).toHaveText('無狀態訊號');
@@ -290,7 +291,7 @@ test.describe('board', () => {
 
     await page.locator('[data-testid="task-k1"] button.primary').click();
     await expect(page.getByTestId('attempt-prompt')).toBeVisible();
-    await page.getByTestId('attempt-agent').selectOption('codex');
+    await page.getByTestId('attempt-agent').selectOption('gemini');
 
     await expect(page.getByTestId('attempt-manual')).toBeVisible();
     await expect(page.getByTestId('attempt-start')).toHaveText(/不送 prompt/);

@@ -192,9 +192,20 @@ export interface BootStatus {
   claude?: string | null;
   /** The installed Claude Code's version, measured at startup. */
   claudeVersion?: string | null;
+  codex?: string | null;
+  /** The installed Codex's version, measured at startup alongside it. */
+  codexVersion?: string | null;
   /** Every agent CLI the resolved environment can see — the first-run
-      panel's detection report, from the same PATH the sessions get. */
-  agents?: Array<{ name: string; path: string | null }>;
+      panel's detection report, from the same PATH the sessions get.
+      `version` and `reports` are filled in for the CLIs whose conventions
+      this app knows; `reports` is whether the installed one is new enough
+      to be wired for status, which is a different fact from being found. */
+  agents?: Array<{
+    name: string;
+    path: string | null;
+    version?: string | null;
+    reports?: boolean;
+  }>;
   /** Whether this desk's claude sessions can name themselves and, with
       that, message each other across cards. */
   messaging?: boolean;

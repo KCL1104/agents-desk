@@ -90,11 +90,13 @@ test.describe('the diff, read back into places feedback can point at', () => {
     expect(msg.trimEnd().endsWith('commit 在這個分支上。')).toBe(true);
   });
 
-  /** Mirrors prompt.rs: only the CLI whose conventions were measured is sent
-      to directly; everyone else's button is a copy. */
-  test('only the measured CLI gets a send button', () => {
-    expect(followupSendable('claude')).toBe(true);
-    for (const other of ['codex', 'gemini', 'aider']) {
+  /** Mirrors prompt.rs: only the CLIs whose conventions were measured are
+      sent to directly; everyone else's button is a copy. */
+  test('only the measured CLIs get a send button', () => {
+    for (const measured of ['claude', 'codex']) {
+      expect(followupSendable(measured)).toBe(true);
+    }
+    for (const other of ['gemini', 'aider', 'something-new']) {
       expect(followupSendable(other)).toBe(false);
     }
   });

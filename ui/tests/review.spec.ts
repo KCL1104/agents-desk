@@ -148,7 +148,7 @@ test.describe('the review loop', () => {
    * send button simply is not there.
    */
   test('an unmeasured CLI gets the feedback to copy, not a send button', async ({ page }) => {
-    await boardWithAttempt(page, 'codex');
+    await boardWithAttempt(page, 'gemini');
 
     await page.locator('.diff-line.add').click();
     await page.getByTestId('review-note').fill('這裡要改');

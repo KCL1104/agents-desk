@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type * as React from 'react';
-import { api } from '../api';
+import { api, type WorldProbe } from '../api';
 import { useT } from '../i18n';
 import { rememberWorld, storedWorld, worldLabel, type World } from '../worlds';
 
@@ -13,17 +13,15 @@ import { rememberWorld, storedWorld, worldLabel, type World } from '../worlds';
  *
  * Discovery is enumeration, never invention: WSL distros from `wsl -l`,
  * SSH aliases from the person's own config. Probing is lazy — a pick
- * asks that one world for its claude and wears the answer (or the whole
- * refusal) right on the row; startup never touches a remote.
+ * asks that one world which agents it has and wears the answer (or the
+ * whole refusal) right on the row; startup never touches a remote.
  */
 export function WorldPicker() {
   const t = useT();
   const [world, setWorld] = useState<World>(storedWorld);
   const [open, setOpen] = useState(false);
   const [worlds, setWorlds] = useState<{ wsl: string[]; ssh: string[] } | null>(null);
-  const [probes, setProbes] = useState<
-    Record<string, 'probing' | { claude: string | null; error: string | null }>
-  >({});
+  const [probes, setProbes] = useState<Record<string, 'probing' | WorldProbe>>({});
   const rootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const chipRef = useRef<HTMLButtonElement>(null);
@@ -97,7 +95,7 @@ export function WorldPicker() {
       .probeWorld(w)
       .then((res) => setProbes((p) => ({ ...p, [w]: res })))
       .catch((e) =>
-        setProbes((p) => ({ ...p, [w]: { claude: null, error: String(e) } })),
+        setProbes((p) => ({ ...p, [w]: { claude: null, codex: null, error: String(e) } })),
       );
   };
 
@@ -146,8 +144,12 @@ export function WorldPicker() {
                   ) : probe?.error != null ? (
                     <span className="world-err small">{probe.error}</span>
                   ) : probe != null ? (
+                    /* Which agents that world can actually run, named. A
+                       world with one of the two is a world half the board
+                       can open in, and saying only "claude" there would be
+                       a smaller truth than the person asked for. */
                     <span className="muted small mono">
-                      {probe.claude ?? t('world.noClaude')}
+                      {found(probe).join(' · ') || t('world.noAgent')}
                     </span>
                   ) : null}
                 </button>
@@ -169,4 +171,15 @@ export function WorldPicker() {
       </button>
     </div>
   );
+}
+
+/** The agents a world answered for, each as `name version`. Empty when it
+ *  answered for none, which the row says in words rather than as a blank. */
+function found(probe: WorldProbe): string[] {
+  return [
+    ['claude', probe.claude] as const,
+    ['codex', probe.codex] as const,
+  ]
+    .filter(([, v]) => v != null)
+    .map(([name, v]) => `${name} ${v ?? ''}`.trim());
 }
