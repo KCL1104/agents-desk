@@ -355,41 +355,55 @@ pub fn ssh_control_path() -> Option<String> {
 /// be raised runs sessions that simply show no status. `-f -N` backgrounds
 /// the master after auth; `ControlPersist=yes` keeps it for every later
 /// command, and `Core::shutdown` closes it on the way out.
-pub fn open_ssh_master(local: &ShellEnv, host: &str, remote_port: u16, local_port: u16) -> bool {
-    // Already up from an earlier contact this run? Then its tunnel is too.
+/// Tries each candidate remote port in turn and returns the one that took, or
+/// `None` if none did. The first candidate is the one this desk used last
+/// time, so an agent the host held through a restart is still reporting to an
+/// address that exists.
+///
+/// `ExitOnForwardFailure` is what makes the answer mean anything. `-f` forks
+/// after authentication, so without it ssh exits 0 having printed "remote port
+/// forwarding failed" to a stderr nobody reads — the connection is up, the
+/// tunnel is not, and every session on that host shows no status for a reason
+/// that never surfaces.
+pub fn open_ssh_master(
+    local: &ShellEnv,
+    host: &str,
+    candidates: &[u16],
+    local_port: u16,
+) -> Option<u16> {
+    // Already up from an earlier contact this run? Then its tunnel is too,
+    // and it is on whichever port that contact settled.
     let check = std::process::Command::new(ssh_exe(local))
         .args(ssh_base_args(false))
         .args(["-O", "check", "--", host])
         .output();
     if matches!(&check, Ok(o) if o.status.success()) {
-        return true;
+        return candidates.first().copied();
     }
 
-    let out = std::process::Command::new(ssh_exe(local))
-        .args(ssh_base_args(false))
-        .args([
-            "-f",
-            "-N",
-            "-R",
-            &format!("127.0.0.1:{remote_port}:127.0.0.1:{local_port}"),
-            "--",
-            host,
-        ])
-        .output();
-    match out {
-        Ok(o) if o.status.success() => true,
-        Ok(o) => {
-            eprintln!(
-                "[host] ssh master for `{host}` failed: {}",
-                String::from_utf8_lossy(&o.stderr).trim()
-            );
-            false
-        }
-        Err(e) => {
-            eprintln!("[host] ssh master for `{host}` failed to start: {e}");
-            false
+    let mut last = String::new();
+    for port in candidates {
+        let out = std::process::Command::new(ssh_exe(local))
+            .args(ssh_base_args(false))
+            .args([
+                "-o",
+                "ExitOnForwardFailure=yes",
+                "-f",
+                "-N",
+                "-R",
+                &format!("127.0.0.1:{port}:127.0.0.1:{local_port}"),
+                "--",
+                host,
+            ])
+            .output();
+        match out {
+            Ok(o) if o.status.success() => return Some(*port),
+            Ok(o) => last = String::from_utf8_lossy(&o.stderr).trim().to_string(),
+            Err(e) => last = e.to_string(),
         }
     }
+    eprintln!("[host] ssh master for `{host}` failed: {last}");
+    None
 }
 
 /// Close the standing connection, tunnel and all. Best effort — the host may

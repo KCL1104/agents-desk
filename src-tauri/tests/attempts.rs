@@ -1601,6 +1601,52 @@ fn an_ssh_repository_runs_its_whole_attempt_on_the_remote() {
     let hooks_text = std::fs::read_to_string(&hooks_file).expect("remote plugin missing");
     assert!(hooks_text.contains("http://127.0.0.1:"), "{hooks_text}");
 
+    // And that port was written down. Claude Code reads hooks.json once, so
+    // an agent this host holds through a restart keeps reporting to whatever
+    // address is in that file for the rest of its life; the next run has to
+    // ask for the same port back rather than draw a new one.
+    let port = hooks_text
+        .split("http://127.0.0.1:")
+        .nth(1)
+        .and_then(|s| s.split('/').next())
+        .expect("no port in the hook url")
+        .to_string();
+    let tunnels = std::fs::read_to_string(h.root.join("data").join("tunnels"))
+        .expect("the tunnel port was not remembered");
+    assert!(
+        tunnels.contains(&format!("agentdesk-test\t{port}")),
+        "remembered {tunnels:?}, but the plugin was told {port}"
+    );
+
+    // The remote is holding the session. Same mechanism as WSL — a socket the
+    // app named, in a directory it made, inside the world — which is the only
+    // shape that works when this side cannot see the world's tmux directory.
+    let socks = home.join(".agentdesk").join("s");
+    let held: Vec<PathBuf> = std::fs::read_dir(&socks)
+        .map(|it| {
+            it.flatten()
+                .map(|e| e.path())
+                .filter(|p| p.to_string_lossy().ends_with(&a.session_id))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(held.len(), 1, "the remote is not holding the session: {held:?}");
+    assert!(
+        std::process::Command::new("tmux")
+            .args([
+                "-S",
+                &held[0].to_string_lossy(),
+                "has-session",
+                "-t",
+                "agent",
+            ])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false),
+        "nothing is answering on {}",
+        held[0].display()
+    );
+
     // Diff over the wire; close returns the tree and keeps the evidence.
     std::fs::write(Path::new(inner).join("app.txt"), "fixed over ssh\n").unwrap();
     assert!(h.core.attempt_diff(&a.attempt_id).unwrap().contains("fixed over ssh"));
@@ -1608,10 +1654,16 @@ fn an_ssh_repository_runs_its_whole_attempt_on_the_remote() {
     assert!(!Path::new(inner).exists());
     assert!(h.core.attempt_diff(&a.attempt_id).unwrap().contains("fixed over ssh"));
 
-    // Tidy the remote worktree directory this repo was given.
+    // Tidy the remote worktree directory this repo was given, and the server
+    // holding the session — the "remote" here shares this machine's home, so
+    // nothing else is going to.
     if let Some(parent) = Path::new(inner).parent() {
         let _ = std::fs::remove_dir_all(parent);
     }
+    let _ = std::process::Command::new("tmux")
+        .args(["-S", &held[0].to_string_lossy(), "kill-server"])
+        .output();
+    let _ = std::fs::remove_file(&held[0]);
 }
 
 /* ----------------------- cross-session messaging ----------------------- */

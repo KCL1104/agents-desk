@@ -1191,11 +1191,15 @@ impl Core {
                     // provisioned into the host, and its URL points back
                     // through the reverse tunnel on the standing connection.
                     Host::Ssh { host } => self.hooks.get().and_then(|server| {
-                        let remote_port =
-                            20000 + (uuid::Uuid::new_v4().as_u128() % 40000) as u16;
-                        if !host::open_ssh_master(&self.env, host, remote_port, server.port) {
+                        let Some(remote_port) = host::open_ssh_master(
+                            &self.env,
+                            host,
+                            &self.tunnel_ports(host),
+                            server.port,
+                        ) else {
                             return None;
-                        }
+                        };
+                        self.remember_tunnel(host, remote_port);
                         let url =
                             format!("http://127.0.0.1:{remote_port}/h/{}", server.token);
                         let dir = format!("{home}/.agentdesk/plugin");
@@ -3434,6 +3438,61 @@ impl Core {
         ))
     }
 
+    /// Which remote ports to offer for this host's hook tunnel, best first.
+    ///
+    /// **The first one is the port this desk used here last time.** A session
+    /// the host held through a restart is still running, and the URL it reports
+    /// to was written into its plugin config when it started — Claude Code
+    /// reads that file once. A fresh port each run is a held agent posting into
+    /// nothing for the rest of its life: exactly the bug the local endpoint
+    /// already learned to avoid, one hop further out.
+    ///
+    /// With nothing remembered the first is derived, not drawn: from the host
+    /// and from this machine's id. Both halves matter. The host, so one desk's
+    /// two servers do not collide; the machine, because the port is bound on
+    /// the *remote* side, and two desks reaching one server would otherwise
+    /// ask it for the same port and the second would quietly get no tunnel.
+    ///
+    /// The rest are fallbacks, for the day something else on that host is
+    /// already listening where we would like to.
+    fn tunnel_ports(&self, host: &str) -> Vec<u16> {
+        tunnel_ports(host, &self.machine_id(), self.remembered_tunnel(host))
+    }
+
+    /// Where the tunnel ports are kept between runs: one `host<TAB>port` line
+    /// each, beside the data this desk already writes down.
+    fn tunnels_file(&self) -> std::path::PathBuf {
+        self.data_dir.join("tunnels")
+    }
+
+    fn remembered_tunnel(&self, host: &str) -> Option<u16> {
+        std::fs::read_to_string(self.tunnels_file())
+            .ok()?
+            .lines()
+            .filter_map(|l| l.split_once('\t'))
+            .find(|(h, _)| *h == host)
+            .and_then(|(_, p)| p.trim().parse().ok())
+    }
+
+    fn remember_tunnel(&self, host: &str, port: u16) {
+        // Tabs separate the two fields, so a host alias containing one would
+        // write a line that reads back as a different host. Aliases come from
+        // the person's own ssh config and never contain whitespace, but the
+        // file is written rather than trusted: drop the entry instead.
+        if host.contains('\t') || host.contains('\n') {
+            return;
+        }
+        let mut out: Vec<String> = std::fs::read_to_string(self.tunnels_file())
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| l.split_once('\t').map(|(h, _)| h != host).unwrap_or(false))
+            .map(str::to_string)
+            .collect();
+        out.push(format!("{host}\t{port}"));
+        let _ = std::fs::create_dir_all(&self.data_dir);
+        let _ = std::fs::write(self.tunnels_file(), out.join("\n") + "\n");
+    }
+
     /// A random id written once into the data directory, and read for ever
     /// after. Its lifetime is exactly right: lose the data directory and the
     /// sessions it named are gone too, so there is nothing left to strand.
@@ -4114,6 +4173,50 @@ mod tests {
         eprintln!("claude {a}.{b}.{c} answered the probe");
     }
 
+    /// The port an SSH host's hook tunnel lands on, and the three things that
+    /// have to be true of it.
+    ///
+    /// It must not move between runs: the agent the host held through the
+    /// restart is still posting to the URL baked into its plugin config, and a
+    /// new port every start is a session that runs on while the desk goes
+    /// blind to it. It must differ per machine, because the port is bound on
+    /// the *remote* side and two laptops reaching one server would otherwise
+    /// ask it for the same one — the second silently getting no tunnel. And
+    /// what worked last time has to win over what would be derived today, or
+    /// remembering it was pointless.
+    #[test]
+    fn a_hosts_tunnel_port_holds_still_across_runs_but_not_across_machines() {
+        let a = tunnel_ports("dev-box", "machine-a", None);
+        assert_eq!(a, tunnel_ports("dev-box", "machine-a", None), "it moved");
+        assert_ne!(
+            a[0],
+            tunnel_ports("dev-box", "machine-b", None)[0],
+            "two desks would fight over one port on the same server",
+        );
+        assert_ne!(
+            a[0],
+            tunnel_ports("other-box", "machine-a", None)[0],
+            "one desk's two servers would be told the same port",
+        );
+        // Inside the range ssh can bind unprivileged, and all distinct: a
+        // fallback that repeats the candidate that just failed is not one.
+        for p in &a {
+            assert!((20000..60000).contains(p), "{p}");
+        }
+        let uniq: std::collections::HashSet<_> = a.iter().collect();
+        assert_eq!(uniq.len(), a.len(), "{a:?}");
+
+        // What actually worked leads, and does not also appear further down.
+        let remembered = tunnel_ports("dev-box", "machine-a", Some(31337));
+        assert_eq!(remembered[0], 31337);
+        assert_eq!(remembered.iter().filter(|&&p| p == 31337).count(), 1);
+        assert_eq!(
+            tunnel_ports("dev-box", "machine-a", Some(a[2]))[0],
+            a[2],
+            "a remembered port that is also derived must still lead",
+        );
+    }
+
     /// The transcript arithmetic, against real-shaped rows: totals count
     /// everything including sidechains, context follows only the main line,
     /// and a malformed row is skipped rather than zeroing the account.
@@ -4314,6 +4417,21 @@ mod tests {
 /// answer it differently. A failure to run tmux at all reads as "no" here,
 /// which is the safe direction for the check and, in the sweep, is why the
 /// unlink asks again rather than trusting a kill it may never have run.
+/// The derivation behind `Core::tunnel_ports`, kept apart from the disk so it
+/// can be asked the questions that matter without one.
+fn tunnel_ports(host: &str, machine: &str, remembered: Option<u16>) -> Vec<u16> {
+    let seed = pty::desk_tag(&format!("{host}\n{machine}"));
+    let base = u32::from_str_radix(&seed, 16).unwrap_or(0) as u64;
+    let mut ports: Vec<u16> = (0..6)
+        .map(|i| 20000 + ((base + i * 4093) % 40000) as u16)
+        .collect();
+    if let Some(p) = remembered {
+        ports.retain(|&x| x != p);
+        ports.insert(0, p);
+    }
+    ports
+}
+
 /// Ask a world whether it can hold sessions, and set it up if it can.
 ///
 /// Three questions, in the order that makes a "no" cheapest: is there a tmux
