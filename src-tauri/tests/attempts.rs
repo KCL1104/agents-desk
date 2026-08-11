@@ -89,6 +89,11 @@ struct Harness {
 const STUB: &str = r#"#!/bin/bash
 if [ "$1" = "--version" ]; then echo "2.1.226 (Claude Code)"; exit 0; fi
 printf '%s\0' "$PWD" "$@" > "$AGENTDESK_STUB_LOG/${AGENTDESK_SESSION_ID:-unknown}.$$"
+# 宣告它所替身的那個 CLI 真的會宣告的模式:Claude Code 開啟 bracketed
+# paste(DECSET 2004),而 `bracketed_followup` 只送給量測過會開它的 CLI。
+# 這一行之前 stub 是個沉默的位元組水槽,而任何會照 2004 決定要不要轉發
+# 標記的傳輸層(例如 tmux)看到的就是「這支程式沒要」。
+printf '\033[?2004h'
 exec cat > "$AGENTDESK_STUB_LOG/stdin.${AGENTDESK_SESSION_ID:-unknown}.$$"
 "#;
 
@@ -386,6 +391,24 @@ struct Launch {
 impl Drop for Harness {
     fn drop(&mut self) {
         self.core.shutdown();
+        // `shutdown` detaches held sessions rather than ending them — that is
+        // the feature, and in production the next start sweeps whatever has
+        // no card left. A test is the one case where nothing ever comes back:
+        // the sweep only reaches sockets tagged with its own data directory,
+        // and the next test has a different one. Left alone, a full run ends
+        // with one idle tmux server per session.
+        let tag = pty::desk_tag(&self.root.join("data").to_string_lossy());
+        for s in self.core.sessions() {
+            let sock = pty::hold_socket(&tag, &s.id);
+            let _ = std::process::Command::new("tmux")
+                .args(["-L", &sock, "kill-server"])
+                .output();
+            // The server exits but leaves its socket inode; a full run would
+            // otherwise strew hundreds of dead files through the tmux dir.
+            if let Some(dir) = core::tmux_socket_dir() {
+                let _ = std::fs::remove_file(dir.join(&sock));
+            }
+        }
         let _ = std::fs::remove_dir_all(&self.root);
     }
 }

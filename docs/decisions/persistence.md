@@ -1,6 +1,6 @@
 # 決策文件:session 要不要活得比 app 久
 
-> 狀態:**待拍板** · 2026-08 · 來源:Xirp 研究(`docs/xirp-research.md` 配對 #8)
+> 狀態:**已定案,v1 已實作(local + tmux)** · 2026-08 · 來源:Xirp 研究(配對 #8)
 > 參照:Xirp(閉源,macOS;依賴 `tmux`,FAQ 明說 session 存活過 app 關閉)、
 > Claude Squad(Go TUI + tmux,同一招)
 
@@ -110,7 +110,60 @@ tmux 在這裡的角色只有一個:**持有行程**。它多畫一個畫素都�
 4. 沒有 tmux 的世界:行為不變,卡片戴一個「關掉 app 會結束」的淡色 chip——**降級要看得見**。
 5. **不做**:SSH 世界、scrollback 落盤(`capture-pane` 誘人但先不碰)、自己寫 daemon。
 
-## 實作嘗試(2026-08-11):寫到一半撤掉,以及為什麼
+## 第二次實作(2026-08-11):**已落地**,`-L` 每 session 一個 socket
+
+第一次撤回後,先做的不是寫程式,是**量測前提**:
+
+| 作法 | 內層 agent 讀到的 `AGENTDESK_SESSION_ID` |
+|---|---|
+| `-L` 每 session 一個 socket | `s42` ✓ |
+| 共用 server 的第二個 session | **`first`** ——第一個 session 的 id |
+
+第二列比原本的診斷更嚴重:不是「變數不見」,是**變數是錯的**。
+共用 server 時第二個 session 會用第一個的 id 回報狀態,卡片會為錯的 agent 亮燈。
+`-L` 讓環境正確變成結構保證,代價是每個 session 一個閒置 server。
+
+### v1 的形狀
+
+- `Hold { socket, conf, socket_file }`;socket = `agentdesk-<desk tag>-<session id>`。
+  **desk tag 是 data_dir 的 FNV-1a**——沒有它,一個 install 的孤兒清掃會殺掉另一個的活 agent,
+  而且測試之間會互殺。
+- spawn:`tmux -L <socket> -f <conf> new-session -A -D -s agent -c <cwd> -- <exe> <args>`。
+  **`-A` 是 create-or-attach**,所以「第一次開」和「重開時接回」是同一條程式碼路徑,
+  兩者不可能對不上。
+- **退出 app = `kill`(只斷 client)**;**刻意關閉 = `destroy`(`kill-server` + 刪 socket 檔)**。
+  這個區別就是整個功能:退出不等於做完了。
+- 只有 **agent 的 session** 被 hold。run script 與 worktree shell 是「你開來看的」,
+  跟著桌子收掉;agent 是「你開來讓它跑的」。
+- 啟動時掃孤兒:讀 socket 目錄(那是被遺忘的 id 唯一還存在的地方),
+  只碰自己 desk tag 的,`kill-server` 之後**把 socket 檔也刪掉**。
+
+### 實測驗證(真 tmux 3.4)
+
+1. 環境送達內層 agent ✓
+2. **完全沒有 client 時 session 仍在、agent 程序仍在跑** ✓ ← 這就是整個功能
+3. `kill-server` 之後 agent 程序一起收掉 ✓
+4. cargo **406 passed**,而且是在 tmux 真的接管每個 agent session 的情況下跑出來的
+5. 全套跑完:活著的 tmux 程序 **0**、殘留 socket 檔 51 → **1**
+
+### 過程中修掉的兩件事
+
+- **bracketed paste 的行為變了,而且變得更對。** tmux 只在內層程式宣告了 DECSET 2004 時
+  才轉發 `\x1b[200~` 標記。測試的 stub 是純 `cat`,從不宣告,所以被正確濾掉——
+  而 `bracketed_followup` 的註解本來就寫著「只送給量測過會開它的 CLI」。
+  把 stub 改成宣告它所替身的那個 CLI 真的會宣告的模式,測試就過了。
+  **淨效果:tmux 讓這條路比原本無條件送更安全。**
+- **tmux server 結束後會留下 socket inode。** 死檔看起來跟活的一樣,
+  會讓清掃永遠愈掃愈慢。關閉與清掃兩條路現在都負責 unlink。
+
+### 仍然沒做
+
+- **SSH 與 WSL**:見上面的核心判定,各自要單獨決策。
+- **狀態誠實度**:一個 detached 但還在跑的 session,重開 app 後仍顯示「已關閉」,
+  直到被打開才接回。接回本身是對的(`-A` 會 attach 到還活著的 agent),
+  但那個標籤在接回之前是錯的。**這是 v1 唯一已知的不誠實,列為下一項。**
+
+## 第一次實作嘗試(2026-08-11):撤掉,以及為什麼
 
 拍板後實作到「spawn 走 tmux + 關閉時 kill-session + 退出時只 detach + 啟動時掃孤兒」,
 編譯通過,而且**機制確實生效**——測試跑完後 `tmux ls` 裡留著活的 `agentdesk-<id>` session,

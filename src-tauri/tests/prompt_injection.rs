@@ -317,6 +317,7 @@ fn a_multi_line_prompt_reaches_a_fresh_worktree_as_one_message() {
         100,
         30,
         Arc::clone(&cap) as Arc<dyn PtySink>,
+        None,
     )
     .expect("spawn claude under pty");
 

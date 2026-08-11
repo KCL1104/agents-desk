@@ -120,6 +120,7 @@ fn a_pty_session_reports_its_status_back_through_the_plugin() {
         100,
         30,
         rec.clone() as Arc<dyn PtySink>,
+        None,
     )
     .expect("spawn claude under pty");
 

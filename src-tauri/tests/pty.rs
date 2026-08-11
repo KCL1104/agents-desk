@@ -77,6 +77,7 @@ fn a_session_is_a_real_tty_with_the_login_shell_environment() {
         100,
         30,
         cap.clone(),
+        None,
     )
     .expect("spawn under pty");
 
@@ -127,6 +128,7 @@ fn claude_starts_its_interactive_tui_under_a_pty() {
         100,
         30,
         cap.clone(),
+        None,
     )
     .expect("spawn claude under pty");
 

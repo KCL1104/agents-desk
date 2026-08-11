@@ -16,7 +16,7 @@ use crate::config;
 use crate::hooks::{self, Activity, HookHandler, HookReport, HookServer, HookState};
 use crate::host::{self, Host, HostRef};
 use crate::prompt::{self, Delivery};
-use crate::pty::{PtyRegistry, PtySink};
+use crate::pty::{self as pty, PtyRegistry, PtySink};
 use crate::shell_env::{self, ShellEnv};
 use crate::store::{
     Lifecycle, Outcome, PermissionMode, Profile, Store, StoredAttempt, StoredSession, StoredTab,
@@ -1062,6 +1062,13 @@ impl Core {
             let core = Arc::clone(&core);
             std::thread::spawn(move || core.sweep_checkpoint_orphans());
         }
+
+        // The other kind of leftover, and one this desk created by asking
+        // tmux to hold things: a held session whose card is gone.
+        {
+            let core = Arc::clone(&core);
+            std::thread::spawn(move || core.sweep_held_orphans());
+        }
         Ok(core)
     }
 
@@ -2086,6 +2093,9 @@ impl Core {
             cols.max(20),
             rows.max(5),
             Arc::clone(&self.router) as Arc<dyn PtySink>,
+            // Not held: a script and a shell are things you started to
+            // watch, and they end when the desk does.
+            None,
         ) {
             self.sessions.lock().unwrap().remove(&id);
             return Err(e);
@@ -2202,6 +2212,9 @@ impl Core {
             cols.max(20),
             rows.max(5),
             Arc::clone(&self.router) as Arc<dyn PtySink>,
+            // Not held: a script and a shell are things you started to
+            // watch, and they end when the desk does.
+            None,
         ) {
             self.sessions.lock().unwrap().remove(&id);
             return Err(e);
@@ -2959,6 +2972,11 @@ impl Core {
                 }
             };
 
+        // Only the agent's own session is held. A run script and a worktree
+        // shell are things you started to watch; an agent is a thing you
+        // started to leave running, and that difference is the whole reason
+        // to involve tmux at all.
+        let hold = self.hold_for(&he.host, id);
         self.ptys.spawn(
             id,
             &program,
@@ -2969,6 +2987,7 @@ impl Core {
             cols.max(20),
             rows.max(5),
             Arc::clone(&self.router) as Arc<dyn PtySink>,
+            hold.as_ref(),
         )
     }
 
@@ -3163,6 +3182,81 @@ impl Core {
 
     pub fn hook_url(&self) -> Option<String> {
         self.hooks.get().map(|h| h.url())
+    }
+
+    /// Whether this world can hold a session past the app's own life.
+    ///
+    /// Persistence is a property of a **world**, not a premise of the app —
+    /// the same ruling `worlds.md` already made about which machine a card
+    /// runs on. Local worlds with tmux get it; every other world keeps the
+    /// old behaviour, and the settings say which is which rather than
+    /// letting the difference go quiet.
+    ///
+    /// Local only for now. The payoff is largest over SSH, where a dropped
+    /// link takes the agent with it — but that is somebody else's machine,
+    /// and "zero remote install" is a promise this desk has already made.
+    fn hold_for(&self, host: &Host, session_id: &str) -> Option<pty::Hold> {
+        if !matches!(host, Host::Local) || self.env.which("tmux").is_none() {
+            return None;
+        }
+        let conf = self.data_dir.join("tmux.conf");
+        // Rewritten each start rather than once: an upgrade that changes what
+        // tmux is told must not wait for someone to delete a stale file.
+        if std::fs::write(&conf, pty::HOLD_CONF).is_err() {
+            return None;
+        }
+        let socket = pty::hold_socket(&self.desk_tag(), session_id);
+        let socket_file = tmux_socket_dir().map(|d| d.join(&socket).to_string_lossy().to_string());
+        Some(pty::Hold {
+            socket,
+            conf: conf.to_string_lossy().to_string(),
+            socket_file,
+        })
+    }
+
+    /// This desk's tag, from where it keeps its data — so two installs on
+    /// one machine never collect each other's held sessions.
+    fn desk_tag(&self) -> String {
+        pty::desk_tag(&self.data_dir.to_string_lossy())
+    }
+
+    /// Kill held sessions this desk no longer has a card for.
+    ///
+    /// Asking tmux to outlive the app is a promise to come back for what was
+    /// left running. A session removed from the list, or a crash between the
+    /// spawn and the write, leaves an agent nobody will look at again and
+    /// nothing else can name — so the sweep is not tidiness, it is the other
+    /// half of the feature.
+    ///
+    /// Sockets are read off disk because that is the only place an id this
+    /// desk has forgotten still exists. Scoped by the desk tag, so a sweep
+    /// can only ever reach this install's own leftovers.
+    fn sweep_held_orphans(&self) {
+        let Some(dir) = tmux_socket_dir() else { return };
+        let prefix = format!("agentdesk-{}-", self.desk_tag());
+        let known: std::collections::HashSet<String> = self
+            .sessions
+            .lock()
+            .unwrap()
+            .keys()
+            .map(|id| pty::hold_socket(&self.desk_tag(), id))
+            .collect();
+        let Ok(entries) = std::fs::read_dir(&dir) else { return };
+        for e in entries.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !name.starts_with(&prefix) || known.contains(&name) {
+                continue;
+            }
+            let _ = std::process::Command::new("tmux")
+                .args(["-L", &name, "kill-server"])
+                .output();
+            // tmux leaves the socket inode behind when a server exits, so a
+            // dead socket looks exactly like a live one from here. Unlinking
+            // is what stops the directory — and this sweep's work — growing
+            // without bound across restarts.
+            let _ = std::fs::remove_file(e.path());
+            eprintln!("[core] swept a held session with no card left: {name}");
+        }
     }
 
     /// Where the opening-prompt template lives, written out on first use.
@@ -3852,4 +3946,31 @@ mod tests {
         assert_eq!(Status::from_hook(HookState::Idle), Status::Idle);
         assert_eq!(Status::from_hook(HookState::Ended), Status::Exited);
     }
+}
+
+/// Where tmux keeps its sockets: `$TMUX_TMPDIR` or `/tmp`, then `tmux-<uid>`.
+///
+/// Read rather than asked for, because the ids this desk has forgotten exist
+/// nowhere else — `list-sessions` can only speak for a server you can already
+/// name. Unix only, which costs nothing: the only worlds that hold sessions
+/// are the ones with tmux, and Windows has none.
+#[cfg(unix)]
+pub fn tmux_socket_dir() -> Option<std::path::PathBuf> {
+    let base = std::env::var("TMUX_TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
+    // SAFETY: getuid is always safe; it reads a process property and cannot fail.
+    let uid = unsafe { libc_getuid() };
+    Some(std::path::PathBuf::from(base).join(format!("tmux-{uid}")))
+}
+
+#[cfg(not(unix))]
+pub fn tmux_socket_dir() -> Option<std::path::PathBuf> {
+    None
+}
+
+/// The one libc call this crate needs, declared rather than adding a
+/// dependency for a single symbol.
+#[cfg(unix)]
+extern "C" {
+    #[link_name = "getuid"]
+    fn libc_getuid() -> u32;
 }
