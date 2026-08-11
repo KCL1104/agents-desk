@@ -502,6 +502,38 @@ AgentDesk 的三視圖 + 抽屜目前沒有「回上一個地方」的概念。
 最後才補**docs 入口**。去重就能吃掉大部分體感,而且零爭議;
 裁切階段每一條都要過一次「這是拒絕/免責/後果嗎」的問題。
 
+#### 執行結果(狀態:**完成**,三階段一次做完)
+
+**量測**:≥90 字元的字串 **69 → 25**(目標 ≤25);≥140 的 **21 → 12**。
+改動 20 條字串,兩語同步;新增 1 個 key(`env.docs`)。
+
+**剩下的 25 條全部可歸類**,逐條檢查過:coach 五則(一生只出現一次,刻意留長)、
+welcome 面板三則、`attempt.unmeasuredHint` 與 `termSr.hint` 與 `usage.tip`(量測免責)、
+`ckpt.hint` 與 `preview.sshHint` 與 `board.deleteBusy` 與 `env.degraded`(拒絕/保證)、
+`err.*` 四則與 `park.restoreFailed`(錯誤)、`ckpt.note` 與 `preview.note`(遞給 agent 的訊息)、
+`keys.diff`(⌘/ 參考表本身)、`newTask.promptPlaceholder`(欄位內的範例)。
+
+**兩件被擋下來的事,值得記下:**
+
+1. **`modes.spec.ts` 攔下一個砍過頭的地方。** 我把 `attempt.yoloHint` 的
+   「風險關在這張卡裡:attempt 碰不到你的 checkout」整句砍掉,理由是 `coach.mode` 教過。
+   但測試註解寫著「The warning names both the power and the fence around it」——它是對的:
+   **coach 一生只出現一次,這個選擇每次都要做**,而只講力量不講圍籬是恐嚇不是告知。
+   照本節自己的分類,這是**後果**不是教學。改為保留圍籬、只砍贅字(269 → 147)。
+   *教訓:分類的邊界要看「這次還在不在場」,不能只看「有沒有別的地方講過」。*
+2. **README 揭穿了驗收標準沒被滿足。** 「每刪一條都要能指出現在在哪裡學得到」——
+   實際 grep 後,checkpoints 的「便宜的退路才買得起自主」這個理由
+   **兩份 README 都沒有**(它只活在 PRODUCT.md 的原則 #5)。
+   已補進 en / zh-TW 兩份 README 的檢查點段落。
+   (`CLAUDE.md / skills / MCP 原生載入` 則確認 README 本來就有,在首則 prompt 那節。)
+
+**docs 入口**:環境面板的「重看歡迎面板」旁邊加了一顆**說明文件**鈕,
+走既有的 `api.openExternal`,**連結跟著介面語言走**(en → `#readme`,zh-TW → `README.zh-TW.md`)——
+讀中文的人不該被丟到英文那份。新增測試一則(`onboarding.spec.ts`)。
+
+**驗證**:`tsc --noEmit` 乾淨、`npm run build` 乾淨、
+Playwright **301 passed + 8 skipped**(新增的 docs 測試含在內)。
+
 ---
 
 ### 第二批:先量測再決定

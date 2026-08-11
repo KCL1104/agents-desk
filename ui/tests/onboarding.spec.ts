@@ -130,6 +130,24 @@ test.describe('the first-run panel', () => {
     await expect(page.locator('.modal')).toHaveCount(0);
   });
 
+  /**
+   * 介面上的字被刻意收短了,教學搬進了歡迎面板與 README —— 那就必須有一條
+   * 從 app 走得到 README 的路,否則不是搬家,是把知識丟掉。
+   * 而讀中文的人不該被丟到英文那份,所以連結跟著介面語言走。
+   */
+  test('the environment panel opens the documentation, in the interface language', async ({
+    page,
+  }) => {
+    await page.addInitScript(installMock);
+    await page.goto('/');
+    await page.getByRole('button', { name: '環境' }).click();
+    await page.getByTestId('open-docs').click();
+    const zh = await page.evaluate(
+      () => window.__mock.calls.find((c) => c.cmd === 'plugin:opener|open_url')?.args,
+    );
+    expect((zh as { url: string }).url).toContain('README.zh-TW.md');
+  });
+
   test('the welcome panel reopens from the palette too', async ({ page }) => {
     await page.addInitScript(installMock);
     await page.goto('/');

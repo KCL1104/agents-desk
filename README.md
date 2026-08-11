@@ -230,7 +230,9 @@ The pieces that carry the triage loop, in roughly the order you meet them:
 - **Queued follow-up** — feedback written while the agent is mid-turn holds
   until the turn ends, then sends as one message. A banner names what is
   queued and cancels in one click.
-- **Checkpoints** — every turn's end snapshots the worktree into a private
+- **Checkpoints** — a cheap way back is what buys an agent room to run: it is
+  easier to let one work unattended when the worst case costs one click.
+  Every turn's end snapshots the worktree into a private
   ref (default on; off in the environment panel), touching nothing the
   agent sees, plus a manual ⚑ for any agent. Prompt rows on the timeline
   wear ↩: restore the code to before that turn — the conversation is never

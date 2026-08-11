@@ -18,6 +18,13 @@ import {
   type StoredTheme,
 } from '../theme';
 
+/** The written-down half of the product, one per interface language. The
+ *  READMEs are the documentation — this is the app admitting where they are. */
+const DOCS_URL: Record<Locale, string> = {
+  en: 'https://github.com/KCL1104/agents-desk#readme',
+  'zh-TW': 'https://github.com/KCL1104/agents-desk/blob/main/README.zh-TW.md',
+};
+
 /**
  * Shows what environment the agents actually get. A GUI process inherits a
  * stub PATH, so this is the panel to check when an MCP server or a toolchain
@@ -94,10 +101,17 @@ export function EnvPanel({
         {!boot.envResolved && <p className="muted small">{t('env.degraded')}</p>}
 
         {/* 診斷的鄰居:歡迎面板本來就是這份偵測的第一次亮相 ——
-            這裡給一條回去重看的路,順便重跑偵測。 */}
+            這裡給一條回去重看的路,順便重跑偵測。
+
+            說明文件的門也開在這裡。介面上的字被刻意收短了 —— 教學搬進了
+            歡迎面板與 README;沒有這扇門,那不是搬家,是把知識丟掉。
+            連結跟著介面語言走:讀中文的人不該被丟到英文那份。 */}
         <div className="row welcome-reopen-row">
           <button data-testid="show-welcome" onClick={onShowWelcome}>
             {t('welcome.reopen')}
+          </button>
+          <button data-testid="open-docs" onClick={() => void api.openExternal(DOCS_URL[locale])}>
+            {t('env.docs')}
           </button>
         </div>
 

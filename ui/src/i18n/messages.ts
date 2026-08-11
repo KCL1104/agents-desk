@@ -34,8 +34,7 @@ export const en = {
   /* -------------------------- new session ----------------------------- */
   'newSession.title': 'New session',
   'newSession.cwd': 'Working directory',
-  'newSession.cwdHint':
-    'The same as {cd} into this directory and starting the agent there — the CLAUDE.md, .claude/ skills and .mcp.json it loads are exactly what you get in a terminal.',
+  'newSession.cwdHint': 'The same as {cd} into this directory and starting the agent there.',
   'newSession.args': 'Launch arguments (optional)',
   'newSession.argsHint': 'Passed to the CLI untouched, exactly as you would type them yourself.',
   'newSession.submit': 'Open terminal',
@@ -49,13 +48,11 @@ export const en = {
   'newTask.promptPlaceholder':
     'The screen goes white after signing in, with no console errors. Reproduce it first, then fix it.',
   'newTask.promptHint':
-    'No need to mention CLAUDE.md, skills or MCP — the worktree loads them natively. Starting an attempt appends the branch and base, and you can edit it before it is sent.',
+    'Starting an attempt appends the branch and base — you can edit it before it is sent.',
   'newTask.repo': 'Repo',
-  'newTask.repoHint':
-    'A local path — or wsl://<distro>/<path> for a repository inside WSL, or ssh://<host>/<path> for one on a machine in your ~/.ssh/config. The agent, git and worktrees all run where the repository lives.',
+  'newTask.repoHint': 'A local path, or wsl://<distro>/<path>, or ssh://<host>/<path>.',
   'newTask.base': 'Base branch',
-  'newTask.baseHint':
-    'Every attempt opens a worktree and a branch from here, and diffs against it.',
+  'newTask.baseHint': 'Attempts branch from here, and diff against it.',
   // 建卡成功後由 say() 唸出：對話框關掉、焦點跳到新卡片,這一刻只有
   // 視覺鏈知道發生了什麼 —— 朗讀鏈在這裡補上確認。
   'newTask.created': 'Card created: {title}',
@@ -65,14 +62,17 @@ export const en = {
   'attempt.agent': 'Agent',
   'attempt.firstPrompt': 'First prompt',
   'attempt.trustHint':
-    'Sending opens a fresh worktree — Claude Code will ask whether you trust the folder first, and the card lights up with “⚠ waiting on folder trust”. The prompt goes out once you have answered.',
+    'The prompt goes out once Claude Code has asked whether you trust the new folder.',
   'attempt.unmeasuredHint':
     'We have not measured {agent}’s argument conventions, so nothing is sent automatically — a flag that means “here is your prompt” in one CLI can mean “print this and exit” in another. The session still opens; copy the text below into it.',
   'attempt.copied': 'Copied',
   'attempt.copyPrompt': 'Copy prompt',
   'attempt.openNoPrompt': 'Open session (no prompt)',
+  // The fence stays in the dialog, not only in the coach mark: the mark
+  // fires once, this choice is made every time. Naming the power without
+  // the fence would be a scare; naming both is the consequence.
   'attempt.yoloHint':
-    'No permission prompts at all — the agent runs to the end of its own judgement. The risk stays inside this card: an attempt only ever touches its own worktree and branch, never your checkout.',
+    'No permission prompts at all — the agent runs to the end of its own judgement. The fence is the worktree: this attempt cannot touch your checkout.',
 
   /* -------------------------- permission modes ------------------------- */
   'mode.normal': 'Ask as usual',
@@ -121,10 +121,10 @@ export const en = {
   'keys.escape': 'Close the open dialog',
   'keys.sheet': 'This list',
   'keys.shellNote':
-    'Typing in a terminal? Ctrl+letter belongs to the shell there — add Shift (Ctrl+Shift+E), the same way Ctrl+Shift+C copies.',
+    'In a terminal, Ctrl+letter belongs to the shell — the app’s shortcuts add Shift.',
   'attempt.modeLabel': 'Permission mode',
   'attempt.acceptHint':
-    'File edits are accepted without asking; every other action still checks with you. Only this attempt’s own worktree is touched.',
+    'File edits are accepted without asking; every other action still checks with you.',
   'splitter.hint': 'Drag to resize; double-click to reset to equal',
   'keys.gestures': 'Mouse and gestures',
   'gesture.pane': 'Pane header',
@@ -210,7 +210,7 @@ export const en = {
   'theme.sunset': 'Sunset',
   'theme.custom': 'Custom',
   'theme.customHint':
-    'Six colors make a theme; the in-between tiers are derived. The chips below check each text tier against the surface it sits on — 4.5 is the floor worth keeping.',
+    'The rest derive. Chips measure each text tier against its surface — 4.5 is the floor.',
   'theme.bg': 'Background',
   'theme.fg': 'Text',
   'theme.accent': 'Accent',
@@ -276,6 +276,9 @@ export const en = {
   'welcome.newCard': 'Create the first card',
   'welcome.newSession': 'Open an ad-hoc session',
   'welcome.reopen': 'Show the welcome panel',
+  // The interface says what a control does; the README says why. This is the
+  // door to it — without one, shortening the interface loses the reason.
+  'env.docs': 'Documentation',
   // 一台沒有任何 agent CLI 的機器:卡片照開,attempt 需要 CLI ——
   // 界線照實說,不假裝一切就緒,也不擋人建卡。
   'welcome.noAgents':
@@ -319,11 +322,10 @@ export const en = {
   'inspector.confirmMerge': 'Really merge into {branch}?',
   'inspector.working': 'Working…',
   'inspector.frozenHint':
-    'This attempt has ended. Its changes are frozen and kept; nothing here can modify them anymore.',
+    'Ended. The changes are frozen and kept; nothing here can change them.',
   'inspector.openPr': 'Push + open PR',
   'inspector.discard': 'Discard',
-  'inspector.discardHint':
-    'Close this attempt and take the worktree back. Changes are frozen and kept.',
+  'inspector.discardHint': 'Take the worktree back — the diff is frozen and kept.',
   'inspector.noChanges': 'This attempt has not changed any files yet.',
   'inspector.noActivity': 'No activity yet. Status reporting only works with Claude Code.',
   'inspector.eventsFailed': 'Could not read the activity: {err}',
@@ -344,8 +346,7 @@ export const en = {
   'inspector.runHint': 'Run `{name}` in this attempt’s worktree, in its own terminal',
   'inspector.worktreeGroup': 'worktree',
   'inspector.shell': 'shell',
-  'inspector.shellHint':
-    'A shell of your own in this attempt’s worktree — run the tests, git log, anything, without typing into the agent’s terminal',
+  'inspector.shellHint': 'Your own shell in this attempt’s worktree',
   'inspector.queued': 'A message is holding for the end of this turn',
   'inspector.cancelQueued': 'Cancel it',
   'timeline.waited': '· held {for}',
@@ -379,11 +380,9 @@ export const en = {
   'env.messaging': 'Cross-session messaging',
   'env.messagingOff': 'needs Claude Code ≥ 2.1.224 (found {version})',
   'env.profiles': 'Agent profiles',
-  'env.profilesHint':
-    'A named way to launch an agent — the CLI plus the flags it always gets. Profiles appear in both launch dialogs.',
+  'env.profilesHint': 'A CLI plus the flags it always gets. Profiles appear in both launch dialogs.',
   'env.notifications': 'Notifications',
-  'notify.hint':
-    'Raised only while the window is elsewhere — in front of the app, the interface itself already says it.',
+  'notify.hint': 'Raised only while the window is elsewhere.',
   'notify.permission': 'Permission and folder-trust prompts',
   'notify.input': 'Waiting on your reply',
   'notify.done': 'A turn finished',
@@ -392,14 +391,18 @@ export const en = {
 
   /* ------------------- terminal screen reader mode --------------------- */
   'env.termSr': 'Terminal screen reader mode',
+  // Kept long on purpose: a trade the person is about to make, stated in
+  // full. What gets cut from this catalogue is teaching, never disclosure.
   'termSr.hint':
-    'Every terminal — permission prompts included — becomes readable to a screen reader. The trade is real: terminals give up GPU rendering for the accessible DOM renderer, so heavy output scrolls less smoothly.',
+    'Every terminal, permission prompts included, becomes readable to a screen reader. The trade: no GPU rendering, so heavy output scrolls less smoothly.',
   'termSr.toggle': 'Expose terminal text to screen readers',
 
   /* --------------------------- checkpoints ----------------------------- */
   'env.checkpoints': 'Checkpoints',
+  // Every clause here is a guarantee about what is touched and what is not.
+  // The "why a retreat is worth having" half moved to the README.
   'ckpt.hint':
-    'A snapshot of the worktree at the end of every turn — the retreat that makes letting an agent run affordable. Kept in private refs, deleted when the attempt ends; the agent’s own git state is never touched.',
+    'Snapshots the worktree at each turn’s end. Kept in private refs, deleted when the attempt ends; the agent’s own git state is never touched.',
   'ckpt.onStop': 'Snapshot when a turn ends (Claude Code sessions)',
   'inspector.ckpt': 'Checkpoint',
   'inspector.ckptHint': 'Snapshot this worktree now — any agent, any moment',
@@ -437,8 +440,7 @@ export const en = {
   'preview.note':
     'In the preview I am pointing at {component} ({file}:{line}) — the next feedback is about this element.',
   'ckpt.timelineHint': 'Every prompt row carries ↩ — restore the code to before that turn.',
-  'inspector.diffKeys':
-    'j/k walk the lines, n/p the files; on a file header e edits and v toggles viewed; Enter comments on the focused line',
+  'inspector.diffKeys': 'j/k lines · n/p files · e edit · v viewed · Enter comment',
   'ckpt.compare': 'Against',
   'ckpt.compareBase': 'Base — the whole attempt',
   'ckpt.compareN': 'Checkpoint #{n} · {time}',
@@ -476,8 +478,10 @@ export const en = {
   'keys.find': 'Find in the focused terminal (from inside it: Ctrl+Shift+F)',
   /* --------------------------- token account -------------------------- */
   'usage.line': 'context {ctx} · output {out}',
+  // Four measured numbers and where they came from — the disclosure is the
+  // point of the tooltip, so it stays; the essay around it went.
   'usage.tip':
-    'This conversation’s token account, read from its transcript at each turn’s end. Context {context} is the last request’s prompt — where the next turn starts from. Cumulative: {input} in · {output} out · {write} cache-written · {read} cache-read.',
+    'Read from the transcript at each turn’s end. Context {context} is the last request’s prompt. Cumulative: {input} in · {output} out · {write} cache-written · {read} cache-read.',
 
   /* ----------------------------- profiles ------------------------------ */
   'profile.namePlaceholder': 'opus, quiet claude, …',
@@ -532,8 +536,7 @@ export const zhTW: Record<MessageKey, string> = {
   /* -------------------------- new session ----------------------------- */
   'newSession.title': '新 session',
   'newSession.cwd': '工作目錄',
-  'newSession.cwdHint':
-    '等同於 {cd} 到這裡再開 agent —— 載入的 CLAUDE.md、.claude/ skills 與 .mcp.json 跟你在終端機做完全一樣。',
+  'newSession.cwdHint': '等同於 {cd} 到這裡再開 agent。',
   'newSession.args': '啟動參數（可留空）',
   'newSession.argsHint': '原封不動傳給 CLI，跟你自己在終端機打的一樣。',
   'newSession.submit': '開啟終端機',
@@ -545,28 +548,25 @@ export const zhTW: Record<MessageKey, string> = {
   'newTask.titleHint': '留白就用 prompt 的第一行。',
   'newTask.promptLabel': '要 agent 做什麼',
   'newTask.promptPlaceholder': '登入後畫面全白，console 沒有錯誤。先重現再修。',
-  'newTask.promptHint':
-    '不用寫 CLAUDE.md、skills 或 MCP 的事 —— worktree 裡會原生載入。開 attempt 時會補上分支與 base 的說明，而且送出前可以改。',
+  'newTask.promptHint': '開 attempt 時會補上分支與 base —— 送出前可以改。',
   'newTask.repo': 'Repo',
-  'newTask.repoHint':
-    '本機路徑；或 wsl://<distro>/<路徑> 指向 WSL 裡的 repo；或 ssh://<host>/<路徑> 指向 ~/.ssh/config 裡那台機器上的 repo。agent、git、worktree 全部在 repo 所在的地方執行。',
+  'newTask.repoHint': '本機路徑，或 wsl://<distro>/<路徑>，或 ssh://<host>/<路徑>。',
   'newTask.base': 'Base 分支',
-  'newTask.baseHint': '每個 attempt 從這裡開一個 worktree 與分支，diff 也以這裡為基準。',
+  'newTask.baseHint': 'attempt 從這裡開分支，diff 也以這裡為基準。',
   'newTask.created': '已建立卡片：「{title}」',
 
   /* -------------------------- start attempt --------------------------- */
   'attempt.startTitle': '開始 attempt — {title}',
   'attempt.agent': 'Agent',
   'attempt.firstPrompt': '首則 prompt',
-  'attempt.trustHint':
-    '送出後會開一個新的 worktree —— Claude Code 會先問你信不信任這個資料夾，卡片會亮起「⚠ 等你確認資料夾」。答完之後這則 prompt 就會送出。',
+  'attempt.trustHint': 'Claude Code 會先問你信不信任這個新資料夾，答完 prompt 才送出。',
   'attempt.unmeasuredHint':
     '{agent} 的參數慣例我們沒有實測過，所以不會自動送出 —— 在某個 CLI 代表「這是你的 prompt」的參數，在另一個可能代表「印出來然後結束」。session 照樣會開，把下面這段複製貼進去即可。',
   'attempt.copied': '已複製',
   'attempt.copyPrompt': '複製 prompt',
   'attempt.openNoPrompt': '開 session（不送 prompt）',
   'attempt.yoloHint':
-    '完全不再詢問權限 —— agent 全憑自己的判斷跑到底。風險被關在這張卡裡：attempt 只碰得到自己的 worktree 與分支，碰不到你的 checkout。',
+    '完全不再詢問權限 —— agent 全憑自己的判斷跑到底。圍籬是 worktree：這個 attempt 碰不到你的 checkout。',
 
   /* -------------------------- permission modes ------------------------- */
   'mode.normal': '照常詢問',
@@ -611,10 +611,9 @@ export const zhTW: Record<MessageKey, string> = {
   'keys.diff': 'J/K 逐行、N/P 逐檔；檔頭上 E 編輯、V 切換已看；Enter 對聚焦處動作',
   'keys.escape': '關閉打開的對話框',
   'keys.sheet': '這份清單',
-  'keys.shellNote':
-    '正在終端機裡打字？Ctrl+字母屬於 shell —— 加上 Shift（Ctrl+Shift+E），就像 Ctrl+Shift+C 是複製一樣。',
+  'keys.shellNote': '在終端機裡，Ctrl+字母屬於 shell —— app 的手勢要多按 Shift。',
   'attempt.modeLabel': '權限模式',
-  'attempt.acceptHint': '檔案編輯不再逐次詢問；其他動作照樣先問你。只會動到這個 attempt 自己的 worktree。',
+  'attempt.acceptHint': '檔案編輯不再逐次詢問；其他動作照樣先問你。',
   'splitter.hint': '拖曳調整比例；雙擊還原等分',
   'keys.gestures': '滑鼠與手勢',
   'gesture.pane': 'Pane 標頭',
@@ -695,7 +694,7 @@ export const zhTW: Record<MessageKey, string> = {
   'theme.sunset': '落日',
   'theme.custom': '自訂',
   'theme.customHint':
-    '六個顏色決定一個主題，中間的層次由此推導。下方的檢查會即時對照每一層文字與它實際所在的底色 —— 4.5 是值得守住的樓地板。',
+    '其餘層次由此推導。色片量的是每一階文字對它所在的底色 —— 4.5 是樓地板。',
   'theme.bg': '背景',
   'theme.fg': '文字',
   'theme.accent': '強調色',
@@ -759,6 +758,7 @@ export const zhTW: Record<MessageKey, string> = {
   'welcome.newCard': '開第一張卡',
   'welcome.newSession': '先開個臨時 session',
   'welcome.reopen': '顯示歡迎面板',
+  'env.docs': '說明文件',
   'welcome.noAgents':
     '這個 shell 的 PATH 上找不到任何 agent CLI。卡片現在就能開；要開始 attempt，需要先安裝並登入 claude、codex、gemini 或 aider。',
   'welcome.probeAgain': '重新偵測',
@@ -797,10 +797,10 @@ export const zhTW: Record<MessageKey, string> = {
   'inspector.confirmDiscard': '確定丟棄？',
   'inspector.confirmMerge': '確定合併回 {branch}？',
   'inspector.working': '處理中…',
-  'inspector.frozenHint': '這個 attempt 已結束。變更凍結保留，這裡不會再改動它。',
+  'inspector.frozenHint': '已結束。變更凍結保留，這裡不會再改動它。',
   'inspector.openPr': 'push + 開 PR',
   'inspector.discard': '丟棄',
-  'inspector.discardHint': '關掉這個 attempt 並收回 worktree。變更會凍結保留。',
+  'inspector.discardHint': '收回 worktree —— diff 會凍結保留。',
   'inspector.noChanges': '這個 attempt 還沒有改動任何檔案。',
   'inspector.noActivity': '還沒有活動。狀態回報只對 Claude Code 有效。',
   'inspector.eventsFailed': '讀取活動失敗：{err}',
@@ -821,8 +821,7 @@ export const zhTW: Record<MessageKey, string> = {
   'inspector.runHint': '在這個 attempt 的 worktree 裡執行 `{name}`，開自己的終端機',
   'inspector.worktreeGroup': 'worktree',
   'inspector.shell': 'shell',
-  'inspector.shellHint':
-    '在這個 attempt 的 worktree 開一個你自己的 shell —— 跑測試、git log 都行，不用打進 agent 的終端機',
+  'inspector.shellHint': '在這個 attempt 的 worktree 裡，你自己的 shell',
   'inspector.queued': '有一則訊息排在這輪結束後',
   'inspector.cancelQueued': '取消',
   'timeline.waited': '· 等了 {for}',
@@ -854,10 +853,9 @@ export const zhTW: Record<MessageKey, string> = {
   'env.messaging': '跨 session 互傳訊息',
   'env.messagingOff': '需要 Claude Code ≥ 2.1.224（目前 {version}）',
   'env.profiles': 'Agent 設定檔',
-  'env.profilesHint':
-    '具名的啟動方式 —— 哪個 CLI、加上它每次都帶的參數。設定檔會出現在兩個啟動對話框裡。',
+  'env.profilesHint': '哪個 CLI，加上它每次都帶的參數。兩個啟動對話框都看得到。',
   'env.notifications': '通知',
-  'notify.hint': '只在視窗不在前景時才發 —— 人在 app 前面時，畫面本身就會說。',
+  'notify.hint': '只在視窗不在前景時才發。',
   'notify.permission': '授權與資料夾信任',
   'notify.input': '等你回覆',
   'notify.done': '完成一輪',
@@ -867,13 +865,13 @@ export const zhTW: Record<MessageKey, string> = {
   /* ------------------- terminal screen reader mode --------------------- */
   'env.termSr': '終端機螢幕閱讀器模式',
   'termSr.hint':
-    '每個終端機 —— 包含授權提示 —— 都變得能被螢幕閱讀器讀到。代價照實說：終端機放棄 GPU 繪製、改用可存取的 DOM 繪製器，大量輸出時捲動會比較不順。',
+    '每個終端機（含授權提示）都變得能被螢幕閱讀器讀到。代價：放棄 GPU 繪製，大量輸出時捲動會比較不順。',
   'termSr.toggle': '把終端機文字提供給螢幕閱讀器',
 
   /* --------------------------- checkpoints ----------------------------- */
   'env.checkpoints': '檢查點',
   'ckpt.hint':
-    '每輪結束時快照一次 worktree —— 有便宜的退路，才敢放手讓 agent 跑。存在私有 ref 裡，attempt 結束即刪；agent 自己的 git 狀態一概不碰。',
+    '每輪結束時快照一次 worktree。存在私有 ref 裡，attempt 結束即刪；agent 自己的 git 狀態一概不碰。',
   'ckpt.onStop': '回合結束時自動快照（Claude Code session）',
   'inspector.ckpt': '檢查點',
   'inspector.ckptHint': '現在就快照這個 worktree —— 任何 agent、任何時刻',
@@ -910,7 +908,7 @@ export const zhTW: Record<MessageKey, string> = {
   'preview.note':
     '我在預覽裡指著 {component}（{file}:{line}）—— 接下來的回饋是關於這個元件。',
   'ckpt.timelineHint': '每個 prompt 列都有 ↩ —— 可把程式碼還原到那一輪之前。',
-  'inspector.diffKeys': 'j/k 走行、n/p 走檔；檔頭上 e 編輯、v 切換已看；Enter 對聚焦的那行留言',
+  'inspector.diffKeys': 'j/k 走行 · n/p 走檔 · e 編輯 · v 已看 · Enter 留言',
   'ckpt.compare': '比較對象',
   'ckpt.compareBase': 'Base —— 整個 attempt',
   'ckpt.compareN': '檢查點 #{n} · {time}',
@@ -948,7 +946,7 @@ export const zhTW: Record<MessageKey, string> = {
   /* --------------------------- token account -------------------------- */
   'usage.line': '語境 {ctx} · 輸出 {out}',
   'usage.tip':
-    '這場對話的 token 帳，每回合結束時從 transcript 讀一次。語境 {context} 是上一輪請求的 prompt 大小 —— 下一輪從這裡起跑。累計：輸入 {input}、輸出 {output}、快取寫入 {write}、快取讀取 {read}。',
+    '每回合結束時從 transcript 讀一次。語境 {context} 是上一輪請求的 prompt 大小。累計：輸入 {input}、輸出 {output}、快取寫入 {write}、快取讀取 {read}。',
 
   /* ----------------------------- profiles ------------------------------ */
   'profile.namePlaceholder': 'opus、安靜的 claude、…',
