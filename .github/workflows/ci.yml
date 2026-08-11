@@ -4,6 +4,40 @@ name: CI
 # platforms on every push to main and publishes them to the rolling `nightly`
 # prerelease — so the installers CI produces stay downloadable rather than being
 # built here and thrown away.
+#
+# ---------------------------------------------------------------------------
+# Why this runs on more than one operating system
+# ---------------------------------------------------------------------------
+#
+# Nearly every promise this app makes is a promise about somebody else's
+# machine: the login shell it borrows its environment from, the PATH walk that
+# finds `claude`, the pty it opens, the way a command line is armoured on its
+# way into a distro or across a wire. All of that is written once and behaves
+# differently in four places — and until this file said otherwise, all of it
+# was only ever compiled and run on Linux.
+#
+# The `cfg!(windows)` branch in `shell_env` is the sharpest example. It exists
+# because Windows spells the variable `Path`, an exact-name lookup found
+# nothing, and the machine could not see `claude` or anything else at all.
+# That bug shipped. The test written to stop it happening again asserts one
+# thing on Windows and another on Unix — and had never once executed the
+# Windows half.
+#
+# So the split below is by what each platform can honestly run, not by what
+# would look thorough:
+#
+#   * the unit tests run everywhere, because they are the platform branches
+#   * the integration tests run on Unix, because their harness writes shell
+#     stubs with a shebang and chmods them, and `pty.rs` proves its point by
+#     running `sh -c`
+#   * Windows compiles them instead, which catches the `#[cfg]` breakage that
+#     is the realistic failure mode there without pretending a bash stub runs
+#   * the UI suite runs on Linux and macOS, because ⌘ versus Ctrl is decided
+#     from `navigator.platform` and the mac half had never been exercised
+#
+# tmux is installed deliberately: without it the sessions-outlive-the-app
+# tests skip themselves, and a feature whose tests always skip is a feature
+# with no tests.
 on:
   push:
     branches: [main]
@@ -16,11 +50,23 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Rust backend. Runs on 22.04 to match the release build.
+  # Rust backend, on each operating system a user might be on.
   # ---------------------------------------------------------------------------
   rust:
-    name: Rust
-    runs-on: ubuntu-22.04
+    name: Rust · ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Every platform reports for itself. One red leg must not hide the
+      # others, because "which platforms disagree" is the whole question.
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 to match the release build.
+          - { name: linux, os: ubuntu-22.04, unix: true }
+          # The default shell here is zsh, not bash, so the login-shell probe
+          # takes a different path than it ever does on Linux.
+          - { name: macos, os: macos-latest, unix: true }
+          - { name: windows, os: windows-latest, unix: false }
     steps:
       - uses: actions/checkout@v7
 
@@ -37,8 +83,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+          key: ${{ matrix.name }}
 
       - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -54,34 +102,73 @@ jobs:
             libssl-dev \
             xdg-utils
 
-      # The crate's default features include `custom-protocol`, which embeds the
-      # frontend at compile time. Without ../ui/dist present, tauri-build fails
-      # before a single test runs.
-      - name: Build frontend
-        working-directory: ui
-        run: |
-          npm ci
-          npm run build
+      # Without tmux the tests for sessions that outlive the app skip
+      # themselves and say so on stderr, which reads as green. The feature is
+      # the reason tmux is a dependency at all; the tests for it should run.
+      - name: Install tmux
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y tmux
 
+      - name: Install tmux (macOS)
+        if: runner.os == 'macOS'
+        run: brew install tmux
+
+      # The SSH route is integration-tested against a real loopback sshd.
+      # Linux only: the macOS runner's sshd needs a system-level Remote Login
+      # toggle that a hosted runner will not give us, and a test that skips
+      # quietly on one platform is better than one that fails loudly there for
+      # a reason that has nothing to do with the code.
+      # Opting in here rather than on the test step: the gate is read with
+      # `is_err()`, so an expression that resolves to an empty string on the
+      # other platforms would still count as opted in, and macOS does ship an
+      # /usr/sbin/sshd for the test to then fail against.
       - name: Install sshd for the SSH host tests
-        run: sudo apt-get install -y openssh-server
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y openssh-server
+          echo "AGENTDESK_SSH_TEST=1" >> "$GITHUB_ENV"
 
+      # The crate's default features include `custom-protocol`, which embeds
+      # the frontend at compile time. Without ../ui/dist present, tauri-build
+      # fails before a single test runs.
+      - name: Build frontend
+        run: |
+          npm --prefix ui ci
+          npm --prefix ui run build
+
+      # Everything: the unit tests that are the platform branches themselves
+      # (the PATH walk with and without PATHEXT, the case-insensitive
+      # environment lookup, the WSL path translation, the endpoint file's
+      # permissions) and the integration tests over real git, real ptys, a
+      # real tmux and a real sshd.
       - name: Test
+        if: matrix.unix
         working-directory: src-tauri
-        # Tests that need the `claude` binary detect its absence and skip
-        # themselves; the git-backed worktree tests set up their own repos.
-        # AGENTDESK_SSH_TEST opts in the real-sshd integration tests, which
-        # run a loopback sshd of their own and clean up after themselves.
-        env:
-          AGENTDESK_SSH_TEST: "1"
         run: cargo test --locked
 
-      # Advisory only. The tree is not rustfmt-clean today, and reformatting it is
-      # a separate change from wiring up CI, so this reports drift without gating.
+      # Windows runs the half it honestly can. The harness writes
+      # `#!/bin/bash` stubs and chmods them, and pty.rs proves stdin is a tty
+      # by running `sh -c`, so the integration tests are compiled rather than
+      # run — which still catches the failure that actually happens here, a
+      # `#[cfg]` arm rotting because nobody ever built it.
+      - name: Unit tests
+        if: ${{ !matrix.unix }}
+        working-directory: src-tauri
+        run: cargo test --locked --lib
+
+      - name: Integration tests compile
+        if: ${{ !matrix.unix }}
+        working-directory: src-tauri
+        run: cargo build --locked --tests
+
+      # Advisory only. The tree is not rustfmt-clean today, and reformatting
+      # it is a separate change from wiring up CI, so this reports drift
+      # without gating. Linux only: three copies of the same advice is noise.
       - name: Lint (advisory)
+        if: runner.os == 'Linux'
         continue-on-error: true
+        working-directory: src-tauri
         run: |
-          cd src-tauri
           echo "::group::rustfmt"
           cargo fmt --all -- --check || echo "::warning::rustfmt reports drift"
           echo "::endgroup::"
@@ -93,8 +180,18 @@ jobs:
   # Frontend: typecheck, production build, and the Playwright suite.
   # ---------------------------------------------------------------------------
   ui:
-    name: UI
-    runs-on: ubuntu-latest
+    name: UI · ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux, os: ubuntu-latest, snapshots: true }
+          # ⌘ or Ctrl is decided from `navigator.platform`, and the whole
+          # keyboard contract — including the rule that a terminal keeps
+          # Ctrl+letter for the shell — turns on that one branch. It had
+          # never run with a Mac in front of it.
+          - { name: macos, os: macos-latest, snapshots: false }
     steps:
       - uses: actions/checkout@v7
 
@@ -117,23 +214,33 @@ jobs:
         working-directory: ui
         run: npx playwright install --with-deps chromium
 
-      # The suite drives the React app against a mocked Tauri bridge in Chromium,
-      # so it needs no native shell and no display server.
+      # The suite drives the React app against a mocked Tauri bridge in
+      # Chromium, so it needs no native shell and no display server.
       - name: End-to-end tests
+        if: matrix.snapshots
         working-directory: ui
         run: npm run test:e2e
+
+      # The six visual baselines are committed with a `-linux` suffix and were
+      # generated there. Comparing them against another platform's font
+      # rasterisation would fail for a reason that is not a bug, so the mac leg
+      # runs every assertion in those specs except the pixels.
+      - name: End-to-end tests (no baselines)
+        if: ${{ !matrix.snapshots }}
+        working-directory: ui
+        run: npx playwright test --ignore-snapshots
 
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.name }}
           path: ui/playwright-report/
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # Sidecar. Typecheck and bundle only — `npm run smoke` is deliberately excluded
-  # because it drives a real Claude Code session and needs credentials.
+  # Sidecar. Typecheck and bundle only — `npm run smoke` is deliberately
+  # excluded because it drives a real Claude Code session and needs credentials.
   # ---------------------------------------------------------------------------
   sidecar:
     name: Sidecar
