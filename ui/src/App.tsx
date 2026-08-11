@@ -110,6 +110,9 @@ export default function App() {
   const [toasts, setToasts] = useState<{ id: number; kind: 'error' | 'ok'; text: string }[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [showNewTask, setShowNewTask] = useState(false);
+  /** A goal typed into the palette, carried into the card dialog. Empty
+   *  when the dialog was opened the ordinary way. */
+  const [composed, setComposed] = useState('');
   /** The card whose start dialog is open. */
   const [starting, setStarting] = useState<Task | null>(null);
   /** 請看板聚焦這張卡：面板選了一張沒有終端機的卡、或剛建立一張新卡
@@ -1530,7 +1533,11 @@ export default function App() {
       {showNewTask && (
         <NewTaskDialog
           error={dialogError}
-          onCancel={() => setShowNewTask(false)}
+          goal={composed}
+          onCancel={() => {
+            setShowNewTask(false);
+            setComposed('');
+          }}
           onCreate={onCreateTask}
         />
       )}
@@ -1576,6 +1583,15 @@ export default function App() {
             setBoardFocusId(taskId);
           }}
           onRun={paletteRun}
+          // 打一句話就開卡:面板是唯一從任何地方都到得了的表面,所以也是
+          // 這張桌子從「想到一件事」到「有個 agent 在做」最短的一條路。
+          onCompose={(goal) => {
+            setShowPalette(false);
+            setDialogError(null);
+            setComposed(goal);
+            setView('board');
+            setShowNewTask(true);
+          }}
           onCancel={paletteCancel}
         />
       )}

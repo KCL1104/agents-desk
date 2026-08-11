@@ -165,6 +165,7 @@ export const en = {
   'palette.cards': 'Cards',
   'palette.actions': 'Actions',
   'palette.empty': 'Nothing matches',
+  'palette.compose': 'Make this a card',
 
   /* ------------------------------ tabs -------------------------------- */
   'tabs.rename': '{name} — double-click to rename',
@@ -681,6 +682,7 @@ export const zhTW: Record<MessageKey, string> = {
   'palette.cards': '卡片',
   'palette.actions': '動作',
   'palette.empty': '沒有符合的',
+  'palette.compose': '把這句話開成一張卡',
 
   /* ------------------------------ tabs -------------------------------- */
   'tabs.rename': '{name} — 雙擊改名',

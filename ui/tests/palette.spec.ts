@@ -129,3 +129,30 @@ test.describe('the command palette', () => {
     await expect(page.getByTestId('shortcuts')).toBeVisible();
   });
 });
+
+/**
+ * 從「想到一件事」到「有個 agent 在做」最短的一條路。
+ *
+ * 面板是唯一從任何地方都到得了的表面,所以它也該收下一句話當目標,
+ * 而不是只當搜尋框 —— 第一次接觸的門檻,審查判定是這個 app 最弱的地方。
+ */
+test.describe('a goal typed into the palette', () => {
+  test('a long enough sentence can become a card, prefilled', async ({ page }) => {
+    await boot(page);
+    await page.keyboard.press('ControlOrMeta+K');
+    await page.getByTestId('palette-input').fill('把登入頁在 Safari 的白畫面查清楚並修好');
+
+    // 搜尋不到任何東西,但那句話本身是一個選項。
+    await page.getByTestId('pal-compose').click();
+    await expect(page.getByTestId('task-prompt')).toHaveValue(
+      '把登入頁在 Safari 的白畫面查清楚並修好',
+    );
+  });
+
+  test('a short query stays a search — two words are not a goal', async ({ page }) => {
+    await boot(page);
+    await page.keyboard.press('ControlOrMeta+K');
+    await page.getByTestId('palette-input').fill('登入');
+    await expect(page.getByTestId('pal-compose')).toHaveCount(0);
+  });
+});

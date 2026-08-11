@@ -135,8 +135,8 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
     // (c) 腳下已是看板,新卡對話框開著。
     await expect(page.getByTestId('board')).toBeVisible();
     await expect(page.locator('.modal h2')).toHaveText('新卡片');
-    // (a) 開門即可打字:焦點在標題欄。
-    await expect(page.getByTestId('task-title')).toBeFocused();
+    // (a) 開門即可打字:焦點在目標欄 —— 標題是選填而且由 prompt 推導。
+    await expect(page.getByTestId('task-prompt')).toBeFocused();
     // (b) 開一扇對話框不是要朗讀的事。
     await expect(live).toHaveText('');
   });

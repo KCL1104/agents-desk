@@ -163,8 +163,8 @@ test('J5 · the zh-TW journey, end to end', async ({ page }) => {
     // 空 backlog 的字就是按鈕：長 CTA 本人開對話框。
     await page.getByTestId('board-cta').click();
     await expect(page.locator('.modal h2')).toHaveText(zh('newTask.title'));
-    // (a) 開門即可打字；(b) 開對話框保持安靜。
-    await expect(page.getByTestId('task-title')).toBeFocused();
+    // (a) 開門即可打字（焦點在目標欄）；(b) 開對話框保持安靜。
+    await expect(page.getByTestId('task-prompt')).toBeFocused();
     await expect(live).toHaveText('');
 
     // 把表單填到「一顆 Enter 就會送出」的狀態 —— 守門測試的前提：

@@ -13,6 +13,9 @@ interface Props {
   onCreate: (title: string, prompt: string, repoPath: string, baseBranch: string) => void | Promise<void>;
   /** Set when the core refused the repository or the base branch. */
   error: string | null;
+  /** A goal typed into the palette, taken as the prompt. Empty when the
+   *  dialog was opened the ordinary way. */
+  goal?: string;
 }
 
 const RECENT_KEY = 'agentdesk.recentRepos';
@@ -37,10 +40,10 @@ export function rememberRepo(path: string) {
  * when someone first tries to run it, so a card that can never produce an
  * attempt cannot sit on the board looking like work.
  */
-export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
+export function NewTaskDialog({ onCancel, onCreate, error, goal = '' }: Props) {
   const t = useT();
   const [title, setTitle] = useState('');
-  const [prompt, setPrompt] = useState('');
+  const [prompt, setPrompt] = useState(goal);
   const [repo, setRepo] = useState(recents()[0] ?? '');
   /** Which world the repo path lives in — defaulted from the bottom-left
       picker, overridable per card. The scheme never rides the keyboard:
@@ -132,6 +135,20 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
     <Modal onCancel={onCancel} dirty={dirty} onSubmit={submit}>
         <h2>{t('newTask.title')}</h2>
 
+        {/* 目標第一。原本第一眼看到的是「標題(選填)」—— 一個可以留白的
+            欄位站在最前面,等於一開口就要人做一個不必做的決定。 */}
+        <label>{t('newTask.promptLabel')}</label>
+        <textarea
+          rows={5}
+          autoFocus
+          value={prompt}
+          data-testid="task-prompt"
+          // 多行欄位裡 Enter 是換行;送出的 ⌘/Ctrl+Enter 由 Modal 綁在整個
+          // 對話框上 —— 按鈕上印著那顆和弦,它就必須處處為真。
+          onChange={(e) => setPrompt(e.target.value)}
+        />
+        <p className="muted small">{t('newTask.promptHint')}</p>
+
         <label>{t('newTask.titleLabel')}</label>
         <input
           value={title}
@@ -140,17 +157,6 @@ export function NewTaskDialog({ onCancel, onCreate, error }: Props) {
           onKeyDown={submitOnEnter}
         />
         <p className="muted small">{t('newTask.titleHint')}</p>
-
-        <label>{t('newTask.promptLabel')}</label>
-        <textarea
-          rows={5}
-          value={prompt}
-          data-testid="task-prompt"
-          // 多行欄位裡 Enter 是換行;送出的 ⌘/Ctrl+Enter 由 Modal 綁在整個
-          // 對話框上 —— 按鈕上印著那顆和弦,它就必須處處為真。
-          onChange={(e) => setPrompt(e.target.value)}
-        />
-        <p className="muted small">{t('newTask.promptHint')}</p>
 
         <WorldSelect value={world} onChange={setWorld} testid="task-world" />
 

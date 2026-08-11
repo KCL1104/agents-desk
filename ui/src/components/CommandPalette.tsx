@@ -19,6 +19,9 @@ interface Props {
    *  丟在看板上、焦點留在 <body>。 */
   onOpenBoard: (taskId: string) => void;
   onRun: (id: ActionId) => void;
+  /** Take the typed text as a goal and open the card dialog around it —
+   *  the shortest path this desk has from a thought to an agent. */
+  onCompose: (goal: string) => void;
   onCancel: () => void;
 }
 
@@ -26,7 +29,9 @@ interface Props {
 type Item =
   | { kind: 'session'; session: SessionMeta }
   | { kind: 'task'; task: Task }
-  | { kind: 'action'; def: ActionDef };
+  | { kind: 'action'; def: ActionDef }
+  /** The typed text, taken as a goal rather than as a search. */
+  | { kind: 'compose'; goal: string };
 
 interface Group {
   label: string;
@@ -56,6 +61,7 @@ export function CommandPalette({
   onOpenSession,
   onOpenBoard,
   onRun,
+  onCompose,
   onCancel,
 }: Props) {
   const t = useT();
@@ -78,6 +84,8 @@ export function CommandPalette({
       const live = liveStateOf(item.task, sessions);
       if (live.kind === 'session') onOpenSession(live.session.id);
       else onOpenBoard(item.task.id);
+    } else if (item.kind === 'compose') {
+      onCompose(item.goal);
     } else {
       onRun(item.def.id);
     }
@@ -171,6 +179,8 @@ function itemKey(item: Item): string {
       return `pal-task-${item.task.id}`;
     case 'action':
       return `pal-action-${item.def.id}`;
+    case 'compose':
+      return 'pal-compose';
   }
 }
 
@@ -192,6 +202,11 @@ function ItemRow({ item, t }: { item: Item; t: TFn }) {
         <span className="palette-sub mono">{repoName(item.task.repo_path)}</span>
       </>
     );
+  }
+  if (item.kind === 'compose') {
+    // The goal itself is the row: what you would be making is the whole
+    // decision, and a label saying "new card" beside it would say less.
+    return <span className="palette-title">{item.goal}</span>;
   }
   return (
     <>
@@ -269,6 +284,17 @@ function buildGroups(
       label: t('palette.actions'),
       items: actions.map((def) => ({ kind: 'action', def })),
     });
+  }
+
+  // The typed text, read as a goal instead of as a query. Last, because a
+  // search that found something is what most typing means — but present,
+  // because the cheapest first move on this desk should be describing an
+  // outcome, and the palette is the only surface reachable from anywhere.
+  // Deliberately not offered for a word or two: "auth" is a search, and
+  // making every stray query look like a card would be noise.
+  const goal = query.trim();
+  if (goal.length >= 12) {
+    groups.push({ label: t('palette.compose'), items: [{ kind: 'compose', goal }] });
   }
 
   return groups;

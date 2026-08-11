@@ -58,8 +58,10 @@ test('J1 · the first run, end to end', async ({ page }) => {
     // (c) 腳下已經是看板(第一次的預設落點),新卡對話框開著。
     await expect(page.getByTestId('board')).toBeVisible();
     await expect(page.locator('.modal h2')).toHaveText('新卡片');
-    // (a) 焦點落在標題欄 —— 對話框開門即可打字。
-    await expect(page.getByTestId('task-title')).toBeFocused();
+    // (a) 焦點落在目標欄 —— 對話框開門即可打字,而且打的是那件要做的事。
+    //     標題是選填而且由 prompt 第一行推導,把它排在最前面等於一開口
+    //     就要人做一個不必做的決定。
+    await expect(page.getByTestId('task-prompt')).toBeFocused();
     // (b) 開一扇對話框不是要朗讀的事:通道保持安靜。
     await expect(live).toHaveText('');
   });
