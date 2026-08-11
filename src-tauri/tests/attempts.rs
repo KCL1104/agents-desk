@@ -144,6 +144,28 @@ impl Harness {
             }
         }
 
+        // One PATH for the harness and for the world behind the stand-in
+        // wsl.exe, so the two cannot disagree about what exists. They did:
+        // the world's list was written out by hand and left out
+        // `/usr/local/bin`, so on macOS the distro had no tmux while the
+        // machine did, and the tests that check a session is held in there
+        // failed for a reason that had nothing to do with the app.
+        //
+        // The tail ends with wherever this machine's tmux actually is, found
+        // rather than guessed. Every hold test gates on "does this machine
+        // have tmux"; without this the answer to that and the answer the app
+        // gets can differ, which is the exact class of bug `shell_env` exists
+        // for — a Homebrew tmux is on one PATH and not the other.
+        let mut path = format!("{}:/usr/bin:/bin:/usr/local/bin", bin.display());
+        if let Some(dir) = std::env::var("PATH")
+            .unwrap_or_default()
+            .split(':')
+            .find(|d| !d.is_empty() && Path::new(d).join("tmux").is_file())
+        {
+            path.push(':');
+            path.push_str(dir);
+        }
+
         // A stand-in for wsl.exe: the "distro" shares this machine's
         // filesystem, and its login environment is pinned to the harness's
         // own — stubs first on PATH, HOME at the harness root — so the whole
@@ -152,7 +174,7 @@ impl Harness {
         // quirks; that is what a Windows machine validates.
         let fake_wsl = format!(
             r#"#!/bin/bash
-export PATH="{bin}:/usr/bin:/bin"
+export PATH="{path}"
 export HOME="{home}"
 export AGENTDESK_STUB_LOG="{logs}"
 while [ $# -gt 0 ]; do
@@ -165,7 +187,7 @@ while [ $# -gt 0 ]; do
 done
 exec "$@"
 "#,
-            bin = bin.display(),
+            path = path,
             home = root.display(),
             logs = logs.display(),
         );
@@ -178,10 +200,7 @@ exec "$@"
         }
 
         let mut vars: HashMap<String, String> = HashMap::new();
-        vars.insert(
-            "PATH".into(),
-            format!("{}:/usr/bin:/bin:/usr/local/bin", bin.display()),
-        );
+        vars.insert("PATH".into(), path.clone());
         vars.insert("AGENTDESK_STUB_LOG".into(), logs.to_string_lossy().into());
         vars.insert("HOME".into(), root.to_string_lossy().into());
         let env = ShellEnv {
