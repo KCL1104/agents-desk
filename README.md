@@ -350,6 +350,21 @@ the worktree is taken back. Every script sees `$MAROL_ROOT_PATH`, the
 repository the worktree was opened from, where untracked files worth copying
 (`.env`) live.
 
+On a card that spans several repositories, each repository's own config
+applies, **in its own checkout**:
+
+- the `setup` scripts chain into one run, in card order, each in its own
+  checkout and each with `$MAROL_ROOT_PATH` pointing at its own repository —
+  so a `cp "$MAROL_ROOT_PATH/.env" .env` lands the client's env in the client
+  and the service's in the service. `set -e` still stops the whole chain at
+  the first failure, in front of you. (The agent's own process inherits the
+  *first* repository's `$MAROL_ROOT_PATH`.)
+- `run` entries are named for the checkout they belong to — `web:dev`,
+  `api:dev` — because two buttons both saying `dev` are two nobody can tell
+  apart, and each starts in that checkout, where its own `package.json` is
+- `archive` runs per repository, each in its own checkout, before that
+  checkout goes back
+
 Scripts run through `sh -c`, written exactly like a line in a terminal. A
 malformed file fails the attempt start in the dialog rather than silently
 doing nothing, because a config that quietly did nothing would be
@@ -947,7 +962,8 @@ This follows the position `store.rs` already took with `completed`: `Stop` only
 means this turn ended, not that the work is done, so no hook can move a card.
 
 Worktrees live in `~/.marol/worktrees/<repo>-<hash>/<slug>-<n>/`, **not
-next to the repo**. A repo's parent directory is very often a repo itself (an
+next to the repo** — and for a card spanning several repositories that last
+directory is the workspace, with one checkout inside it per repository. A repo's parent directory is very often a repo itself (an
 umbrella workspace), and a worktree placed there becomes a nested repo, at
 which point every tool that walks upwards looking for `.git` starts giving
 different answers. Nor under application support: this is a working directory
@@ -976,12 +992,23 @@ Three more measured, undocumented facts (pinned by
    someone else's environment.
 
 The first prompt injects only what the agent cannot discover for itself: that
-this is a worktree opened for this card, which branch it is on, which base it
-came from, and that commits go on this branch. CLAUDE.md, skills and MCP all
-load natively and are not repeated. The template lives at
+this is ground opened for this card, which branch it is on, which base it came
+from, and that commits go on this branch. CLAUDE.md, skills and MCP all load
+natively and are not repeated. The template lives at
 `<data_dir>/prompt-template.md`, can be edited, and upgrades do not overwrite
 it. The start-attempt dialog shows the full prompt and lets you edit it, and
 what is recorded is what was sent.
+
+`{repos}` is the placeholder that says what ground: one worktree and its
+branch, or — for a card spanning several repositories — that this is a
+workspace, and which folder below it is which. Because the template is never
+overwritten, **every template already on disk was written before a card could
+span two and none of them mentions `{repos}`**. So it follows the rule
+`{prompt}` already had: when a card really does span several and the rendered
+text never said so, the paragraph is added anyway. An agent told it is in a
+worktree while standing in a workspace goes looking for the files where it
+woke up and finds folders. A card with one repository has nothing added — that
+template's own wording was already true about its situation.
 
 An unmeasured CLI does not get the prompt sent automatically. Its argument
 conventions are unknown, and a flag meaning "here is your prompt" in one can
@@ -1135,6 +1162,18 @@ is a usable starting point.
 - A held session reads as **Running, not reporting** until its agent's next
   hook event lands, which for an agent sitting idle at a prompt may be until
   you type something
+- **A merge across several repositories is not atomic, and does not pretend to
+  be.** Every refusal is asked of every repository before any of them is
+  touched, which turns the common case — one side left uncommitted — back into
+  a plain refusal that changes nothing. But once the first has landed the
+  second can still fail on a conflict, and then what happened is reported:
+  which ones went in, the attempt left open, the worktrees left standing. Git
+  has no cross-repository transaction, and inventing the appearance of one
+  would be worse than saying so
+- Every repository on one card has to be in the same world. The attempt's
+  checkouts share a directory and a directory cannot straddle the boundary
+  into a WSL distro or an SSH host, so a card mixing them describes a
+  workspace that cannot exist and is refused when the card is made
 - A world whose every card was deleted keeps its sockets until you open a card
   there again. Reaching an SSH host opens a connection to it, and opening one
   nobody asked for to tidy up is worse than a few files in a directory of ours

@@ -84,6 +84,33 @@ test.describe('dialogs behave like dialogs', () => {
     await expect(page.locator('.modal')).toHaveCount(0);
   });
 
+  /**
+   * The new-card dialog opens fully visible, at the size the app's own window
+   * opens at. It is the one dialog everybody meets first, and one that opens
+   * already scrolled hides its own primary button behind a gesture.
+   *
+   * Pinned because it has been lost once: giving the card its second
+   * repository added a button on its own row plus a paragraph explaining the
+   * feature, and those two together pushed a dialog that had never scrolled
+   * 96px past its own ceiling. The fix was to move the affordance onto the
+   * label of the thing it repeats and let the README carry the explanation —
+   * but nothing would have said so, because scrolling is not an error.
+   */
+  test('the new-card dialog opens without scrolling', async ({ page }) => {
+    // The app's own default window, which is what a first run gets.
+    await page.setViewportSize({ width: 1280, height: 820 });
+    await boot(page);
+    await toBoard(page);
+    await page.getByRole('button', { name: '新增卡片', exact: true }).click();
+    await expect(page.getByTestId('task-prompt')).toBeVisible();
+
+    const modal = page.locator('.modal');
+    const over = await modal.evaluate((el) => el.scrollHeight - el.clientHeight);
+    expect(over, 'the new-card dialog opens already scrolled').toBe(0);
+    // Including the button the whole dialog exists to reach.
+    await expect(page.getByTestId('task-create')).toBeInViewport();
+  });
+
   test('a clean backdrop click still closes', async ({ page }) => {
     await boot(page);
     await toBoard(page);

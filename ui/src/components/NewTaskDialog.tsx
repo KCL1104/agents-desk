@@ -234,6 +234,12 @@ export function NewTaskDialog({ onCancel, onCreate, error, goal = '' }: Props) {
     if (typeof picked === 'string') setRepo(picked);
   };
 
+  const addExtra = () =>
+    setExtras((cur) => [
+      ...cur,
+      { key: (nextKey.current += 1), repo: '', branch: 'main', edited: false },
+    ]);
+
   const editExtra = (i: number, patch: Partial<Extra>) =>
     setExtras((cur) => cur.map((e, n) => (n === i ? { ...e, ...patch } : e)));
 
@@ -301,7 +307,19 @@ export function NewTaskDialog({ onCancel, onCreate, error, goal = '' }: Props) {
 
         <WorldSelect value={world} onChange={setWorld} testid="task-world" />
 
-        <label>{t('newTask.repo')}</label>
+        {/* The affordance rides the label of the thing it repeats, exactly
+            as each extra row's own remove does. It used to sit on a row of
+            its own under the base field, with a paragraph explaining the
+            feature — and those two together turned a dialog that had always
+            opened fully visible into one that opens already scrolled. What
+            the feature is belongs in the README; what this button does is
+            legible from the row it makes. */}
+        <div className="row between">
+          <label>{t('newTask.repo')}</label>
+          <button className="quiet" data-testid="task-add-repo" onClick={addExtra}>
+            ＋ {t('newTask.addRepo')}
+          </button>
+        </div>
         <div className="row">
           <input
             className="mono"
@@ -359,20 +377,6 @@ export function NewTaskDialog({ onCancel, onCreate, error, goal = '' }: Props) {
             onSubmit={submit}
           />
         ))}
-
-        <button
-          className="chip add-repo"
-          data-testid="task-add-repo"
-          onClick={() =>
-            setExtras((cur) => [
-              ...cur,
-              { key: (nextKey.current += 1), repo: '', branch: 'main', edited: false },
-            ])
-          }
-        >
-          ＋ {t('newTask.addRepo')}
-        </button>
-        <p className="muted small">{t('newTask.addRepoHint')}</p>
 
         {error && <FriendlyError text={error} testid="task-error" />}
 

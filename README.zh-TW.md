@@ -297,6 +297,19 @@ SSH host 是透過反向隧道打回那個 listener 的，所以它還有第二�
 `$MAROL_ROOT_PATH`，也就是 worktree 是從哪個 repo 開出來的，`.env` 這類
 沒進版控但值得複製的檔案就在那。
 
+一張卡跨多個 repo 時，每個 repo 自己的設定檔都算數，**各在各自的 checkout
+裡**：
+
+- `setup` 依卡片上的順序串成一支腳本，每一段在自己的 checkout 裡跑，
+  `$MAROL_ROOT_PATH` 也逐段指向自己那個 repo —— 所以
+  `cp "$MAROL_ROOT_PATH/.env" .env` 會把客戶端的 env 放進客戶端、後端的放進
+  後端。`set -e` 照樣讓整串停在第一個失敗，停在你面前。（agent 自己的行程
+  繼承的是**第一個** repo 的 `$MAROL_ROOT_PATH`。）
+- `run` 的名字帶上它屬於哪個 checkout —— `web:dev`、`api:dev` —— 因為兩顆都
+  寫著 `dev` 的按鈕是兩顆沒人分得出來的按鈕；按下去也起在那個 checkout 裡，
+  它自己的 `package.json` 所在的地方
+- `archive` 逐 repo 執行，各在各自的 checkout 裡，在那棵 checkout 被收回之前
+
 Script 都走 `sh -c`，寫法跟在終端機打一行一樣。檔案格式錯誤會讓 attempt 在
 對話框裡就開不起來，而不是安靜地什麼都不做：一個安靜失效的設定檔，跟一個
 壞掉的 worktree 從外面看是分不出來的。（目前僅支援 POSIX 平台。）
@@ -785,7 +798,8 @@ distro 或 SSH host 的那道門），以及**同一個 repo 不能出現兩次*
 做完了，所以沒有任何 hook 能搬動卡片。
 
 worktree 放在 `~/.marol/worktrees/<repo>-<hash>/<slug>-<n>/`，**不放在
-repo 旁邊**。repo 的上層目錄很常自己也是一個 repo（傘狀 workspace），worktree
+repo 旁邊** —— 跨多個 repo 的卡，最後那層目錄就是工作區，底下每個 repo 各
+一棵 checkout。repo 的上層目錄很常自己也是一個 repo（傘狀 workspace），worktree
 放進去就變成巢狀 repo，所有往上找 `.git` 的工具都會開始給出不一樣的答案。也
 不放在 application support 底下：這是人會想 `cd` 進去、用編輯器打開、在裡面
 跑 build 的工作目錄，「打得出來的路徑」比「整齊」值錢。
@@ -807,10 +821,19 @@ repo 旁邊**。repo 的上層目錄很常自己也是一個 repo（傘狀 works
    `CLAUDE_CODE_USE_BEDROCK` 這種真的使用者設定，用前綴一律砍會把別人的環境
    弄壞。
 
-首則 prompt 只注入 agent 自己發現不了的事：這是為這張卡開的 worktree、分支是
-哪個、從哪個 base 開出、commit 在這個分支上。CLAUDE.md、skills、MCP 都會原生
-載入，不重複塞。模板在 `<data_dir>/prompt-template.md`，可以改，升級不會蓋掉。
+首則 prompt 只注入 agent 自己發現不了的事：這是為這張卡開的地、分支是哪個、
+從哪個 base 開出、commit 在這個分支上。CLAUDE.md、skills、MCP 都會原生載入，
+不重複塞。模板在 `<data_dir>/prompt-template.md`，可以改，升級不會蓋掉。
 開 attempt 的對話框顯示完整 prompt 且可編輯，送出什麼就記什麼。
+
+`{repos}` 就是說「是什麼樣的地」的那個 placeholder：一棵 worktree 和它的分支，
+或者 —— 跨多個 repo 的卡 —— 這是一個工作區，底下哪個資料夾是哪個 repo。因為
+模板永遠不會被覆蓋，**今天硬碟上每一份模板都是在「一張卡一個 repo」的世界寫
+的，沒有一份提到 `{repos}`**。所以它沿用 `{prompt}` 早就有的那條規則：這張卡
+真的跨了多個 repo、而算出來的文字從頭到尾沒說，那段就自動補上去。一個站在工
+作區裡、卻被告知自己在一棵 worktree 裡的 agent，會去它醒來的目錄找檔案，然後
+找到一堆資料夾。只有一個 repo 的卡什麼都不加 —— 那份模板自己的句子，對它的處
+境已經句句為真。
 
 沒實測過的 agent 不自動送 prompt：那些 CLI 的參數慣例不知道，而在某個 CLI
 裡代表「這是你的 prompt」的參數，在另一個裡可能代表「印出來然後結束」。
@@ -940,6 +963,14 @@ SDK 版本的程式碼收在 `src-tauri/parked/`（Node 那半在 `sidecar/`）�
 - 被扛住的 session 在它的 agent 送出下一個 hook 事件之前都顯示為
   **執行中，尚未回報**；如果那個 agent 正停在提示符前等人，那可能要等到你
   打字為止
+- **跨多個 repo 的合併不是原子的，也不假裝是。** 每一條拒絕條件都在任何一個
+  repo 被動到之前就先問完全部，這讓常見的那種情況 —— 有一邊忘了 commit ——
+  變回一個什麼都沒改變的當面拒絕。但第一個落地之後，第二個仍可能因為衝突失
+  敗；那時候會如實報告：哪些已經進去了、attempt 不關、worktree 不收。git 沒
+  有跨 repo 的交易，而假造出一個交易的外觀，比把話說清楚更糟
+- 同一張卡上的 repo 必須在同一個世界。attempt 的 worktree 共用一個資料夾，
+  而資料夾跨不過通往 WSL distro 或 SSH host 的那道門，所以混世界的卡描述的
+  是一個不可能存在的工作區，建卡時就會被拒絕
 - 一個所有卡片都被刪掉的世界，它的 socket 會留到你下次在那裡開卡片為止。
   連上一台 SSH host 就是對它開一條連線，為了整理而開一條沒人要求的連線，
   比在我們自己的目錄裡留幾個檔案更糟
