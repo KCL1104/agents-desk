@@ -4,9 +4,14 @@
 //! skills, and MCP servers all load natively from the worktree, so repeating
 //! any of that here would only crowd out the part that matters. What it
 //! cannot discover is the situation Marol has just put it in — that this
-//! directory is a worktree opened for one card, which branch it is on, and
-//! that the branch is what the diff and the merge will read. That, and the
+//! directory is ground opened for one card, which branch it is on, and that
+//! the branch is what the diff and the merge will read. That, and the
 //! person's actual request, is all this template carries.
+//!
+//! When the card spans several repositories there is one more thing it cannot
+//! discover, and it is the load-bearing one: that the directory it woke up in
+//! is not a checkout but a workspace, and which of the folders below it are
+//! the repositories it is allowed to change.
 //!
 //! It is written to disk on first run and never overwritten, so editing it is
 //! a supported thing to do rather than a change that gets reverted on upgrade.
@@ -19,21 +24,76 @@ use std::path::{Path, PathBuf};
 /// makes it drift mid-session.
 pub const DEFAULT_TEMPLATE: &str = r#"[Marol 任務] {title}
 
-你在一個專為這張卡開的 git worktree：分支 {branch}，從 {base_branch} @ {base_sha_short} 開出。
-這個 worktree 只屬於這張卡，不要切換分支，也不要動 {base_branch}。
-完成時請把變更 commit 在這個分支上 —— Marol 用它來做 diff 檢視與合併回 base。
+{repos}
+完成時請把變更 commit 在這些分支上 —— Marol 用它們來做 diff 檢視與合併回 base。
 
 ---
 
 {prompt}
 "#;
 
+/// One checkout, as the opening message names it.
+pub struct TreeVar<'a> {
+    /// Its folder inside the workspace; empty when the session's own
+    /// directory *is* the checkout.
+    pub dir: &'a str,
+    pub repo: &'a str,
+    pub base_branch: &'a str,
+    pub base_sha: &'a str,
+}
+
 pub struct Vars<'a> {
     pub title: &'a str,
     pub branch: &'a str,
+    /// The first checkout's base — what `{base_branch}` has always meant.
     pub base_branch: &'a str,
+    /// The first checkout's base commit, likewise.
     pub base_sha: &'a str,
+    /// Every checkout this attempt opened, first one first. Never empty.
+    pub trees: &'a [TreeVar<'a>],
     pub prompt: &'a str,
+}
+
+/// The paragraph that says what ground the agent is standing on.
+///
+/// Two shapes, because the two situations are genuinely different and a
+/// sentence that covered both would describe neither. One repository is the
+/// wording this app has always sent. Several is a workspace, and then the
+/// folders have to be named — a diff path reads `web/api.ts`, and the agent
+/// has to know that `web/` is a checkout it may change rather than a
+/// directory it happened to be shown.
+pub fn repos_block(vars: &Vars) -> String {
+    let short = |sha: &str| -> String { sha.chars().take(8).collect() };
+    if vars.trees.len() <= 1 {
+        let t = vars.trees.first();
+        let base_branch = t.map(|t| t.base_branch).unwrap_or(vars.base_branch);
+        let base_sha = t.map(|t| t.base_sha).unwrap_or(vars.base_sha);
+        return format!(
+            "你在一個專為這張卡開的 git worktree：分支 {}，從 {base_branch} @ {} 開出。\n\
+             這個 worktree 只屬於這張卡，不要切換分支，也不要動 {base_branch}。",
+            vars.branch,
+            short(base_sha),
+        );
+    }
+    let mut out = format!(
+        "你在一個專為這張卡開的工作區。底下每個資料夾各是一個 repo 的 git worktree，\
+         全部都在同一個分支 {}：\n",
+        vars.branch
+    );
+    for t in vars.trees {
+        out.push_str(&format!(
+            "- {}/ ← {}，從 {} @ {} 開出\n",
+            t.dir,
+            t.repo,
+            t.base_branch,
+            short(t.base_sha),
+        ));
+    }
+    out.push_str(
+        "這些 worktree 都只屬於這張卡，不要切換分支，也不要動它們的 base。\n\
+         工作區本身不是 repo：要改哪個 repo，就進它自己的資料夾。",
+    );
+    out
 }
 
 /// How a given CLI is told what to do.
@@ -124,6 +184,7 @@ pub fn render(template: &str, vars: &Vars) -> String {
     let short: String = vars.base_sha.chars().take(8).collect();
     let mut out = String::with_capacity(template.len() + vars.prompt.len());
     let mut saw_prompt = false;
+    let mut saw_repos = false;
     let mut rest = template;
 
     while let Some(open) = rest.find('{') {
@@ -132,15 +193,21 @@ pub fn render(template: &str, vars: &Vars) -> String {
         let Some(close) = after.find('}') else {
             // An unmatched brace is just a brace.
             out.push_str(&rest[open..]);
-            return finish(out, saw_prompt, vars.prompt);
+            return finish(out, saw_prompt, saw_repos, vars);
         };
         let key = &after[..close];
+        let block;
         let value = match key {
             "title" => Some(vars.title),
             "branch" => Some(vars.branch),
             "base_branch" => Some(vars.base_branch),
             "base_sha" => Some(vars.base_sha),
             "base_sha_short" => Some(short.as_str()),
+            "repos" => {
+                saw_repos = true;
+                block = repos_block(vars);
+                Some(block.as_str())
+            }
             "prompt" => {
                 saw_prompt = true;
                 Some(vars.prompt)
@@ -161,20 +228,36 @@ pub fn render(template: &str, vars: &Vars) -> String {
         rest = &after[close + 1..];
     }
     out.push_str(rest);
-    finish(out, saw_prompt, vars.prompt)
+    finish(out, saw_prompt, saw_repos, vars)
 }
 
-/// The template is editable, so it can be edited into one that never mentions
-/// `{prompt}`. Dropping the person's actual request on the floor is the one
-/// failure here that would be invisible from the outside — the agent would
-/// start, look healthy, and work on nothing.
-fn finish(mut out: String, saw_prompt: bool, prompt: &str) -> String {
-    if !saw_prompt && !prompt.is_empty() {
+/// The two things a template can be edited into not saying, said anyway.
+///
+/// `{prompt}` is the older of the pair: dropping the person's actual request
+/// on the floor is the one failure here that would be invisible from the
+/// outside — the agent would start, look healthy, and work on nothing.
+///
+/// `{repos}` is the same shape of problem and reaches further, because every
+/// template written before a card could span two repositories is a template
+/// that does not mention it. Such a template describes one worktree to an
+/// agent standing in a workspace, and the agent would go looking for the
+/// files in the directory it woke up in and find folders instead. So when a
+/// card really does span several, the paragraph is appended rather than
+/// assumed — and when it spans one, nothing is added, because that template's
+/// own wording already said everything true about the situation.
+fn finish(mut out: String, saw_prompt: bool, saw_repos: bool, vars: &Vars) -> String {
+    if !saw_repos && vars.trees.len() > 1 {
+        let mut head = repos_block(vars);
+        head.push_str("\n\n");
+        head.push_str(&out);
+        out = head;
+    }
+    if !saw_prompt && !vars.prompt.is_empty() {
         if !out.ends_with('\n') {
             out.push('\n');
         }
         out.push_str("\n---\n\n");
-        out.push_str(prompt);
+        out.push_str(vars.prompt);
     }
     out
 }
@@ -183,13 +266,45 @@ fn finish(mut out: String, saw_prompt: bool, prompt: &str) -> String {
 mod tests {
     use super::*;
 
+    /// The ordinary card: one repository, so `trees` is the single checkout
+    /// that sits at the session's own directory and wears no folder name.
+    const ONE: &[TreeVar] = &[TreeVar {
+        dir: "",
+        repo: "/Users/me/code/web",
+        base_branch: "main",
+        base_sha: "2bc172c2deadbeefcafe",
+    }];
+
+    const TWO: &[TreeVar] = &[
+        TreeVar {
+            dir: "web",
+            repo: "/Users/me/code/web",
+            base_branch: "main",
+            base_sha: "2bc172c2deadbeefcafe",
+        },
+        TreeVar {
+            dir: "api",
+            repo: "/Users/me/code/api",
+            base_branch: "develop",
+            base_sha: "91ab00ff1234",
+        },
+    ];
+
     fn vars<'a>(prompt: &'a str) -> Vars<'a> {
         Vars {
             title: "修好登入",
             branch: "marol/login-2",
             base_branch: "main",
             base_sha: "2bc172c2deadbeefcafe",
+            trees: ONE,
             prompt,
+        }
+    }
+
+    fn spanning<'a>(prompt: &'a str) -> Vars<'a> {
+        Vars {
+            trees: TWO,
+            ..vars(prompt)
         }
     }
 
@@ -253,10 +368,59 @@ mod tests {
                 branch: "b",
                 base_branch: "main",
                 base_sha: "abc",
+                trees: &[],
                 prompt: "p",
             },
         );
         assert!(out.starts_with("abc"));
+    }
+
+    /// A card spanning two repositories has to say so, and say which folder
+    /// is which. The agent wakes up in a workspace; without this it would
+    /// look for the files where it is standing and find directories.
+    #[test]
+    fn a_card_spanning_two_repositories_names_every_checkout() {
+        let out = render(DEFAULT_TEMPLATE, &spanning("讓兩邊的欄位對得起來"));
+        assert!(out.contains("web/"), "the first checkout is unnamed:\n{out}");
+        assert!(out.contains("api/"), "the second checkout is unnamed:\n{out}");
+        assert!(out.contains("/Users/me/code/api"), "{out}");
+        // Each carries its own base — they are not required to match.
+        assert!(out.contains("main"), "{out}");
+        assert!(out.contains("develop"), "{out}");
+        assert!(out.contains("91ab00ff"), "{out}");
+        // One branch across both, which is what the review reads.
+        assert_eq!(out.matches("marol/login-2").count(), 1, "{out}");
+    }
+
+    /// The one-repository wording is unchanged, down to not mentioning
+    /// folders at all: that session's directory *is* the checkout, and
+    /// telling it to `cd` somewhere would be telling it something false.
+    #[test]
+    fn one_repository_still_gets_the_sentence_it_always_got() {
+        let out = render(DEFAULT_TEMPLATE, &vars("登入頁在 Safari 會白畫面"));
+        assert!(out.contains("git worktree"), "{out}");
+        assert!(!out.contains("工作區"), "a single checkout was called a workspace:\n{out}");
+        assert!(!out.contains("- /"), "a single checkout was listed as a folder:\n{out}");
+    }
+
+    /// The `{prompt}` rule, applied to the newer placeholder. Every template
+    /// on disk today was written before a card could span two repositories,
+    /// and none of them mentions `{repos}` — so a card that does span two
+    /// gets the paragraph anyway, rather than an agent told about one
+    /// worktree while standing in a workspace.
+    #[test]
+    fn a_template_that_never_heard_of_workspaces_still_describes_one() {
+        let old = "[Marol 任務] {title}\n\n你在一個 worktree：分支 {branch}。\n\n---\n\n{prompt}\n";
+        let out = render(old, &spanning("兩邊一起改"));
+        assert!(out.contains("web/") && out.contains("api/"), "{out}");
+        // The person's own template is still there, and still first-class.
+        assert!(out.contains("[Marol 任務] 修好登入"), "{out}");
+        assert!(out.contains("兩邊一起改"), "{out}");
+
+        // And a one-repository card gets nothing added: that template's own
+        // wording already said everything true about its situation.
+        let single = render(old, &vars("一邊改"));
+        assert!(!single.contains("工作區"), "{single}");
     }
 
     /// Only the CLIs in the conventions table are sent a prompt. Guessing at

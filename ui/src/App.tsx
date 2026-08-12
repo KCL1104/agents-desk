@@ -3,8 +3,17 @@ import type * as React from 'react';
 import { api, subscribe } from './api';
 import { useT } from './i18n';
 import { Icon } from './components/Icon';
-import { needsYou } from './types';
-import type { BootStatus, Lifecycle, PermissionMode, SessionMeta, Status, Tab, Task } from './types';
+import { needsYou, taskRepos } from './types';
+import type {
+  BootStatus,
+  Lifecycle,
+  PermissionMode,
+  SessionMeta,
+  Status,
+  Tab,
+  Task,
+  TaskRepo,
+} from './types';
 import { STATUS_KEY } from './sections';
 import { followupSendable, type ReviewComment } from './review';
 import { PreviewPanel } from './components/PreviewPanel';
@@ -856,11 +865,19 @@ export default function App() {
   /* ------------------------------ board ----------------------------- */
 
   const onCreateTask = useCallback(
-    async (title: string, prompt: string, repoPath: string, baseBranch: string) => {
+    async (
+      title: string,
+      prompt: string,
+      repoPath: string,
+      baseBranch: string,
+      extraRepos: TaskRepo[] = [],
+    ) => {
       setDialogError(null);
       try {
-        const id = await api.createTask(title, prompt, repoPath, baseBranch);
-        rememberRepo(repoPath);
+        const id = await api.createTask(title, prompt, repoPath, baseBranch, extraRepos);
+        // Every repository the card named, so a second card spanning the same
+        // pair finds both in the recents.
+        for (const r of [repoPath, ...extraRepos.map((e) => e.repo_path)]) rememberRepo(r);
         setShowNewTask(false);
         // 建立成功不是流程的終點,是下一步(開 attempt)的起點:切到看板、
         // 焦點落在新卡片上 —— Enter 進門、Tab 就是 Start。對話框關掉時
@@ -1430,6 +1447,14 @@ export default function App() {
             baseBranch={
               tasks.find((t) => t.id === inspected.task_id)?.base_branch ?? 'base'
             }
+            // Every base the merge will actually write to. One for nearly
+            // every card; a card spanning a service and its client merges
+            // into both, and a button naming only the first would be naming
+            // half of what the second click does.
+            bases={(() => {
+              const task = tasks.find((t) => t.id === inspected.task_id);
+              return task ? taskRepos(task).map((r) => r.base_branch) : [];
+            })()}
             comments={reviewDrafts[inspected.id] ?? []}
             onComments={(c) => setReviewDrafts((d) => ({ ...d, [inspected.id]: c }))}
             viewed={reviewViewed[inspected.id] ?? []}

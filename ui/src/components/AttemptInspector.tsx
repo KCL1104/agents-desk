@@ -27,8 +27,14 @@ interface Props {
   /** The attempt's live session, if any — for what only a session knows:
       whether the agent is mid-turn, and whether a message is queued. */
   session: SessionMeta | null;
-  /** Named so the merge button can say where the work is going. */
+  /** The first repo's base, named wherever one branch is the subject: the
+      ahead/behind hints, and what the next action suggests. */
   baseBranch: string;
+  /** Every base the merge will actually write to, first repo first. One for
+      nearly every card; a card spanning a service and its client merges into
+      both, and a button naming only the first would name half of what the
+      second click does. */
+  bases: string[];
   /** The feedback batch in progress, held by the App keyed per attempt.
       The drawer unmounts on ⌘I and follows focus between panes — if the
       batch lived here, either act would destroy typed feedback, which is
@@ -107,6 +113,7 @@ export function AttemptInspector({
   attempt,
   session,
   baseBranch,
+  bases,
   comments,
   onComments,
   viewed,
@@ -691,6 +698,7 @@ export function AttemptInspector({
         <Finish
           attempt={attempt}
           baseBranch={baseBranch}
+          bases={bases}
           next={stat ? nextAction(stat) : null}
           behind={stat?.behind ?? 0}
           onDone={onDone}
@@ -898,6 +906,7 @@ function Review({
 function Finish({
   attempt,
   baseBranch,
+  bases,
   next,
   behind,
   onDone,
@@ -905,6 +914,7 @@ function Finish({
 }: {
   attempt: Attempt;
   baseBranch: string;
+  bases: string[];
   /** The merge path's own checks, run ahead of the click — what would
       refuse (uncommitted work), what would risk (a base that moved), or
       that the way is clear. */
@@ -916,16 +926,25 @@ function Finish({
   const t = useT();
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const [prUrl, setPrUrl] = useState<string | null>(null);
+  /** One per repository the card spans — a pull request belongs to a
+      repository, so a card spanning two produces two. The core returns them
+      newline-separated, in the order the card names them. */
+  const [prUrls, setPrUrls] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
+
+  // What the merge writes to, said in full. Deduplicated because two repos
+  // very often share a base name, and "main、main" names nothing extra.
+  const target = [...new Set(bases.length > 0 ? bases : [baseBranch])].join('、');
 
   const run = (what: string, fn: () => Promise<unknown>) => () => {
     setBusy(what);
     setProblem(null);
     void fn()
       .then((r) => {
-        if (what === 'pr' && typeof r === 'string') setPrUrl(r);
-        if (what === 'merge') onMerged?.(baseBranch);
+        if (what === 'pr' && typeof r === 'string') {
+          setPrUrls(r.split('\n').filter((u) => u.trim() !== ''));
+        }
+        if (what === 'merge') onMerged?.(target);
         if (what === 'merge' || what === 'discard') onDone();
       })
       // Every refusal here is one that would otherwise lose work quietly —
@@ -956,30 +975,40 @@ function Finish({
       {problem && <FriendlyError text={problem} testid="finish-error" />}
       {/* The PR is the whole product of this path; its URL cannot be dead
           text in a 460px drawer. A real link that opens the browser, and a
-          copy for wherever the review conversation actually happens. */}
-      {prUrl && (
-        <p className="mono small pr-url" data-testid="pr-url">
+          copy for wherever the review conversation actually happens.
+          One row per repository the card spans — a pull request belongs to a
+          repository, so these are several links and never one joined string.
+          The copy button takes all of them, because the message somebody is
+          about to write mentions both. */}
+      {prUrls.map((url, i) => (
+        <p
+          className="mono small pr-url"
+          key={url}
+          data-testid={i === 0 ? 'pr-url' : `pr-url-${i + 1}`}
+        >
           <a
-            href={prUrl}
+            href={url}
             onClick={(e) => {
               e.preventDefault();
-              void api.openExternal(prUrl);
+              void api.openExternal(url);
             }}
           >
-            {prUrl}
+            {url}
           </a>
-          <button
-            className="chip"
-            data-testid="pr-copy"
-            onClick={() => {
-              void navigator.clipboard?.writeText(prUrl);
-              setCopied(true);
-            }}
-          >
-            {copied ? t('attempt.copied') : t('inspector.copyUrl')}
-          </button>
+          {i === 0 && (
+            <button
+              className="chip"
+              data-testid="pr-copy"
+              onClick={() => {
+                void navigator.clipboard?.writeText(prUrls.join('\n'));
+                setCopied(true);
+              }}
+            >
+              {copied ? t('attempt.copied') : t('inspector.copyUrl')}
+            </button>
+          )}
         </p>
-      )}
+      ))}
       <div className="row">
         <button
           className={merge.armed ? 'confirm-arm' : 'primary'}
@@ -990,8 +1019,8 @@ function Finish({
           {busy === 'merge'
             ? t('inspector.working')
             : merge.armed
-              ? t('inspector.confirmMerge', { branch: baseBranch })
-              : t('inspector.mergeInto', { branch: baseBranch })}
+              ? t('inspector.confirmMerge', { branch: target })
+              : t('inspector.mergeInto', { branch: target })}
         </button>
         <button
           disabled={busy !== null}
@@ -1617,11 +1646,15 @@ function Knows({ cwd }: { cwd: string }) {
         return (
           <div key={scope}>
             <h4 className="knows-head">{t(label)}</h4>
+            {/* A card spanning two repos has two `CLAUDE.md`, and they are
+                two different files. The checkout each belongs to rides in
+                front of the name, so the rows read as what they are rather
+                than as a duplicate — and so the test ids stay distinct. */}
             {rows.map((d) => (
               <div className={`knows-row${d.exists ? '' : ' absent'}`} key={d.path}>
                 <button
                   className="knows-name mono"
-                  data-testid={`knows-${d.name}`}
+                  data-testid={`knows-${d.dir === '' ? d.name : `${d.dir}/${d.name}`}`}
                   // Only what is there can be opened; the rest is a path to
                   // write to, and offering to open nothing would be a lie
                   // dressed as a button.
@@ -1629,7 +1662,7 @@ function Knows({ cwd }: { cwd: string }) {
                   title={d.path}
                   onClick={() => void api.openPath(d.path)}
                 >
-                  {d.name}
+                  {d.dir === '' ? d.name : `${d.dir}/${d.name}`}
                 </button>
                 <span className="knows-agent">{d.agent === 'shared' ? t('knows.shared') : d.agent}</span>
                 {!d.exists && <span className="knows-absent">{t('knows.absent')}</span>}

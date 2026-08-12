@@ -21,7 +21,7 @@ use crate::pty::{self as pty, PtyRegistry, PtySink};
 use crate::shell_env::{self, ShellEnv};
 use crate::store::{
     Lifecycle, Outcome, PermissionMode, Profile, Store, StoredAttempt, StoredSession, StoredTab,
-    StoredTask,
+    StoredTask, StoredTree, TaskRepo,
 };
 use crate::worktree::{self, Worktrees};
 
@@ -466,6 +466,14 @@ pub struct AgentDoc {
     pub agent: &'static str,
     /// `rules` or `skill`.
     pub kind: &'static str,
+    /// Which checkout this belongs to, for a session standing in a workspace
+    /// that holds several. Empty when there is only one — and for everything
+    /// `global`, which belongs to the machine rather than to a checkout.
+    ///
+    /// Without it a card spanning two repositories lists `CLAUDE.md` twice
+    /// with nothing to tell the rows apart, which reads as a duplicate rather
+    /// than as the two different files it is.
+    pub dir: String,
     pub name: String,
     pub path: String,
     pub exists: bool,
@@ -540,12 +548,67 @@ impl Versions {
     }
 }
 
-/// A setup script waiting to wrap a launch. See `Core::launch`.
+/// One repository's setup script, waiting to wrap a launch. See
+/// `Core::launch`.
 struct SetupWrap {
     script: String,
+    /// Where the script runs, relative to the session's own directory: empty
+    /// for a one-repository attempt, whose directory *is* the checkout.
+    dir: String,
     /// The repository the worktree was opened from — where untracked files
     /// worth copying (`.env`) live. Exposed as `MAROL_ROOT_PATH`.
     root_path: String,
+}
+
+/// Every setup script an attempt has to run before its agent starts, in
+/// checkout order.
+///
+/// A card spanning a service and its client spans two `npm install`s, and
+/// running only the first would start the agent in a workspace half of which
+/// does not build. They are chained into one script rather than run
+/// separately so the whole of it stays in front of the person, in the
+/// session's own scrollback, exactly as one always was.
+struct Setup {
+    steps: Vec<SetupWrap>,
+    /// The card's first repository — what the agent's own process inherits as
+    /// `MAROL_ROOT_PATH`. Carried separately from the steps because the first
+    /// repository need not have a setup script at all, and taking it from the
+    /// first *step* would silently point the variable at the second
+    /// repository whenever the first had nothing to run.
+    root_path: String,
+}
+
+impl Setup {
+    /// One `sh` script for the lot: each step in its own checkout, and — with
+    /// `set -e` in front — the first failure stops the run there rather than
+    /// letting a later step paper over it.
+    ///
+    /// `MAROL_ROOT_PATH` is re-exported per step, because it names *that*
+    /// repository: a script copying `$MAROL_ROOT_PATH/.env` must land the
+    /// client's env in the client and the service's in the service.
+    fn script(&self) -> String {
+        let mut out = String::new();
+        for step in &self.steps {
+            if step.dir.is_empty() {
+                out.push_str(&format!(
+                    "export MAROL_ROOT_PATH={0} AGENTDESK_ROOT_PATH={0}\n{1}\n",
+                    host::sh_quote(&step.root_path),
+                    step.script
+                ));
+            } else {
+                // A subshell, so a step's `cd` cannot leak into the next one
+                // and run the service's setup inside the client.
+                out.push_str(&format!(
+                    "(cd {} && export MAROL_ROOT_PATH={1} AGENTDESK_ROOT_PATH={1}\n{2}\n)\n",
+                    host::sh_quote(&step.dir),
+                    host::sh_quote(&step.root_path),
+                    step.script
+                ));
+            }
+        }
+        out
+    }
+
 }
 
 /// A file path the editable diff may touch: relative, and inside the
@@ -563,6 +626,28 @@ fn ensure_worktree_relative(path: &str) -> Result<()> {
         return Err(anyhow!("`{path}` is not a path inside the worktree"));
     }
     Ok(())
+}
+
+/// A run script's name as the drawer shows it: bare when the attempt has one
+/// checkout, `<checkout>:<name>` when it has several. Two repositories with a
+/// `dev` each would otherwise be two buttons saying the same word.
+fn qualified_script(dir: &str, name: &str) -> String {
+    if dir.is_empty() {
+        name.to_string()
+    } else {
+        format!("{dir}:{name}")
+    }
+}
+
+/// The inverse: what this checkout would call the script the drawer pressed,
+/// or `None` when the name belongs to a different one.
+fn bare_script(dir: &str, qualified: &str) -> Option<String> {
+    if dir.is_empty() {
+        return Some(qualified.to_string());
+    }
+    qualified
+        .strip_prefix(&format!("{dir}:"))
+        .map(str::to_string)
 }
 
 /// A port nothing is listening on right now, for `MAROL_PORT`.
@@ -1478,42 +1563,107 @@ impl Core {
 
     /// Make a card.
     ///
-    /// The repository is checked here rather than when someone first tries to
-    /// run the card, so a card that can never produce an attempt cannot be
+    /// Every repository is checked here rather than when someone first tries
+    /// to run the card, so a card that can never produce an attempt cannot be
     /// created in the first place. Ad-hoc sessions are subject to none of
     /// this — they are just a directory.
+    ///
+    /// A card may span several repositories, under two refusals that are not
+    /// tidiness. **One world**: the attempt's checkouts share a directory, and
+    /// a directory cannot straddle the boundary between this machine and a WSL
+    /// distro or an SSH host — a card mixing them describes a workspace that
+    /// cannot exist. **No repetition**: two checkouts of one repository in one
+    /// workspace would be two worktrees of the same branch, which git refuses
+    /// anyway and which nothing downstream could tell apart.
     pub fn create_task(
         &self,
         title: String,
         prompt: String,
         repo_path: String,
         base_branch: String,
+        extra_repos: Vec<TaskRepo>,
     ) -> Result<String> {
-        let (loc, he) = self.located(&repo_path)?;
-        self.worktrees
-            .check_repo(&he.hr(&self.env), &loc.path, &base_branch)?;
-
-        let id = uuid::Uuid::new_v4().to_string();
-        let position = self
-            .store
-            .list_tasks()
-            .unwrap_or_default()
-            .iter()
-            .filter(|t| t.lifecycle == Lifecycle::Backlog)
-            .count() as i64;
-
-        self.store.upsert_task(&StoredTask {
-            id: id.clone(),
+        let task = StoredTask {
+            id: uuid::Uuid::new_v4().to_string(),
             title,
             prompt,
             repo_path,
             base_branch,
+            extra_repos,
             lifecycle: Lifecycle::Backlog,
-            position,
+            position: self
+                .store
+                .list_tasks()
+                .unwrap_or_default()
+                .iter()
+                .filter(|t| t.lifecycle == Lifecycle::Backlog)
+                .count() as i64,
             created_at: now_ms(),
-        })?;
+        };
+
+        let repos = task.repos();
+        let mut seen: HashMap<String, ()> = HashMap::new();
+        let first_host = host::locate(&repos[0].repo_path)?.host;
+        for r in &repos {
+            let (loc, he) = self.located(&r.repo_path)?;
+            if loc.host != first_host {
+                return Err(anyhow!(
+                    "一張卡上的 repo 必須在同一個世界：{} 和 {} 不在。\
+                     一個 attempt 的所有 worktree 共用一個資料夾，資料夾跨不過那道門。",
+                    repos[0].repo_path,
+                    r.repo_path
+                ));
+            }
+            if seen.insert(loc.path.clone(), ()).is_some() {
+                return Err(anyhow!("{} 在這張卡上出現了兩次", r.repo_path));
+            }
+            self.worktrees
+                .check_repo(&he.hr(&self.env), &loc.path, &r.base_branch)?;
+        }
+
+        let id = task.id.clone();
+        self.store.upsert_task(&task)?;
         self.emit_tasks();
         Ok(id)
+    }
+
+    /// Every repository a card spans, located and paired with its base — the
+    /// shape the worktree layer opens an attempt from.
+    fn repo_specs(&self, task: &StoredTask) -> Result<Vec<worktree::RepoSpec>> {
+        task.repos()
+            .into_iter()
+            .map(|r| {
+                Ok(worktree::RepoSpec {
+                    repo: host::locate(&r.repo_path)?.path,
+                    base_branch: r.base_branch,
+                })
+            })
+            .collect()
+    }
+
+    /// An attempt's checkouts, first repository first.
+    ///
+    /// Attempts opened before a card could span two have no rows of their
+    /// own: their single checkout *is* the attempt's own columns, and it is
+    /// synthesised here rather than backfilled into a table on somebody's
+    /// behalf. Everything downstream iterates this and never asks how many
+    /// there are.
+    fn trees(&self, attempt: &StoredAttempt) -> Result<Vec<StoredTree>> {
+        let rows = self.store.list_trees(&attempt.id)?;
+        if !rows.is_empty() {
+            return Ok(rows);
+        }
+        let task = self.task(&attempt.task_id)?;
+        Ok(vec![StoredTree {
+            attempt_id: attempt.id.clone(),
+            position: 0,
+            repo_path: task.repo_path,
+            base_branch: task.base_branch,
+            dir: String::new(),
+            worktree_path: attempt.worktree_path.clone(),
+            branch: attempt.branch.clone(),
+            base_sha: attempt.base_sha.clone(),
+        }])
     }
 
     /// Move a card, or reorder it within its column.
@@ -1793,25 +1943,33 @@ impl Core {
         rows: u16,
     ) -> Result<OpenedAttempt> {
         let task = self.task(task_id)?;
-        let (loc, he) = self.located(&task.repo_path)?;
+        // Every repository on a card is in one world — refused at creation —
+        // so one host answers for the whole attempt.
+        let (_, he) = self.located(&task.repo_path)?;
+        let specs = self.repo_specs(&task)?;
         let seq = self.store.next_attempt_seq(task_id)?;
         let slug = worktree::slug(&task.title, &task.id);
 
         let wt = self.worktrees.create(
             &he.hr(&self.env),
             &he.worktree_root,
-            &loc.path,
-            &task.base_branch,
+            &specs,
             &slug,
             seq,
         )?;
 
-        // From here on a failure has a worktree to give back.
-        let opened = self.finish_opening(&task, agent, first_prompt, mode, &loc, &he, &wt, cols, rows);
+        // From here on a failure has worktrees to give back — all of them,
+        // and the workspace above them.
+        let opened = self.finish_opening(&task, agent, first_prompt, mode, &he, &wt, cols, rows);
         if opened.is_err() {
-            let _ = self
-                .worktrees
-                .remove(&he.hr(&self.env), &loc.path, &wt.path);
+            for tree in &wt.trees {
+                let _ = self
+                    .worktrees
+                    .remove(&he.hr(&self.env), &tree.repo, &tree.path);
+            }
+            if wt.trees.len() > 1 {
+                let _ = self.worktrees.remove_root(&he.hr(&self.env), &wt.root);
+            }
         }
         let opened = opened?;
 
@@ -1828,7 +1986,6 @@ impl Core {
         agent: String,
         first_prompt: Option<String>,
         mode: PermissionMode,
-        loc: &host::Located,
         he: &HostEnv,
         wt: &worktree::OpenedWorktree,
         cols: u16,
@@ -1840,27 +1997,33 @@ impl Core {
         let (agent, profile_args) = self.resolve_launcher(&agent);
         let attempt_id = uuid::Uuid::new_v4().to_string();
         // Stored in the app's path space, so every later reader knows which
-        // host to ask; inside the host it is `wt.path` plain.
-        let cwd = host::stored(&he.host, &wt.path);
+        // host to ask; inside the host it is `wt.root` plain.
+        let cwd = host::stored(&he.host, &wt.root);
 
         let text = match first_prompt {
             Some(edited) => edited,
             None => self.render_prompt(task, Some(wt))?,
         };
 
-        // The repository's own word on how a worktree becomes runnable. A
+        // Each repository's own word on how its checkout becomes runnable. A
         // malformed file fails the start here, in the dialog, rather than
-        // producing a worktree that is mysteriously not set up.
-        let setup = self
-            .repo_config(&he, &loc.path)?
-            .unwrap_or_default()
-            .setup
-            .map(|script| SetupWrap {
-                script,
-                // The path scripts see is the host's own: `$MAROL_ROOT_PATH`
-                // is for `cp`, and `cp` runs inside.
-                root_path: loc.path.clone(),
-            });
+        // producing a workspace that is mysteriously not set up.
+        let mut steps = Vec::new();
+        for tree in &wt.trees {
+            if let Some(script) = self.repo_config(he, &tree.repo)?.unwrap_or_default().setup {
+                steps.push(SetupWrap {
+                    script,
+                    dir: tree.dir.clone(),
+                    // The path scripts see is the host's own: `$MAROL_ROOT_PATH`
+                    // is for `cp`, and `cp` runs inside.
+                    root_path: tree.repo.clone(),
+                });
+            }
+        }
+        let setup = (!steps.is_empty()).then(|| Setup {
+            steps,
+            root_path: wt.first().repo.clone(),
+        });
 
         let delivery = prompt::delivery_for(&agent);
         let positional = match delivery {
@@ -1954,13 +2117,33 @@ impl Core {
             agent,
             worktree_path: cwd.clone(),
             branch: wt.branch.clone(),
-            base_sha: wt.base_sha.clone(),
+            base_sha: wt.first().base_sha.clone(),
             mode,
             outcome: None,
             frozen_diff: None,
             created_at: at,
             parked_at: None,
         })?;
+        // Every checkout, including the only one a single-repository attempt
+        // has: what the rest of the core iterates has to exist for all of
+        // them, or the ordinary case would take a different road through
+        // every function that touches a worktree.
+        self.store.insert_trees(
+            &wt.trees
+                .iter()
+                .enumerate()
+                .map(|(i, t)| StoredTree {
+                    attempt_id: attempt_id.clone(),
+                    position: i as i64,
+                    repo_path: host::stored(&he.host, &t.repo),
+                    base_branch: t.base_branch.clone(),
+                    dir: t.dir.clone(),
+                    worktree_path: host::stored(&he.host, &t.path),
+                    branch: t.branch.clone(),
+                    base_sha: t.base_sha.clone(),
+                })
+                .collect::<Vec<_>>(),
+        )?;
 
         self.persist(&meta);
 
@@ -2095,31 +2278,14 @@ impl Core {
     }
 
     fn close_attempt(&self, attempt: &StoredAttempt, outcome: Outcome) -> Result<()> {
-        let task = self.task(&attempt.task_id).ok();
         let worktree = attempt.worktree_path.clone();
-        let situated = self.located(&worktree).ok();
+        let trees = self.trees(attempt).unwrap_or_default();
 
         // Best effort: a worktree that has already been deleted by hand must
-        // not stop the attempt from being closed out. A parked attempt has
-        // no worktree by design — its frozen diff is base against the shelf
-        // checkpoint, read straight from the object store.
-        let diff = if attempt.parked_at.is_some() {
-            task.as_ref().and_then(|t| {
-                let (repo_loc, he) = self.located(&t.repo_path).ok()?;
-                let hr = he.hr(&self.env);
-                let cps = self.worktrees.checkpoints(&hr, &repo_loc.path, &attempt.id).ok()?;
-                let last = cps.last()?;
-                self.worktrees
-                    .diff_range(&hr, &repo_loc.path, &attempt.base_sha, &last.sha)
-                    .ok()
-            })
-        } else {
-            situated.as_ref().and_then(|(loc, he)| {
-                self.worktrees
-                    .diff(&he.hr(&self.env), &loc.path, &attempt.base_sha)
-                    .ok()
-            })
-        };
+        // not stop the attempt from being closed out. The whole attempt's
+        // diff, checkout by checkout — the same text the drawer was showing,
+        // so what is frozen is what was reviewed.
+        let diff = self.attempt_diff_from(&attempt.id, None).ok();
 
         self.store
             .finish_attempt(&attempt.id, outcome, diff.as_deref())?;
@@ -2151,8 +2317,16 @@ impl Core {
             self.sessions.lock().unwrap().remove(&id);
         }
 
-        if let (Some(task), Some((wt_loc, he))) = (task, situated) {
-            let repo_loc = host::locate(&task.repo_path)?;
+        // The first checkout that would not come back, kept to raise once
+        // every other one has had its turn.
+        let mut failed: Option<anyhow::Error> = None;
+        for tree in &trees {
+            let (Ok((repo_loc, he)), Ok(wt_loc)) = (
+                self.located(&tree.repo_path),
+                host::locate(&tree.worktree_path),
+            ) else {
+                continue;
+            };
             let hr = he.hr(&self.env);
             // The frozen diff is the record from here on; the snapshots go
             // with the attempt. Best effort, and against the main checkout —
@@ -2179,9 +2353,37 @@ impl Core {
                     Err(e) => eprintln!("[core] archive script skipped: {e:#}"),
                 }
             }
-            self.worktrees.remove(&hr, &repo_loc.path, &wt_loc.path)?;
+            // One checkout that will not come back must not strand the
+            // others. The attempt is already finished in the database by
+            // now, so a `?` here would leave the rest of the workspace on
+            // disk with nothing left pointing at it — and no way to ask for
+            // it back. Say which one, take the rest.
+            if let Err(e) = self.worktrees.remove(&hr, &repo_loc.path, &wt_loc.path) {
+                eprintln!(
+                    "[core] worktree {} not given back: {e:#}",
+                    tree.worktree_path
+                );
+                failed = failed.or(Some(e));
+            }
         }
-        Ok(())
+
+        // The workspace above them, once they are all gone. Only ever the
+        // empty shell a multi-repository attempt left behind: `remove_dir`
+        // refuses a directory still holding anything, and one still holding
+        // something is somebody's to look at rather than ours to delete.
+        if trees.len() > 1 {
+            if let Ok((loc, he)) = self.located(&worktree) {
+                if let Err(e) = self.worktrees.remove_root(&he.hr(&self.env), &loc.path) {
+                    eprintln!("[core] workspace {worktree} left standing: {e:#}");
+                }
+            }
+        }
+        // Raised last, so it reports a checkout nobody could take back rather
+        // than hiding the ones that were.
+        match failed {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 
     pub fn attempt_events(&self, attempt_id: &str) -> Result<Vec<crate::store::AttemptEvent>> {
@@ -2257,21 +2459,26 @@ impl Core {
         (name.to_string(), Vec::new())
     }
 
-    /// The names of the repository's run scripts, for the drawer's buttons.
+    /// The names of the repositories' run scripts, for the drawer's buttons.
+    ///
+    /// A card spanning a service and its client has two dev servers, and both
+    /// are things to watch. Their names are prefixed with the checkout they
+    /// belong to — `web:dev` — because `dev` twice on one drawer is two
+    /// buttons nobody can tell apart, and because that prefix is what
+    /// `run_script` reads back to know which one was pressed.
     pub fn list_run_scripts(&self, attempt_id: &str) -> Result<Vec<String>> {
         let attempt = self
             .store
             .get_attempt(attempt_id)?
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
-        let task = self.task(&attempt.task_id)?;
-        let (loc, he) = self.located(&task.repo_path)?;
-        Ok(self
-            .repo_config(&he, &loc.path)?
-            .unwrap_or_default()
-            .run
-            .into_iter()
-            .map(|r| r.name)
-            .collect())
+        let mut out = Vec::new();
+        for tree in self.trees(&attempt)? {
+            let (loc, he) = self.located(&tree.repo_path)?;
+            for r in self.repo_config(&he, &loc.path)?.unwrap_or_default().run {
+                out.push(qualified_script(&tree.dir, &r.name));
+            }
+        }
+        Ok(out)
     }
 
     /// The repository's own word on how a worktree becomes runnable, under
@@ -2311,9 +2518,18 @@ impl Core {
         if attempt.outcome.is_some() {
             return Err(anyhow!("attempt {attempt_id} is finished; its worktree has been removed"));
         }
-        let task = self.task(&attempt.task_id)?;
-        let (repo_loc, he) = self.located(&task.repo_path)?;
-        let wt_loc = host::locate(&attempt.worktree_path)?;
+        // Which checkout's script this is comes from the name the drawer
+        // pressed — `web:dev` — so two repositories may each have a `dev`.
+        let trees = self.trees(&attempt)?;
+        let tree = trees
+            .iter()
+            .find(|t| bare_script(&t.dir, name).is_some())
+            .ok_or_else(|| anyhow!("no run script named `{name}` in {}", config::FILE))?;
+        let bare = bare_script(&tree.dir, name)
+            .ok_or_else(|| anyhow!("no run script named `{name}` in {}", config::FILE))?;
+
+        let (repo_loc, he) = self.located(&tree.repo_path)?;
+        let wt_loc = host::locate(&tree.worktree_path)?;
         // A local host needs a local POSIX shell; a WSL host brings its own.
         if matches!(he.host, Host::Local) && !cfg!(unix) {
             return Err(anyhow!("run scripts need a POSIX shell"));
@@ -2324,11 +2540,11 @@ impl Core {
             .read_to_string(&config_path)?
             .map(|t| config::parse(&t, &config_path))
             .transpose()?
-            .ok_or_else(|| anyhow!("{} has no {}", task.repo_path, config::FILE))?;
+            .ok_or_else(|| anyhow!("{} has no {}", tree.repo_path, config::FILE))?;
         let script = config
             .run
             .into_iter()
-            .find(|r| r.name == name)
+            .find(|r| r.name == bare)
             .ok_or_else(|| anyhow!("no run script named `{name}` in {}", config::FILE))?;
 
         let port = match &he.host {
@@ -2343,7 +2559,9 @@ impl Core {
         let at = now_ms();
         let meta = SessionMeta {
             id: id.clone(),
-            cwd: attempt.worktree_path.clone(),
+            // The checkout the script belongs to, not the workspace above it:
+            // `npm run dev` has to run where the `package.json` is.
+            cwd: tree.worktree_path.clone(),
             title: format!("▶ {name}"),
             agent: "sh".to_string(),
             status: Status::Starting,
@@ -2454,7 +2672,13 @@ impl Core {
         }
 
         let task = self.task(&attempt.task_id)?;
+        // The card's first repository, for the world this runs in and for
+        // `$MAROL_ROOT_PATH`. Every repository on a card is in one world, so
+        // one of them answers for the shell either way.
         let (repo_loc, he) = self.located(&task.repo_path)?;
+        // The shell opens in the attempt's own directory — the workspace when
+        // the card spans several repositories, which is where the agent is
+        // standing and so where a `git log` in one of them starts from.
         let wt_loc = host::locate(&attempt.worktree_path)?;
         if matches!(he.host, Host::Local) && !cfg!(unix) {
             return Err(anyhow!("a worktree shell needs a POSIX shell"));
@@ -2547,6 +2771,12 @@ impl Core {
     /// branch stands against the base, for the card badges. A finished
     /// attempt has no worktree left and no standing to measure; its frozen
     /// diff already says everything it will ever say.
+    ///
+    /// Across every checkout, added up. A card spanning two repositories did
+    /// one piece of work and the badge answers "how big is it" — splitting
+    /// the number would answer a question nobody asked of a card. `dirty` is
+    /// any of them, because any one uncommitted checkout is enough to refuse
+    /// the merge, which is what that flag exists to warn about.
     pub fn attempt_stats(&self, attempt_id: &str) -> Result<worktree::DiffStat> {
         let attempt = self
             .store
@@ -2555,14 +2785,23 @@ impl Core {
         if attempt.outcome.is_some() {
             return Err(anyhow!("attempt is finished"));
         }
-        let task = self.task(&attempt.task_id)?;
-        let (wt_loc, he) = self.located(&attempt.worktree_path)?;
-        self.worktrees.stat(
-            &he.hr(&self.env),
-            &wt_loc.path,
-            &attempt.base_sha,
-            &task.base_branch,
-        )
+        let mut total = worktree::DiffStat::default();
+        for tree in self.trees(&attempt)? {
+            let (wt_loc, he) = self.located(&tree.worktree_path)?;
+            let one = self.worktrees.stat(
+                &he.hr(&self.env),
+                &wt_loc.path,
+                &tree.base_sha,
+                &tree.base_branch,
+            )?;
+            total.files += one.files;
+            total.adds += one.adds;
+            total.dels += one.dels;
+            total.ahead += one.ahead;
+            total.behind += one.behind;
+            total.dirty |= one.dirty;
+        }
+        Ok(total)
     }
 
     /// The attempt's diff: live from the worktree while it still exists, and
@@ -2590,16 +2829,43 @@ impl Core {
             .cloned();
         let mut out = Vec::new();
 
-        for (name, agent) in agent::DOCS.project_rules {
-            let path = hr.join(&loc.path, name);
-            out.push(AgentDoc {
-                scope: "project",
-                agent,
-                kind: "rules",
-                exists: hr.exists(&path),
-                name: name.to_string(),
-                path,
-            });
+        // A workspace is not a checkout: for a card spanning several
+        // repositories the project-scoped conventions live one directory
+        // down, in each of them. Asking the workspace itself would answer
+        // "no CLAUDE.md here" about a session whose agent has read two — the
+        // one lie this tab exists to prevent.
+        // `(folder inside the workspace, path on the host)`. The folder is
+        // what tells two checkouts' `CLAUDE.md` apart in the list, and is
+        // empty for the ordinary session, whose own directory is the
+        // checkout and which therefore has nothing to disambiguate.
+        let projects: Vec<(String, String)> = self
+            .attempt_at(cwd)
+            .filter(|trees| trees.len() > 1)
+            .map(|trees| {
+                trees
+                    .iter()
+                    .filter_map(|t| {
+                        host::locate(&t.worktree_path)
+                            .ok()
+                            .map(|l| (t.dir.clone(), l.path))
+                    })
+                    .collect()
+            })
+            .unwrap_or_else(|| vec![(String::new(), loc.path.clone())]);
+
+        for (dir, project) in &projects {
+            for (name, agent) in agent::DOCS.project_rules {
+                let path = hr.join(project, name);
+                out.push(AgentDoc {
+                    scope: "project",
+                    agent,
+                    kind: "rules",
+                    dir: dir.clone(),
+                    exists: hr.exists(&path),
+                    name: name.to_string(),
+                    path,
+                });
+            }
         }
 
         if let Some(home) = home.as_deref() {
@@ -2609,6 +2875,7 @@ impl Core {
                     scope: "global",
                     agent,
                     kind: "rules",
+                    dir: String::new(),
                     exists: hr.exists(&path),
                     name: name.to_string(),
                     path,
@@ -2624,16 +2891,18 @@ impl Core {
         // both roots are walked, and each entry says which CLI's shelf it
         // was on rather than pretending there is only one shelf.
         for (dir, agent) in agent::DOCS.skill_roots {
-            let roots = [
-                ("project", hr.join(&hr.join(&loc.path, dir), "skills")),
-                (
-                    "global",
-                    home.as_deref()
-                        .map(|h| hr.join(&hr.join(h, dir), "skills"))
-                        .unwrap_or_default(),
-                ),
-            ];
-            for (scope, root) in roots {
+            let mut roots: Vec<(&'static str, String, String)> = projects
+                .iter()
+                .map(|(d, p)| ("project", d.clone(), hr.join(&hr.join(p, dir), "skills")))
+                .collect();
+            roots.push((
+                "global",
+                String::new(),
+                home.as_deref()
+                    .map(|h| hr.join(&hr.join(h, dir), "skills"))
+                    .unwrap_or_default(),
+            ));
+            for (scope, where_, root) in roots {
                 if root.is_empty() {
                     continue;
                 }
@@ -2644,6 +2913,7 @@ impl Core {
                             scope,
                             agent,
                             kind: "skill",
+                            dir: where_.clone(),
                             exists: true,
                             name: entry,
                             path,
@@ -2655,6 +2925,22 @@ impl Core {
         Ok(out)
     }
 
+    /// The checkouts of the attempt whose directory this is, if it is one.
+    ///
+    /// Asked by directory rather than by id because the callers that need it
+    /// — the Knows tab most of all — are handed a session's cwd and nothing
+    /// else. `None` for an ad-hoc session, which is exactly what it should
+    /// be: a directory somebody pointed at is a directory, not a workspace.
+    fn attempt_at(&self, cwd: &str) -> Option<Vec<StoredTree>> {
+        let attempt = self
+            .store
+            .open_attempts()
+            .ok()?
+            .into_iter()
+            .find(|a| a.worktree_path == cwd)?;
+        self.trees(&attempt).ok()
+    }
+
     pub fn attempt_diff(&self, attempt_id: &str) -> Result<String> {
         self.attempt_diff_from(attempt_id, None)
     }
@@ -2663,6 +2949,13 @@ impl Core {
     /// instead of the attempt's base, answering "what has happened since
     /// that snapshot" with the rendering the drawer already has. `0` (or
     /// `None`) is the base itself.
+    ///
+    /// One diff for the whole attempt, its checkouts one after another. They
+    /// concatenate rather than needing anything to join them because each
+    /// one's paths are rendered relative to the directory the session stands
+    /// in — so `web/api.ts` and `api/routes.py` are two files in one diff,
+    /// and a review comment naming either points somewhere the agent can
+    /// open without being told where it is.
     pub fn attempt_diff_from(&self, attempt_id: &str, against: Option<u64>) -> Result<String> {
         let attempt = self
             .store
@@ -2677,44 +2970,110 @@ impl Core {
                 )),
             };
         }
+        // Asked once for the attempt, not once per checkout: a checkpoint is
+        // a moment in the work, and a number no moment carries is a mistake
+        // to report rather than a baseline to approximate. Without this the
+        // per-checkout `at_or_before` would quietly answer with an older
+        // snapshot — and `restore_checkpoint`, which does check, would refuse
+        // the very number the drawer had just diffed against.
+        if let Some(n) = against.filter(|n| *n > 0) {
+            if !self.list_checkpoints(attempt_id)?.iter().any(|c| c.n == n) {
+                return Err(anyhow!("this attempt has no checkpoint #{n}"));
+            }
+        }
+        let mut out = String::new();
+        for tree in self.trees(&attempt)? {
+            let piece = self.tree_diff_from(&attempt, &tree, against)?;
+            if piece.is_empty() {
+                continue;
+            }
+            if !out.is_empty() && !out.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str(&piece);
+        }
+        Ok(out)
+    }
+
+    /// One checkout's share of that diff.
+    fn tree_diff_from(
+        &self,
+        attempt: &StoredAttempt,
+        tree: &StoredTree,
+        against: Option<u64>,
+    ) -> Result<String> {
         // Parked: no worktree to diff against, but the shelf checkpoint is
         // the worktree as it was parked — so the diff runs tree against
         // tree in the main checkout, ending at the shelf.
         if attempt.parked_at.is_some() {
-            let task = self.task(&attempt.task_id)?;
-            let (repo_loc, he) = self.located(&task.repo_path)?;
+            let (repo_loc, he) = self.located(&tree.repo_path)?;
             let hr = he.hr(&self.env);
-            let cps = self.worktrees.checkpoints(&hr, &repo_loc.path, attempt_id)?;
+            let cps = self
+                .worktrees
+                .checkpoints(&hr, &repo_loc.path, &attempt.id)?;
             let Some(last) = cps.last() else {
-                // Parked clean at base: nothing ever changed.
+                // Parked clean at base: nothing ever changed here.
                 return Ok(String::new());
             };
             let from = match against {
-                None | Some(0) => attempt.base_sha.clone(),
-                Some(n) => cps
-                    .iter()
-                    .find(|c| c.n == n)
+                None | Some(0) => tree.base_sha.clone(),
+                // At-or-before, not exactly-at: a checkout untouched at that
+                // moment grew no ref for it, and the honest baseline is the
+                // newest snapshot it does have.
+                Some(n) => worktree::at_or_before(&cps, n)
                     .map(|c| c.sha.clone())
-                    .ok_or_else(|| anyhow!("this attempt has no checkpoint #{n}"))?,
+                    .unwrap_or_else(|| tree.base_sha.clone()),
             };
             if from == last.sha {
                 return Ok(String::new());
             }
-            return self.worktrees.diff_range(&hr, &repo_loc.path, &from, &last.sha);
+            return self
+                .worktrees
+                .diff_range(&hr, &repo_loc.path, &from, &last.sha, &tree.dir);
         }
-        let (wt_loc, he) = self.located(&attempt.worktree_path)?;
+        let (wt_loc, he) = self.located(&tree.worktree_path)?;
         let hr = he.hr(&self.env);
         let base = match against {
-            None | Some(0) => attempt.base_sha.clone(),
-            Some(n) => self
-                .worktrees
-                .checkpoints(&hr, &wt_loc.path, attempt_id)?
-                .into_iter()
-                .find(|c| c.n == n)
-                .map(|c| c.sha)
-                .ok_or_else(|| anyhow!("this attempt has no checkpoint #{n}"))?,
+            None | Some(0) => tree.base_sha.clone(),
+            Some(n) => {
+                let cps = self.worktrees.checkpoints(&hr, &wt_loc.path, &attempt.id)?;
+                worktree::at_or_before(&cps, n)
+                    .map(|c| c.sha.clone())
+                    .unwrap_or_else(|| tree.base_sha.clone())
+            }
         };
-        self.worktrees.diff(&hr, &wt_loc.path, &base)
+        self.worktrees.diff(&hr, &wt_loc.path, &base, &tree.dir)
+    }
+
+    /// Which checkout a path from the diff belongs to, and what it is called
+    /// inside that checkout's own repository.
+    ///
+    /// The paths the drawer hands back are the ones it was shown — relative
+    /// to the directory the session stands in — so for a card spanning two
+    /// repositories the first component names the checkout. A path in no
+    /// checkout is refused rather than resolved against the first: writing
+    /// the client's file into the service is the failure this lookup exists
+    /// to prevent.
+    fn tree_for_path<'a>(
+        &self,
+        trees: &'a [StoredTree],
+        path: &str,
+    ) -> Result<(&'a StoredTree, String)> {
+        if let [only] = trees {
+            if only.dir.is_empty() {
+                return Ok((only, path.to_string()));
+            }
+        }
+        for tree in trees {
+            if let Some(rest) = path.strip_prefix(&format!("{}/", tree.dir)) {
+                if !rest.is_empty() {
+                    return Ok((tree, rest.to_string()));
+                }
+            }
+        }
+        Err(anyhow!(
+            "`{path}` is not inside any of this attempt's checkouts"
+        ))
     }
 
     /* ---------------------------- worlds --------------------------- */
@@ -2785,12 +3144,14 @@ impl Core {
         if attempt.parked_at.is_some() {
             return Err(anyhow!("this attempt is parked — there is no worktree to read"));
         }
-        let (wt_loc, he) = self.located(&attempt.worktree_path)?;
+        let trees = self.trees(&attempt)?;
+        let (tree, rel) = self.tree_for_path(&trees, path)?;
+        let (wt_loc, he) = self.located(&tree.worktree_path)?;
         let hr = he.hr(&self.env);
         let base = self
             .worktrees
-            .file_at_rev(&hr, &wt_loc.path, &attempt.base_sha, path)?;
-        let work = hr.read_to_string(&hr.join(&wt_loc.path, path))?;
+            .file_at_rev(&hr, &wt_loc.path, &tree.base_sha, &rel)?;
+        let work = hr.read_to_string(&hr.join(&wt_loc.path, &rel))?;
         Ok(AttemptFile { base, work })
     }
 
@@ -2840,9 +3201,11 @@ impl Core {
                  close the session — and save then"
             ));
         }
-        let (wt_loc, he) = self.located(&attempt.worktree_path)?;
+        let trees = self.trees(&attempt)?;
+        let (tree, rel) = self.tree_for_path(&trees, path)?;
+        let (wt_loc, he) = self.located(&tree.worktree_path)?;
         let hr = he.hr(&self.env);
-        let full = hr.join(&wt_loc.path, path);
+        let full = hr.join(&wt_loc.path, &rel);
         if let Some(expected) = expected {
             let current = hr.read_to_string(&full)?.unwrap_or_default();
             if current != expected {
@@ -2859,38 +3222,79 @@ impl Core {
 
     /// The first message for this card.
     ///
-    /// With a worktree in hand it names the branch and base that were really
-    /// handed out. Without one — previewing, or queueing before anything has
-    /// been created — it names the best guess available, and `open_attempt`
-    /// renders again against what git actually gave it.
+    /// With the worktrees in hand it names the branch and the bases that were
+    /// really handed out. Without them — previewing, or queueing before
+    /// anything has been created — it names the best guess available, and
+    /// `open_attempt` renders again against what git actually gave it.
     fn render_prompt(
         &self,
         task: &StoredTask,
         wt: Option<&worktree::OpenedWorktree>,
     ) -> Result<String> {
         let template = prompt::load_or_create(&self.data_dir)?;
-        let (branch, base_sha) = match wt {
-            Some(w) => (w.branch.clone(), w.base_sha.clone()),
+
+        // `(dir, repo, base_branch, base_sha)`, owned here so the borrowed
+        // `TreeVar`s below have something to point at.
+        let (branch, trees): (String, Vec<(String, String, String, String)>) = match wt {
+            Some(w) => (
+                w.branch.clone(),
+                w.trees
+                    .iter()
+                    .map(|t| {
+                        (
+                            t.dir.clone(),
+                            t.repo.clone(),
+                            t.base_branch.clone(),
+                            t.base_sha.clone(),
+                        )
+                    })
+                    .collect(),
+            ),
             None => {
                 let seq = self.store.next_attempt_seq(&task.id)?;
                 let slug = worktree::slug(&task.title, &task.id);
-                let sha = self
-                    .located(&task.repo_path)
-                    .and_then(|(loc, he)| {
-                        self.worktrees
-                            .head_of(&he.hr(&self.env), &loc.path, &task.base_branch)
+                let repos = task.repos();
+                let specs = self.repo_specs(task).unwrap_or_default();
+                let dirs = worktree::preview_dirs(&specs);
+                let trees = repos
+                    .iter()
+                    .zip(dirs)
+                    .map(|(r, dir)| {
+                        let sha = self
+                            .located(&r.repo_path)
+                            .and_then(|(loc, he)| {
+                                self.worktrees
+                                    .head_of(&he.hr(&self.env), &loc.path, &r.base_branch)
+                            })
+                            .unwrap_or_default();
+                        (dir, r.repo_path.clone(), r.base_branch.clone(), sha)
                     })
-                    .unwrap_or_default();
-                (format!("marol/{slug}-{seq}"), sha)
+                    .collect();
+                (format!("marol/{slug}-{seq}"), trees)
             }
         };
+
+        let vars: Vec<prompt::TreeVar> = trees
+            .iter()
+            .map(|(dir, repo, base_branch, base_sha)| prompt::TreeVar {
+                dir,
+                repo,
+                base_branch,
+                base_sha,
+            })
+            .collect();
+        // The first checkout is what `{base_branch}` and `{base_sha}` have
+        // always meant, and templates written before a card could span two
+        // still say them.
+        let first = vars.first();
         Ok(prompt::render(
             &template,
             &prompt::Vars {
                 title: &task.title,
                 branch: &branch,
-                base_branch: &task.base_branch,
-                base_sha: &base_sha,
+                base_branch: first.map(|t| t.base_branch).unwrap_or(&task.base_branch),
+                base_sha: first.map(|t| t.base_sha).unwrap_or(""),
+                trees: &vars,
                 prompt: &task.prompt,
             },
         ))
@@ -2900,22 +3304,77 @@ impl Core {
 
     /// Fold an attempt's branch back into its base, then close the attempt
     /// out. The merge has to succeed before anything is given up.
+    ///
+    /// For a card spanning several repositories that is several merges, and
+    /// they are checked *all* before any of them runs. Every refusal
+    /// `merge_to_base` makes is one that would otherwise lose work quietly —
+    /// uncommitted changes, a checkout sitting on the wrong branch — and
+    /// discovering the second repository's on the far side of having already
+    /// mutated the first is the one shape of that failure this app can still
+    /// prevent. A dry run is not a promise: the second merge can still fail
+    /// on a conflict once the first has landed, and then what happened is
+    /// reported rather than pretended away. But it turns the common case —
+    /// somebody forgot to commit in one of the two — back into the plain
+    /// refusal it is everywhere else.
     pub fn merge_attempt(&self, attempt_id: &str) -> Result<String> {
         let attempt = self
             .store
             .get_attempt(attempt_id)?
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
-        let task = self.task(&attempt.task_id)?;
+        let trees = self.trees(&attempt)?;
 
-        let (repo_loc, he) = self.located(&task.repo_path)?;
-        let wt_loc = host::locate(&attempt.worktree_path)?;
-        let sha = self.worktrees.merge_to_base(
-            &he.hr(&self.env),
-            &repo_loc.path,
-            &wt_loc.path,
-            &attempt.branch,
-            &task.base_branch,
-        )?;
+        let mut situated = Vec::with_capacity(trees.len());
+        for tree in &trees {
+            let (repo_loc, he) = self.located(&tree.repo_path)?;
+            let wt_loc = host::locate(&tree.worktree_path)?;
+            self.worktrees.check_merge(
+                &he.hr(&self.env),
+                &repo_loc.path,
+                &wt_loc.path,
+                &tree.branch,
+                &tree.base_branch,
+            )?;
+            situated.push((tree, repo_loc, he, wt_loc));
+        }
+
+        let mut lines = Vec::with_capacity(situated.len());
+        let mut done: Vec<&StoredTree> = Vec::new();
+        for (tree, repo_loc, he, wt_loc) in &situated {
+            let merged = self.worktrees.merge_to_base(
+                &he.hr(&self.env),
+                &repo_loc.path,
+                &wt_loc.path,
+                &tree.branch,
+                &tree.base_branch,
+            );
+            match merged {
+                Ok(sha) => {
+                    lines.push(if tree.dir.is_empty() {
+                        sha
+                    } else {
+                        format!("{}: {sha}", tree.dir)
+                    });
+                    done.push(tree);
+                }
+                // Nothing is rolled back and the attempt stays open: the
+                // repositories that landed are landed, and saying which is
+                // the only way the person can finish the job by hand.
+                Err(e) => {
+                    let landed = done
+                        .iter()
+                        .map(|t| t.repo_path.as_str())
+                        .collect::<Vec<_>>()
+                        .join("、");
+                    return Err(anyhow!(
+                        "{} 合併失敗：{e:#}\n已經合併進去的：{}。\
+                         這個 attempt 沒有關掉，worktree 還在。",
+                        tree.repo_path,
+                        if landed.is_empty() { "（沒有）" } else { &landed },
+                    ));
+                }
+            }
+        }
+        let sha = lines.join("\n");
 
         self.close_attempt(&attempt, Outcome::Merged)?;
 
@@ -3045,30 +3504,55 @@ impl Core {
     /// the pull request is resolved, because that is when there is still
     /// something to change in response to review. Reviewing and merging a
     /// pull request is somebody else's tool.
+    /// One pull request per repository the card spans, in order, and every
+    /// URL comes back.
+    ///
+    /// They cannot be one pull request — a pull request belongs to a
+    /// repository — so what this can honestly offer is the set of them, each
+    /// pointing at the same branch name and carrying the same description.
+    /// A failure part-way stops there and names what already went up: the
+    /// pull requests that opened are open, and a person finishing by hand
+    /// needs to know which.
     pub fn open_pr(&self, attempt_id: &str) -> Result<String> {
         let attempt = self
             .store
             .get_attempt(attempt_id)?
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         let task = self.task(&attempt.task_id)?;
+        let trees = self.trees(&attempt)?;
 
-        let body = format!(
-            "Marol attempt #{} ({}), from `{}` @ {}.\n\n---\n\n{}",
-            attempt.seq,
-            attempt.agent,
-            task.base_branch,
-            &attempt.base_sha[..attempt.base_sha.len().min(8)],
-            task.prompt
-        );
-        let (wt_loc, he) = self.located(&attempt.worktree_path)?;
-        self.worktrees.push_and_open_pr(
-            &he.hr(&self.env),
-            &wt_loc.path,
-            &attempt.branch,
-            &task.base_branch,
-            &task.title,
-            &body,
-        )
+        let mut urls: Vec<String> = Vec::with_capacity(trees.len());
+        for tree in &trees {
+            let body = format!(
+                "Marol attempt #{} ({}), from `{}` @ {}.\n\n---\n\n{}",
+                attempt.seq,
+                attempt.agent,
+                tree.base_branch,
+                &tree.base_sha[..tree.base_sha.len().min(8)],
+                task.prompt
+            );
+            let (wt_loc, he) = self.located(&tree.worktree_path)?;
+            let opened = self.worktrees.push_and_open_pr(
+                &he.hr(&self.env),
+                &wt_loc.path,
+                &tree.branch,
+                &tree.base_branch,
+                &task.title,
+                &body,
+            );
+            match opened {
+                Ok(url) => urls.push(url),
+                Err(e) if urls.is_empty() => return Err(e),
+                Err(e) => {
+                    return Err(anyhow!(
+                        "{} 開 PR 失敗：{e:#}\n已經開好的：\n{}",
+                        tree.repo_path,
+                        urls.join("\n")
+                    ))
+                }
+            }
+        }
+        Ok(urls.join("\n"))
     }
 
     fn task(&self, id: &str) -> Result<StoredTask> {
@@ -3237,7 +3721,7 @@ impl Core {
         cwd: &str,
         cols: u16,
         rows: u16,
-        setup: Option<&SetupWrap>,
+        setup: Option<&Setup>,
     ) -> Result<()> {
         // Which world this session's directory lives in decides everything
         // below: whose CLI, whose PATH, and whether the whole command
@@ -3298,7 +3782,7 @@ impl Core {
                 // `set -e` so a failed setup stops in front of the person,
                 // in the terminal, instead of starting an agent in a
                 // half-made workspace.
-                let script = format!("set -e\n{}\nexec \"$0\" \"$@\"", wrap.script);
+                let script = format!("set -e\n{}\nexec \"$0\" \"$@\"", wrap.script());
                 let mut wrapped = vec!["-c".to_string(), script, agent.to_string()];
                 wrapped.extend(args);
                 ("sh".to_string(), wrapped)
@@ -4076,12 +4560,12 @@ impl Core {
         }
 
         // The shelf: whatever is uncommitted goes into a checkpoint the
-        // worktree's removal cannot take with it.
+        // worktree's removal cannot take with it. Every checkout, and the
+        // failure of any one aborts the park — losing work silently is the
+        // one failure this feature must not have.
         self.snapshot_attempt(attempt_id)?;
 
-        let task = self.task(&attempt.task_id)?;
-        let (wt_loc, he) = self.located(&attempt.worktree_path)?;
-        let repo_loc = host::locate(&task.repo_path)?;
+        let trees = self.trees(&attempt)?;
 
         // The sessions living in the directory go with it — the attempt's
         // own, the shell, a dev server — same rule as finishing.
@@ -4105,8 +4589,16 @@ impl Core {
         }
         self.shells.lock().unwrap().remove(attempt_id);
 
-        self.worktrees
-            .remove(&he.hr(&self.env), &repo_loc.path, &wt_loc.path)?;
+        for tree in &trees {
+            let (repo_loc, he) = self.located(&tree.repo_path)?;
+            let wt_loc = host::locate(&tree.worktree_path)?;
+            self.worktrees
+                .remove(&he.hr(&self.env), &repo_loc.path, &wt_loc.path)?;
+        }
+        // The workspace directory itself stays, empty, for exactly as long as
+        // the attempt is parked. `--continue` finds its conversation by cwd,
+        // so the resume needs this path back — and a directory nothing else
+        // can claim in the meantime is the cheapest way to keep it.
         self.store.set_parked(attempt_id, Some(now_ms() as i64))?;
 
         self.emit_tasks();
@@ -4135,22 +4627,32 @@ impl Core {
         if attempt.parked_at.is_none() {
             return Err(anyhow!("this attempt is not parked"));
         }
-        let task = self.task(&attempt.task_id)?;
-        let (repo_loc, he) = self.located(&task.repo_path)?;
-        let hr = he.hr(&self.env);
-        let wt_path = host::locate(&attempt.worktree_path)?.path;
+        let trees = self.trees(&attempt)?;
 
-        self.worktrees
-            .attach(&hr, &repo_loc.path, &wt_path, &attempt.branch)?;
+        // Every checkout back at its own recorded path. A failure part-way
+        // leaves the ones already attached standing and stops: half a
+        // workspace is visible and finishable, where an unwind would have
+        // taken back ground the person can see.
+        for tree in &trees {
+            let (repo_loc, he) = self.located(&tree.repo_path)?;
+            let wt_path = host::locate(&tree.worktree_path)?.path;
+            self.worktrees
+                .attach(&he.hr(&self.env), &repo_loc.path, &wt_path, &tree.branch)?;
+        }
         self.store.set_parked(attempt_id, None)?;
 
         // The shelf comes down before the agent looks: the branch tip may
         // be behind what was parked, and skipping this would lose work
         // quietly. Restore before any terminal exists — no one to race.
         let restore_error = (|| -> Result<()> {
-            let cps = self.worktrees.checkpoints(&hr, &repo_loc.path, attempt_id)?;
-            if let Some(cp) = cps.last() {
-                self.worktrees.restore_checkpoint(&hr, &wt_path, &cp.sha)?;
+            for tree in &trees {
+                let (repo_loc, he) = self.located(&tree.repo_path)?;
+                let hr = he.hr(&self.env);
+                let wt_path = host::locate(&tree.worktree_path)?.path;
+                let cps = self.worktrees.checkpoints(&hr, &repo_loc.path, attempt_id)?;
+                if let Some(cp) = cps.last() {
+                    self.worktrees.restore_checkpoint(&hr, &wt_path, &cp.sha)?;
+                }
             }
             Ok(())
         })()
@@ -4178,6 +4680,12 @@ impl Core {
     }
 
     /// An attempt's checkpoints, oldest first — read straight off the refs.
+    ///
+    /// One list for the whole attempt. A checkpoint is a moment in the work,
+    /// and a card spanning two repositories has one timeline, not two: the
+    /// ordinals are shared by construction (see `snapshot_attempt_inner`), so
+    /// this merges the checkouts' refs by number and reports each moment
+    /// once, at the latest time any checkout wrote it down.
     pub fn list_checkpoints(&self, attempt_id: &str) -> Result<Vec<crate::worktree::Checkpoint>> {
         let attempt = self
             .store
@@ -4187,18 +4695,40 @@ impl Core {
             // Finished: the refs are gone by design, the frozen diff remains.
             return Ok(Vec::new());
         }
-        // Parked has no worktree, but the refs live in the repo's shared
-        // git dir — read them from the main checkout.
-        if attempt.parked_at.is_some() {
-            let task = self.task(&attempt.task_id)?;
-            let (repo_loc, he) = self.located(&task.repo_path)?;
-            return self
-                .worktrees
-                .checkpoints(&he.hr(&self.env), &repo_loc.path, attempt_id);
+        let mut merged: Vec<crate::worktree::Checkpoint> = Vec::new();
+        for cp in self.checkpoints_per_tree(&attempt)?.into_iter().flatten() {
+            match merged.iter_mut().find(|m| m.n == cp.n) {
+                Some(seen) => seen.at = seen.at.max(cp.at),
+                None => merged.push(cp),
+            }
         }
-        let (loc, he) = self.located(&attempt.worktree_path)?;
-        self.worktrees
-            .checkpoints(&he.hr(&self.env), &loc.path, attempt_id)
+        merged.sort_by_key(|c| c.n);
+        Ok(merged)
+    }
+
+    /// Each checkout's own checkpoint refs, in checkout order.
+    ///
+    /// A parked attempt has no worktrees, but the refs live in each
+    /// repository's shared git dir — so they are read from the main checkouts
+    /// and the answer is the same either way.
+    fn checkpoints_per_tree(
+        &self,
+        attempt: &StoredAttempt,
+    ) -> Result<Vec<Vec<crate::worktree::Checkpoint>>> {
+        let parked = attempt.parked_at.is_some();
+        self.trees(attempt)?
+            .into_iter()
+            .map(|tree| {
+                let where_ = if parked {
+                    &tree.repo_path
+                } else {
+                    &tree.worktree_path
+                };
+                let (loc, he) = self.located(where_)?;
+                self.worktrees
+                    .checkpoints(&he.hr(&self.env), &loc.path, &attempt.id)
+            })
+            .collect()
     }
 
     /// The manual checkpoint — any agent, any moment a human chooses.
@@ -4347,20 +4877,51 @@ impl Core {
         if attempt.outcome.is_some() || attempt.parked_at.is_some() {
             return Ok(None);
         }
-        let (loc, he) = self.located(&attempt.worktree_path)?;
-        let cp = self.worktrees.checkpoint(
-            &he.hr(&self.env),
-            &loc.path,
-            attempt_id,
-            &attempt.base_sha,
-        )?;
-        if let Some(cp) = &cp {
+        let trees = self.trees(&attempt)?;
+
+        // One number for the moment, across every checkout — the highest any
+        // of them has reached, plus one. Numbering each repository on its own
+        // would make "checkpoint 3" mean a different instant in each, and the
+        // restore that walked back to it would reassemble a workspace that
+        // never existed.
+        let n = self
+            .checkpoints_per_tree(&attempt)?
+            .iter()
+            .filter_map(|cps| cps.last().map(|c| c.n))
+            .max()
+            .unwrap_or(0)
+            + 1;
+
+        // A checkout that changed nothing this turn grows no ref, which is
+        // the honest record: there was nothing to snapshot there. The moment
+        // still counts as taken if any of them wrote one down.
+        let mut taken: Option<crate::worktree::Checkpoint> = None;
+        for tree in &trees {
+            let (loc, he) = self.located(&tree.worktree_path)?;
+            let cp = self.worktrees.checkpoint(
+                &he.hr(&self.env),
+                &loc.path,
+                attempt_id,
+                &tree.base_sha,
+                n,
+            )?;
+            if let Some(cp) = cp {
+                taken = Some(match taken {
+                    Some(seen) => crate::worktree::Checkpoint {
+                        at: seen.at.max(cp.at),
+                        ..seen
+                    },
+                    None => cp,
+                });
+            }
+        }
+        if taken.is_some() {
             self.sink.emit(
                 "checkpoints:changed",
-                serde_json::json!({ "attemptId": attempt_id, "n": cp.n }),
+                serde_json::json!({ "attemptId": attempt_id, "n": n }),
             );
         }
-        Ok(cp)
+        Ok(taken)
     }
 
     /// Restore an attempt's worktree to checkpoint `n` — `0` is the
@@ -4410,24 +4971,42 @@ impl Core {
         let result = (|| {
             // The retreat from the retreat, kept before anything moves.
             let saved = self.snapshot_attempt_inner(attempt_id)?;
-            let (loc, he) = self.located(&attempt.worktree_path)?;
-            let hr = he.hr(&self.env);
-            let to_sha = if n == 0 {
-                attempt.base_sha.clone()
-            } else {
-                self.worktrees
-                    .checkpoints(&hr, &loc.path, attempt_id)?
-                    .into_iter()
-                    .find(|c| c.n == n)
-                    .map(|c| c.sha)
-                    .ok_or_else(|| anyhow!("this attempt has no checkpoint #{n}"))?
-            };
-            self.worktrees.restore_checkpoint(&hr, &loc.path, &to_sha)?;
+            let trees = self.trees(&attempt)?;
+            if n > 0 && !self.list_checkpoints(attempt_id)?.iter().any(|c| c.n == n) {
+                return Err(anyhow!("this attempt has no checkpoint #{n}"));
+            }
+            let mut shas = Vec::with_capacity(trees.len());
+            for tree in &trees {
+                let (loc, he) = self.located(&tree.worktree_path)?;
+                let hr = he.hr(&self.env);
+                let to_sha = if n == 0 {
+                    tree.base_sha.clone()
+                } else {
+                    // At-or-before: a checkout untouched at that moment grew
+                    // no ref for it, and the state it was in then is the one
+                    // its newest earlier snapshot holds. No snapshot at all
+                    // means it had never changed — its base is the answer.
+                    let cps = self.worktrees.checkpoints(&hr, &loc.path, attempt_id)?;
+                    crate::worktree::at_or_before(&cps, n)
+                        .map(|c| c.sha.clone())
+                        .unwrap_or_else(|| tree.base_sha.clone())
+                };
+                self.worktrees.restore_checkpoint(&hr, &loc.path, &to_sha)?;
+                shas.push(if tree.dir.is_empty() {
+                    to_sha
+                } else {
+                    format!("{}: {to_sha}", tree.dir)
+                });
+            }
             self.sink.emit(
                 "checkpoints:changed",
                 serde_json::json!({ "attemptId": attempt_id }),
             );
-            Ok(Restored { to_n: n, to_sha, saved })
+            Ok(Restored {
+                to_n: n,
+                to_sha: shas.join("\n"),
+                saved,
+            })
         })();
         self.checkpointing.lock().unwrap().remove(attempt_id);
         result
@@ -4446,7 +5025,11 @@ impl Core {
             }
         };
         let repos: std::collections::HashSet<String> = match self.store.list_tasks() {
-            Ok(tasks) => tasks.into_iter().map(|t| t.repo_path).collect(),
+            Ok(tasks) => tasks
+                .iter()
+                .flat_map(|t| t.repos())
+                .map(|r| r.repo_path)
+                .collect(),
             Err(e) => {
                 eprintln!("[core] checkpoint sweep skipped: {e:#}");
                 return;

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type * as React from 'react';
 import { useT, type TFn } from '../i18n';
-import { needsYou, type SessionMeta, type Task } from '../types';
+import { needsYou, taskRepos, type SessionMeta, type Task } from '../types';
 import { liveStateOf, repoName } from '../board';
 import { STATUS_KEY } from '../sections';
 import { ACTIONS, type ActionCtx, type ActionDef, type ActionId } from '../actions';
@@ -199,7 +199,11 @@ function ItemRow({ item, t }: { item: Item; t: TFn }) {
     return (
       <>
         <span className="palette-title">{item.task.title}</span>
-        <span className="palette-sub mono">{repoName(item.task.repo_path)}</span>
+        <span className="palette-sub mono">
+          {taskRepos(item.task)
+            .map((r) => repoName(r.repo_path))
+            .join(' + ')}
+        </span>
       </>
     );
   }
@@ -269,7 +273,12 @@ function buildGroups(
         items: rest.map((session) => ({ kind: 'session', session })),
       });
     }
-    const cards = tasks.filter((task) => hits(task.title) || hits(repoName(task.repo_path)));
+    // Every repository the card spans, not only the first: typing the name of
+    // the service half of a two-repo card has to find it.
+    const cards = tasks.filter(
+      (task) =>
+        hits(task.title) || taskRepos(task).some((r) => hits(repoName(r.repo_path))),
+    );
     if (cards.length > 0) {
       groups.push({
         label: t('palette.cards'),

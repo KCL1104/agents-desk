@@ -671,6 +671,30 @@ impl HostRef<'_> {
         }
     }
 
+    /// Remove one *empty* directory inside the host. A directory already gone
+    /// is not an error — the point is the absence, not the act.
+    ///
+    /// Empty is the whole safety of it: `rmdir` and `remove_dir` both refuse
+    /// a directory still holding something, and the callers here are tidying
+    /// up after their own scaffolding. A tidy-up that could take somebody's
+    /// files with it would not be one.
+    pub fn remove_dir(&self, path: &str) -> Result<()> {
+        match self.host {
+            Host::Local => match std::fs::remove_dir(path) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(e.into()),
+            },
+            _ => {
+                if !self.exists(path) {
+                    return Ok(());
+                }
+                self.run_ok("rmdir", &["--", path], None)?;
+                Ok(())
+            }
+        }
+    }
+
     /// Write a file inside the host, creating its directory. The content
     /// travels as an *argument*, not stdin — one path through every doorway,
     /// and the quoting layer already knows how to armour it.
