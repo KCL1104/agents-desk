@@ -264,6 +264,40 @@ exec "$@"
                 prompt.into(),
                 self.repo.to_string_lossy().into(),
                 "main".into(),
+                Vec::new(),
+            )
+            .expect("create task")
+    }
+
+    /// A second repository beside the harness's own, for the cards that span
+    /// two. Same one-commit shape, so the two are told apart only by name.
+    fn second_repo(&self, name: &str) -> PathBuf {
+        let repo = self.root.join("repos").join(name);
+        std::fs::create_dir_all(&repo).unwrap();
+        git(&repo, &["init", "-b", "main", "-q"]);
+        git(&repo, &["config", "user.email", "t@marol.test"]);
+        git(&repo, &["config", "user.name", "Marol Test"]);
+        std::fs::write(repo.join("service.txt"), "one\n").unwrap();
+        git(&repo, &["add", "-A"]);
+        git(&repo, &["commit", "-qm", "first"]);
+        repo
+    }
+
+    /// A card spanning this fixture's repository and one more.
+    fn card_spanning(&self, title: &str, prompt: &str, extra: &[(&str, &str)]) -> String {
+        self.core
+            .create_task(
+                title.into(),
+                prompt.into(),
+                self.repo.to_string_lossy().into(),
+                "main".into(),
+                extra
+                    .iter()
+                    .map(|(repo, base)| crate::store::TaskRepo {
+                        repo_path: (*repo).into(),
+                        base_branch: (*base).into(),
+                    })
+                    .collect(),
             )
             .expect("create task")
     }
@@ -985,6 +1019,477 @@ fn merging_says_so_when_the_attempt_did_nothing() {
     assert!(err.to_string().contains("沒有東西可以合併"), "unhelpful: {err}");
 }
 
+/* --------------------------- cards spanning repos ---------------------- */
+
+/// The whole shape, end to end: one card, two repositories, one session
+/// standing in a workspace that holds a checkout of each — and both of the
+/// person's own checkouts untouched, which is the safety argument surviving
+/// the generalisation.
+#[test]
+fn a_card_spanning_two_repositories_runs_one_session_over_both() {
+    let h = Harness::new("span");
+    let _guard = h.rt.enter();
+    let api = h.second_repo("api");
+    let task = h.card_spanning(
+        "把欄位對起來",
+        "兩邊一起改",
+        &[(&api.to_string_lossy(), "main")],
+    );
+    let a = h.start(&task, "claude");
+
+    // The session's directory is the workspace, not either checkout.
+    let root = Path::new(&a.worktree_path);
+    assert!(root.is_dir());
+    assert!(!root.join(".git").exists(), "the workspace is not a repository");
+    assert!(root.join("repo").join("app.txt").exists());
+    assert!(root.join("api").join("service.txt").exists());
+    assert_eq!(h.launches(&a.session_id, 1)[0].cwd, a.worktree_path);
+
+    // One branch name, in both.
+    for dir in ["repo", "api"] {
+        assert_eq!(
+            git(&root.join(dir), &["rev-parse", "--abbrev-ref", "HEAD"]),
+            a.branch,
+            "{dir} is not on the attempt's branch"
+        );
+    }
+    // Neither of the person's own checkouts moved.
+    assert_eq!(git(&h.repo, &["rev-parse", "--abbrev-ref", "HEAD"]), "main");
+    assert_eq!(git(&api, &["rev-parse", "--abbrev-ref", "HEAD"]), "main");
+
+    // The opening message names both, or the agent would go looking for the
+    // files in the directory it woke up in and find folders.
+    let prompt = &h.args_of(&a.session_id).pop().unwrap();
+    assert!(prompt.contains("repo/"), "{prompt}");
+    assert!(prompt.contains("api/"), "{prompt}");
+}
+
+/// The diff is one diff over both checkouts, and its paths are relative to
+/// where the session is standing — which is what makes a review comment
+/// naming `api/service.txt` point at something the agent can open.
+#[test]
+fn the_diff_covers_every_checkout_with_paths_the_agent_can_open() {
+    let h = Harness::new("span-diff");
+    let _guard = h.rt.enter();
+    let api = h.second_repo("api");
+    let task = h.card_spanning("x", "y", &[(&api.to_string_lossy(), "main")]);
+    let a = h.start(&task, "claude");
+    let root = Path::new(&a.worktree_path);
+
+    std::fs::write(root.join("repo").join("app.txt"), "client side\n").unwrap();
+    std::fs::write(root.join("api").join("service.txt"), "server side\n").unwrap();
+
+    let diff = h.core.attempt_diff(&a.attempt_id).unwrap();
+    assert!(diff.contains("b/repo/app.txt"), "{diff}");
+    assert!(diff.contains("b/api/service.txt"), "{diff}");
+    assert!(diff.contains("client side") && diff.contains("server side"), "{diff}");
+
+    // And the editable diff resolves those same paths back to the right
+    // checkout — writing the client's file into the service is the failure
+    // this lookup exists to prevent.
+    let f = h.core.attempt_file(&a.attempt_id, "api/service.txt").unwrap();
+    assert_eq!(f.work.as_deref(), Some("server side\n"));
+    assert_eq!(f.base.as_deref(), Some("one\n"));
+    // Saving is refused mid-turn, here as anywhere.
+    h.core.close_session(&a.session_id).unwrap();
+    h.core
+        .write_attempt_file(&a.attempt_id, "api/service.txt", "edited by hand\n", None)
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.join("api").join("service.txt")).unwrap(),
+        "edited by hand\n"
+    );
+
+    // A path in no checkout is refused rather than guessed at.
+    assert!(h.core.attempt_file(&a.attempt_id, "nowhere/x.txt").is_err());
+}
+
+/// Merging is several merges, and every refusal is asked before any of them
+/// runs: discovering the second repository's uncommitted work after the first
+/// has landed is exactly the half-landed state those refusals prevent.
+#[test]
+fn merging_a_spanning_card_refuses_as_a_whole_before_it_moves_anything() {
+    let h = Harness::new("span-merge");
+    let _guard = h.rt.enter();
+    let api = h.second_repo("api");
+    let task = h.card_spanning("x", "y", &[(&api.to_string_lossy(), "main")]);
+    let a = h.start(&task, "claude");
+    let root = Path::new(&a.worktree_path);
+
+    // The first is committed; the second is not.
+    std::fs::write(root.join("repo").join("app.txt"), "client side\n").unwrap();
+    git(&root.join("repo"), &["add", "-A"]);
+    git(&root.join("repo"), &["commit", "-qm", "client"]);
+    std::fs::write(root.join("api").join("service.txt"), "server side\n").unwrap();
+
+    let err = h
+        .core
+        .merge_attempt(&a.attempt_id)
+        .expect_err("a merge that would half-land must not start");
+    assert!(err.to_string().contains("沒有 commit"), "unhelpful: {err}");
+    // Nothing moved: the first repository is still where it was.
+    assert_eq!(
+        std::fs::read_to_string(h.repo.join("app.txt")).unwrap(),
+        "one\n",
+        "the first repository was merged before the second was checked"
+    );
+    assert!(h.core.task_board()[0].attempts[0].attempt.outcome.is_none());
+
+    // Commit the second and it goes through, both of them.
+    git(&root.join("api"), &["add", "-A"]);
+    git(&root.join("api"), &["commit", "-qm", "server"]);
+    h.core.merge_attempt(&a.attempt_id).expect("merge");
+    assert_eq!(
+        std::fs::read_to_string(h.repo.join("app.txt")).unwrap(),
+        "client side\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(api.join("service.txt")).unwrap(),
+        "server side\n"
+    );
+
+    // Closed out, and the whole workspace given back — checkouts and the
+    // directory that held them.
+    assert!(!root.exists(), "the workspace outlived the attempt");
+    let frozen = h.core.attempt_diff(&a.attempt_id).unwrap();
+    assert!(frozen.contains("client side") && frozen.contains("server side"), "{frozen}");
+}
+
+/// A checkpoint is a moment in the work, not a count of how often one
+/// checkout happened to change. The ordinals are shared, so restoring to one
+/// reassembles a workspace that actually existed.
+#[test]
+fn a_checkpoint_numbers_one_moment_the_same_in_every_checkout() {
+    let h = Harness::new("span-ckpt");
+    let _guard = h.rt.enter();
+    let api = h.second_repo("api");
+    let task = h.card_spanning("x", "y", &[(&api.to_string_lossy(), "main")]);
+    let a = h.start(&task, "claude");
+    let root = Path::new(&a.worktree_path);
+
+    // Moment one touches only the client.
+    std::fs::write(root.join("repo").join("app.txt"), "client v1\n").unwrap();
+    let one = h.core.checkpoint_now(&a.attempt_id).unwrap().expect("a snapshot");
+    assert_eq!(one.n, 1);
+
+    // Moment two touches only the service. Numbered against the attempt, not
+    // against the checkout — this is 2 even though it is the service's first.
+    std::fs::write(root.join("api").join("service.txt"), "server v1\n").unwrap();
+    let two = h.core.checkpoint_now(&a.attempt_id).unwrap().expect("a snapshot");
+    assert_eq!(two.n, 2, "the service restarted the numbering");
+    assert_eq!(
+        h.core
+            .list_checkpoints(&a.attempt_id)
+            .unwrap()
+            .iter()
+            .map(|c| c.n)
+            .collect::<Vec<_>>(),
+        vec![1, 2],
+        "one timeline for the attempt, not one per repository"
+    );
+
+    // Ruin both, then walk back to moment one. The client returns to what it
+    // held then; the service had no snapshot at 1, so it returns to its base
+    // — which is how it looked at that moment.
+    std::fs::write(root.join("repo").join("app.txt"), "ruined\n").unwrap();
+    std::fs::write(root.join("api").join("service.txt"), "ruined\n").unwrap();
+    // Restoring is refused mid-turn, here as anywhere.
+    h.core.close_session(&a.session_id).unwrap();
+    h.core.restore_checkpoint(&a.attempt_id, 1).expect("restore");
+    assert_eq!(
+        std::fs::read_to_string(root.join("repo").join("app.txt")).unwrap(),
+        "client v1\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("api").join("service.txt")).unwrap(),
+        "one\n",
+        "a checkout with no snapshot at that moment must come back to its base"
+    );
+}
+
+/// Park gives back every checkout and keeps every branch; resume grows them
+/// all back at the paths `--continue` will look for, with the shelf on top.
+#[test]
+fn parking_a_spanning_card_gives_back_every_checkout_and_resume_grows_them_back() {
+    let h = Harness::new("span-park");
+    let _guard = h.rt.enter();
+    let api = h.second_repo("api");
+    let task = h.card_spanning("x", "y", &[(&api.to_string_lossy(), "main")]);
+    let a = h.start(&task, "claude");
+    let root = Path::new(&a.worktree_path);
+
+    std::fs::write(root.join("repo").join("app.txt"), "half done\n").unwrap();
+    std::fs::write(root.join("api").join("notes.txt"), "todo\n").unwrap();
+    h.core.close_session(&a.session_id).unwrap();
+
+    h.core.park_attempt(&a.attempt_id).expect("park");
+    assert!(!root.join("repo").exists(), "a checkout survived the park");
+    assert!(!root.join("api").exists(), "a checkout survived the park");
+
+    h.core.resume_attempt(&a.attempt_id, 100, 30).expect("resume");
+    // Both back, at the same paths, with the uncommitted work restored.
+    assert_eq!(
+        std::fs::read_to_string(root.join("repo").join("app.txt")).unwrap(),
+        "half done\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("api").join("notes.txt")).unwrap(),
+        "todo\n",
+        "a file that only ever lived on the shelf did not come back"
+    );
+}
+
+/// Two refusals a card has to make before it can exist, both because the
+/// workspace it describes could not.
+#[test]
+fn a_card_cannot_span_two_worlds_or_name_one_repository_twice() {
+    let h = Harness::new("span-refuse");
+    let _guard = h.rt.enter();
+    let here = h.repo.to_string_lossy().to_string();
+
+    let err = h
+        .core
+        .create_task(
+            "x".into(),
+            "y".into(),
+            here.clone(),
+            "main".into(),
+            vec![crate::store::TaskRepo {
+                repo_path: format!("wsl://TestOS{here}"),
+                base_branch: "main".into(),
+            }],
+        )
+        .expect_err("a directory cannot straddle a world boundary");
+    assert!(err.to_string().contains("同一個世界"), "{err}");
+
+    let err = h
+        .core
+        .create_task(
+            "x".into(),
+            "y".into(),
+            here.clone(),
+            "main".into(),
+            vec![crate::store::TaskRepo {
+                repo_path: here.clone(),
+                base_branch: "main".into(),
+            }],
+        )
+        .expect_err("one repository twice is two worktrees of one branch");
+    assert!(err.to_string().contains("兩次"), "{err}");
+
+    assert!(h.core.task_board().is_empty(), "a refused card was created anyway");
+}
+
+/// Each repository's own setup script runs, in its own checkout. Running only
+/// the first would start the agent in a workspace half of which does not
+/// build.
+#[test]
+fn every_repositorys_setup_script_runs_in_its_own_checkout() {
+    let h = Harness::new("span-setup");
+    let _guard = h.rt.enter();
+    let api = h.second_repo("api");
+    for (repo, marker) in [(&h.repo, "client"), (&api, "server")] {
+        std::fs::create_dir_all(repo.join(".marol")).unwrap();
+        std::fs::write(
+            repo.join(".marol/config.json"),
+            format!(r#"{{"setup": "printf '%s' {marker} > setup-ran.txt"}}"#),
+        )
+        .unwrap();
+        git(repo, &["add", "-A"]);
+        git(repo, &["commit", "-qm", "config"]);
+    }
+
+    let task = h.card_spanning("x", "y", &[(&api.to_string_lossy(), "main")]);
+    let a = h.start(&task, "claude");
+    let root = Path::new(&a.worktree_path);
+    h.launches(&a.session_id, 1);
+
+    // Each landed in its own checkout, not both in the workspace root.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let client = std::fs::read_to_string(root.join("repo").join("setup-ran.txt"));
+        let server = std::fs::read_to_string(root.join("api").join("setup-ran.txt"));
+        if let (Ok(c), Ok(s)) = (&client, &server) {
+            assert_eq!(c, "client");
+            assert_eq!(s, "server");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "setup scripts did not both run: {client:?} / {server:?}"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        !root.join("setup-ran.txt").exists(),
+        "a setup script ran in the workspace instead of its checkout"
+    );
+}
+
+/// Two repositories can each have a `dev`, and two buttons saying `dev` would
+/// be two nobody could tell apart.
+#[test]
+fn run_scripts_from_two_repositories_are_named_by_their_checkout() {
+    let h = Harness::new("span-run");
+    let _guard = h.rt.enter();
+    let api = h.second_repo("api");
+    for repo in [&h.repo, &api] {
+        std::fs::create_dir_all(repo.join(".marol")).unwrap();
+        std::fs::write(
+            repo.join(".marol/config.json"),
+            r#"{"run": [{"name": "dev", "command": "printf '%s' $PWD > ran.txt"}]}"#,
+        )
+        .unwrap();
+        git(repo, &["add", "-A"]);
+        git(repo, &["commit", "-qm", "config"]);
+    }
+
+    let task = h.card_spanning("x", "y", &[(&api.to_string_lossy(), "main")]);
+    let a = h.start(&task, "claude");
+    let root = Path::new(&a.worktree_path);
+
+    let mut names = h.core.list_run_scripts(&a.attempt_id).unwrap();
+    names.sort();
+    assert_eq!(names, vec!["api:dev", "repo:dev"]);
+
+    // And pressing one starts it where its own `package.json` would be.
+    h.core.run_script(&a.attempt_id, "api:dev", 100, 30).expect("run");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline && !root.join("api").join("ran.txt").exists() {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        root.join("api").join("ran.txt").exists(),
+        "the service's dev server did not start in the service"
+    );
+    assert!(!root.join("repo").join("ran.txt").exists(), "the wrong one ran");
+}
+
+/// `$MAROL_ROOT_PATH` names the *first* repository, not the first one that
+/// happened to have a setup script. Taking it from the first step would point
+/// a `cp "$MAROL_ROOT_PATH/.env"` at the wrong repository whenever the first
+/// had nothing to run — and the copy would succeed, quietly, with the wrong
+/// file.
+#[test]
+fn the_root_path_the_agent_inherits_is_the_first_repository() {
+    let h = Harness::new("span-root");
+    let _guard = h.rt.enter();
+    let api = h.second_repo("api");
+    // Only the *second* repository declares a setup script.
+    std::fs::create_dir_all(api.join(".marol")).unwrap();
+    std::fs::write(api.join(".marol/config.json"), r#"{"setup": "true"}"#).unwrap();
+    git(&api, &["add", "-A"]);
+    git(&api, &["commit", "-qm", "config"]);
+
+    let task = h.card_spanning("x", "y", &[(&api.to_string_lossy(), "main")]);
+    let a = h.start(&task, "claude");
+    let launch = h.launches(&a.session_id, 1).pop().unwrap();
+    // The wrap runs `sh -c`, and the whole script is on the command line.
+    let line = launch.args.join(" ");
+    assert!(
+        line.contains(&h.repo.to_string_lossy().to_string()),
+        "the first repository is not the root path handed to the setup:\n{line}"
+    );
+}
+
+/// A checkpoint number no moment carries is a mistake to report, not a
+/// baseline to approximate: `at_or_before` would quietly diff against an
+/// older snapshot, and `restore_checkpoint` — which does check — would then
+/// refuse the very number the drawer had just compared against.
+#[test]
+fn diffing_against_a_checkpoint_that_never_existed_is_refused() {
+    let h = Harness::new("ckpt-unknown");
+    let _guard = h.rt.enter();
+    let task = h.card("x", "y");
+    let a = h.start(&task, "claude");
+
+    std::fs::write(Path::new(&a.worktree_path).join("app.txt"), "changed\n").unwrap();
+    h.core.checkpoint_now(&a.attempt_id).unwrap().expect("a snapshot");
+
+    assert!(h.core.attempt_diff_from(&a.attempt_id, Some(1)).is_ok());
+    let err = h
+        .core
+        .attempt_diff_from(&a.attempt_id, Some(9))
+        .expect_err("a number no checkpoint carries must be reported");
+    assert!(err.to_string().contains("checkpoint #9"), "{err}");
+    // And the two paths agree about it.
+    assert!(h.core.restore_checkpoint(&a.attempt_id, 9).is_err());
+}
+
+/// The Knows tab answers a question about the repositories, and for a
+/// workspace that is every checkout under it. Asking the workspace itself
+/// would report "no CLAUDE.md here" about a session whose agent has read two.
+#[test]
+fn the_knows_tab_reads_every_checkouts_conventions() {
+    let h = Harness::new("span-knows");
+    let _guard = h.rt.enter();
+    let api = h.second_repo("api");
+    std::fs::write(api.join("CLAUDE.md"), "service rules\n").unwrap();
+    git(&api, &["add", "-A"]);
+    git(&api, &["commit", "-qm", "rules"]);
+
+    let task = h.card_spanning("x", "y", &[(&api.to_string_lossy(), "main")]);
+    let a = h.start(&task, "claude");
+
+    let docs = h.core.agent_docs(&a.worktree_path).unwrap();
+    let claude: Vec<_> = docs
+        .iter()
+        .filter(|d| d.scope == "project" && d.name == "CLAUDE.md")
+        .collect();
+    assert_eq!(claude.len(), 2, "one slot per checkout: {claude:?}");
+    assert!(
+        claude.iter().any(|d| d.exists && d.path.contains("/api/")),
+        "the service's own rules file was never looked for: {claude:?}"
+    );
+    // And each says which checkout it is, or the two rows would read as one
+    // file listed twice rather than as the two different files they are.
+    let mut dirs: Vec<&str> = claude.iter().map(|d| d.dir.as_str()).collect();
+    dirs.sort();
+    assert_eq!(dirs, vec!["api", "repo"]);
+    // The machine's own rules belong to nobody's checkout.
+    assert!(docs
+        .iter()
+        .filter(|d| d.scope == "global")
+        .all(|d| d.dir.is_empty()));
+}
+
+/// One checkout that will not come back must not strand the others. The
+/// attempt is already finished in the database by the time the removals run,
+/// so bailing on the first failure would leave the rest of the workspace on
+/// disk with nothing left pointing at it.
+#[test]
+fn a_checkout_that_will_not_come_back_does_not_strand_the_others() {
+    let h = Harness::new("span-stuck");
+    let _guard = h.rt.enter();
+    let api = h.second_repo("api");
+    let task = h.card_spanning("x", "y", &[(&api.to_string_lossy(), "main")]);
+    let a = h.start(&task, "claude");
+    let root = Path::new(&a.worktree_path);
+
+    // The first repository is gone from under its worktree, so giving that
+    // one back cannot succeed.
+    std::fs::remove_dir_all(&h.repo).unwrap();
+
+    let err = h
+        .core
+        .finish_attempt(&a.attempt_id, Outcome::Discarded)
+        .expect_err("a checkout nobody could take back has to be reported");
+    assert!(
+        format!("{err:#}").contains("repo"),
+        "the error must name what is stuck: {err:#}"
+    );
+
+    // The other one went back anyway, and the attempt is closed out.
+    assert!(
+        !root.join("api").exists(),
+        "the second checkout was stranded by the first one's failure"
+    );
+    assert_eq!(
+        h.core.task_board()[0].attempts[0].attempt.outcome,
+        Some(Outcome::Discarded)
+    );
+}
+
 /* ------------------------------ follow-ups ----------------------------- */
 
 /// The review loop's delivery: feedback composed against the diff goes back
@@ -1066,7 +1571,13 @@ fn a_wsl_repository_runs_its_whole_attempt_inside_the_distro() {
     let repo_url = format!("wsl://TestOS{}", h.repo.display());
     let task = h
         .core
-        .create_task("修好登入".into(), "make it work".into(), repo_url, "main".into())
+        .create_task(
+            "修好登入".into(),
+            "make it work".into(),
+            repo_url,
+            "main".into(),
+            Vec::new(),
+        )
         .expect("a wsl:// repository must be checkable through the doorway");
 
     let a = h.start(&task, "claude");
@@ -1155,7 +1666,13 @@ fn a_session_in_another_world_is_held_there_and_found_again() {
     let repo_url = format!("wsl://TestOS{}", h.repo.display());
     let task = h
         .core
-        .create_task("修好登入".into(), "make it work".into(), repo_url, "main".into())
+        .create_task(
+            "修好登入".into(),
+            "make it work".into(),
+            repo_url,
+            "main".into(),
+            Vec::new(),
+        )
         .expect("a wsl:// repository must be checkable through the doorway");
     let a = h.start(&task, "claude");
     h.launches(&a.session_id, 1);
@@ -1283,7 +1800,13 @@ fn a_world_without_tmux_still_runs_its_sessions() {
     let repo_url = format!("wsl://TestOS{}", h.repo.display());
     let task = h
         .core
-        .create_task("修好登入".into(), "make it work".into(), repo_url, "main".into())
+        .create_task(
+            "修好登入".into(),
+            "make it work".into(),
+            repo_url,
+            "main".into(),
+            Vec::new(),
+        )
         .expect("a wsl:// repository is checkable without tmux");
     let a = h.start(&task, "claude");
 
@@ -1325,7 +1848,13 @@ fn the_sweep_ends_forgotten_sessions_in_a_world_and_leaves_other_desks_alone() {
     let repo_url = format!("wsl://TestOS{}", h.repo.display());
     let task = h
         .core
-        .create_task("修好登入".into(), "make it work".into(), repo_url, "main".into())
+        .create_task(
+            "修好登入".into(),
+            "make it work".into(),
+            repo_url,
+            "main".into(),
+            Vec::new(),
+        )
         .expect("a wsl:// repository is checkable");
     let a = h.start(&task, "claude");
     h.launches(&a.session_id, 1);
@@ -1430,6 +1959,7 @@ fn an_unreachable_ssh_host_fails_the_card_with_the_probes_reason() {
             "y".into(),
             "ssh://marol-no-such-host/home/me/app".into(),
             "main".into(),
+            Vec::new(),
         )
         .expect_err("an unreachable host cannot back a card");
     assert!(
@@ -1644,7 +2174,13 @@ fn an_ssh_repository_runs_its_whole_attempt_on_the_remote() {
     let repo_url = format!("ssh://marol-test{}", h.repo.display());
     let task = h
         .core
-        .create_task("修好登入".into(), "make it work".into(), repo_url, "main".into())
+        .create_task(
+            "修好登入".into(),
+            "make it work".into(),
+            repo_url,
+            "main".into(),
+            Vec::new(),
+        )
         .expect("an ssh:// repository must be checkable over the wire");
 
     let agent = if fx.claude_stubbed { "claude" } else { "codex" };
@@ -2467,6 +3003,7 @@ fn a_card_pointing_at_something_that_is_not_a_repository_is_refused() {
             "y".into(),
             plain.to_string_lossy().into(),
             "main".into(),
+            Vec::new(),
         )
         .expect_err("a card that can never run must not be created");
     assert!(err.to_string().contains("not a git repository"), "{err}");
@@ -2484,6 +3021,7 @@ fn a_card_naming_a_base_branch_that_does_not_exist_is_refused() {
             "y".into(),
             h.repo.to_string_lossy().into(),
             "develop".into(),
+            Vec::new(),
         )
         .expect_err("a missing base branch must be caught when the card is made");
     assert!(err.to_string().contains("no branch `develop`"), "{err}");

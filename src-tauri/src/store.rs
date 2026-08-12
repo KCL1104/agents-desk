@@ -158,6 +158,17 @@ impl PermissionMode {
 // The mode itself is stored here because it is what a person approved for an
 // attempt — a fact about the attempt, true whichever agent runs it.
 
+/// One repository a card spans, with the branch its attempts open from.
+///
+/// A card names at least one and may name several: a change that has to land
+/// in a backend and its client is one piece of work, and splitting it across
+/// two cards splits the conversation that was reasoning about both.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskRepo {
+    pub repo_path: String,
+    pub base_branch: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StoredTask {
     pub id: String,
@@ -165,10 +176,33 @@ pub struct StoredTask {
     pub prompt: String,
     pub repo_path: String,
     pub base_branch: String,
+    /// The repositories beside the first one, in the order they were added.
+    ///
+    /// The first repository stays on this row rather than moving into the
+    /// list with the others, and not out of tidiness: every card written
+    /// before a card could span two has its repository *here*, and reading
+    /// it from a table that did not exist yet would have meant a migration
+    /// that rewrites every row of somebody's board. `repos()` is the shape
+    /// the rest of the app actually uses.
+    #[serde(default)]
+    pub extra_repos: Vec<TaskRepo>,
     pub lifecycle: Lifecycle,
     /// Order within its column, the same plain integer the tab strip uses.
     pub position: i64,
     pub created_at: u64,
+}
+
+impl StoredTask {
+    /// Every repository this card spans, first one first.
+    pub fn repos(&self) -> Vec<TaskRepo> {
+        let mut out = Vec::with_capacity(1 + self.extra_repos.len());
+        out.push(TaskRepo {
+            repo_path: self.repo_path.clone(),
+            base_branch: self.base_branch.clone(),
+        });
+        out.extend(self.extra_repos.iter().cloned());
+        out
+    }
 }
 
 /// One go at a card with one agent, in its own worktree on its own branch.
@@ -181,9 +215,14 @@ pub struct StoredAttempt {
     /// removed attempt never lets a later one reuse its branch name.
     pub seq: i64,
     pub agent: String,
+    /// Where the session runs. The checkout itself when the card names one
+    /// repository; the directory holding all of them when it names several.
     pub worktree_path: String,
+    /// The branch every one of this attempt's checkouts is on — one name
+    /// across the repositories, because they are one piece of work.
     pub branch: String,
     /// The base commit at the moment the attempt opened — the diff baseline.
+    /// Mirrors the first tree's, which is the one the card's badge names.
     pub base_sha: String,
     /// How much the agent may do without asking. Kept on the attempt so a
     /// resume after a restart runs with what the person chose, and so the
@@ -199,6 +238,29 @@ pub struct StoredAttempt {
     /// branch and checkpoints kept, resumable. Never set on a finished
     /// attempt — parked is a pause, not a fifth outcome.
     pub parked_at: Option<i64>,
+}
+
+/// One checkout an attempt opened, inside its root directory.
+///
+/// Every attempt has at least one, and one is the ordinary case — the row is
+/// then the attempt's own columns said again, which is the price of letting
+/// everything downstream iterate a list instead of branching on how many
+/// repositories a card happens to have.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StoredTree {
+    pub attempt_id: String,
+    /// Order within the attempt; `0` is the card's first repository.
+    pub position: i64,
+    pub repo_path: String,
+    pub base_branch: String,
+    /// The directory this checkout occupies inside the attempt's root, and
+    /// so the prefix its paths wear in the diff. Empty for a one-repository
+    /// attempt, whose root *is* the checkout — its diff paths are already
+    /// what a person would type.
+    pub dir: String,
+    pub worktree_path: String,
+    pub branch: String,
+    pub base_sha: String,
 }
 
 /// One entry on an attempt's timeline: the prompt that started it, a tool the
@@ -261,6 +323,30 @@ fn adopt_former_name(base: &Path) {
     }
 }
 
+/// Every card's extra repositories in one read, keyed by card.
+fn stmt_extra_repos(
+    conn: &Connection,
+) -> Result<std::collections::HashMap<String, Vec<TaskRepo>>> {
+    let mut stmt = conn.prepare(
+        "SELECT task_id, repo_path, base_branch FROM task_repos ORDER BY task_id, position",
+    )?;
+    let mut out: std::collections::HashMap<String, Vec<TaskRepo>> = std::collections::HashMap::new();
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            TaskRepo {
+                repo_path: r.get(1)?,
+                base_branch: r.get(2)?,
+            },
+        ))
+    })?;
+    for row in rows {
+        let (id, repo) = row?;
+        out.entry(id).or_default().push(repo);
+    }
+    Ok(out)
+}
+
 fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
     let n: i64 = conn.query_row(
         "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
@@ -310,7 +396,7 @@ impl Store {
     }
 
     /// The schema this build expects. Bump it and add a `V<n>` step below.
-    const SCHEMA_VERSION: i64 = 5;
+    const SCHEMA_VERSION: i64 = 6;
 
     /// Sessions and tabs: everything that existed before the schema was
     /// versioned.
@@ -415,6 +501,36 @@ impl Store {
         ALTER TABLE attempts ADD COLUMN parked_at INTEGER;
     "#;
 
+    /// Cards that span more than one repository, and the checkouts their
+    /// attempts open.
+    ///
+    /// Both tables are additions rather than rewrites: an existing card keeps
+    /// its repository in `tasks.repo_path` and simply has no rows here, and an
+    /// existing attempt keeps its single checkout in its own columns. Nothing
+    /// on anybody's board is touched, and the one-repository case reads back
+    /// exactly as it always did.
+    const V6: &'static str = r#"
+        CREATE TABLE task_repos (
+            task_id     TEXT NOT NULL,
+            position    INTEGER NOT NULL,
+            repo_path   TEXT NOT NULL,
+            base_branch TEXT NOT NULL,
+            PRIMARY KEY (task_id, position)
+        );
+
+        CREATE TABLE attempt_trees (
+            attempt_id    TEXT NOT NULL,
+            position      INTEGER NOT NULL,
+            repo_path     TEXT NOT NULL,
+            base_branch   TEXT NOT NULL,
+            dir           TEXT NOT NULL,
+            worktree_path TEXT NOT NULL,
+            branch        TEXT NOT NULL,
+            base_sha      TEXT NOT NULL,
+            PRIMARY KEY (attempt_id, position)
+        );
+    "#;
+
     /// Bring the database up to `SCHEMA_VERSION`, one step at a time.
     ///
     /// The schema will keep moving from here, and the old best-effort
@@ -455,6 +571,7 @@ impl Store {
                 3 => Self::V3,
                 4 => Self::V4,
                 5 => Self::V5,
+                6 => Self::V6,
                 n => return Err(anyhow::anyhow!("no migration defined for version {n}")),
             };
             let tx = conn.transaction()?;
@@ -585,8 +702,16 @@ impl Store {
 
     /* -------------------------------- tasks ------------------------ */
 
+    /// Insert a card, or refresh the fields that move.
+    ///
+    /// The extra repositories are rewritten wholesale, in one transaction with
+    /// the row itself: they are one value conceptually — the list a card
+    /// spans — and a reorder that left half of an old list behind would give
+    /// the card repositories nobody put there.
     pub fn upsert_task(&self, t: &StoredTask) -> Result<()> {
-        self.conn.lock().unwrap().execute(
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute(
             r#"INSERT INTO tasks (id, title, prompt, repo_path, base_branch, lifecycle, position, created_at)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                ON CONFLICT(id) DO UPDATE SET
@@ -606,6 +731,15 @@ impl Store {
                 t.created_at as i64,
             ],
         )?;
+        tx.execute("DELETE FROM task_repos WHERE task_id = ?1", params![t.id])?;
+        for (i, r) in t.extra_repos.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO task_repos (task_id, position, repo_path, base_branch) \
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![t.id, i as i64 + 1, r.repo_path, r.base_branch],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -627,6 +761,7 @@ impl Store {
                     prompt: r.get(2)?,
                     repo_path: r.get(3)?,
                     base_branch: r.get(4)?,
+                    extra_repos: Vec::new(),
                     // A row with an unreadable lifecycle still has to appear
                     // somewhere, or work would vanish from the board with no
                     // way to find it again. Backlog is the harmless column.
@@ -636,6 +771,17 @@ impl Store {
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        // One pass over the whole side table rather than a query per card:
+        // the board asks for this list on every change, and most boards have
+        // no extra repositories at all — the common answer is one empty read.
+        let mut extra = stmt_extra_repos(&conn)?;
+        for t in &mut rows {
+            if let Some(list) = extra.remove(&t.id) {
+                t.extra_repos = list;
+            }
+        }
+
         rows.sort_by_key(|t| (COLUMN_ORDER.iter().position(|c| *c == t.lifecycle), t.position));
         Ok(rows)
     }
@@ -647,6 +793,11 @@ impl Store {
             "DELETE FROM attempt_events WHERE attempt_id IN (SELECT id FROM attempts WHERE task_id = ?1)",
             params![id],
         )?;
+        tx.execute(
+            "DELETE FROM attempt_trees WHERE attempt_id IN (SELECT id FROM attempts WHERE task_id = ?1)",
+            params![id],
+        )?;
+        tx.execute("DELETE FROM task_repos WHERE task_id = ?1", params![id])?;
         tx.execute("DELETE FROM attempts WHERE task_id = ?1", params![id])?;
         tx.execute("DELETE FROM queued_starts WHERE task_id = ?1", params![id])?;
         tx.execute("DELETE FROM tasks WHERE id = ?1", params![id])?;
@@ -750,6 +901,64 @@ impl Store {
                     frozen_diff: r.get(9)?,
                     created_at: r.get::<_, i64>(10)? as u64,
                     parked_at: r.get(11)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Write down every checkout an attempt opened, in order.
+    ///
+    /// Called once, straight after the attempt row, and never updated: which
+    /// ground an attempt stands on is settled when it opens. A later write
+    /// could only ever disagree with the directories git already made.
+    pub fn insert_trees(&self, trees: &[StoredTree]) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        for t in trees {
+            tx.execute(
+                r#"INSERT INTO attempt_trees
+                     (attempt_id, position, repo_path, base_branch, dir, worktree_path, branch, base_sha)
+                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"#,
+                params![
+                    t.attempt_id,
+                    t.position,
+                    t.repo_path,
+                    t.base_branch,
+                    t.dir,
+                    t.worktree_path,
+                    t.branch,
+                    t.base_sha,
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// An attempt's checkouts, first repository first.
+    ///
+    /// Empty for every attempt opened before a card could span two. That is
+    /// not a missing row to repair: the attempt's own columns are its single
+    /// checkout, and the core synthesises the tree from them rather than
+    /// backfilling a table on somebody's behalf.
+    pub fn list_trees(&self, attempt_id: &str) -> Result<Vec<StoredTree>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            r#"SELECT attempt_id, position, repo_path, base_branch, dir, worktree_path, branch, base_sha
+               FROM attempt_trees WHERE attempt_id = ?1 ORDER BY position"#,
+        )?;
+        let rows = stmt
+            .query_map(params![attempt_id], |r| {
+                Ok(StoredTree {
+                    attempt_id: r.get(0)?,
+                    position: r.get(1)?,
+                    repo_path: r.get(2)?,
+                    base_branch: r.get(3)?,
+                    dir: r.get(4)?,
+                    worktree_path: r.get(5)?,
+                    branch: r.get(6)?,
+                    base_sha: r.get(7)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1346,6 +1555,7 @@ mod tests {
             prompt: "登入頁在 Safari 會白畫面".into(),
             repo_path: "/tmp/repo".into(),
             base_branch: "main".into(),
+            extra_repos: Vec::new(),
             lifecycle,
             position,
             created_at: 1000,

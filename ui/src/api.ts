@@ -12,6 +12,7 @@ import type {
   SessionMeta,
   Tab,
   Task,
+  TaskRepo,
 } from './types';
 
 /** What pressing 開始 did. Mirrors core.rs StartResult. */
@@ -32,6 +33,11 @@ export interface AgentDoc {
    *  have agreed to look at. */
   agent: string;
   kind: 'rules' | 'skill';
+  /** Which checkout it belongs to, for a session standing in a workspace that
+   *  holds several. Empty when there is only one, and for everything global.
+   *  Without it a card spanning two repos lists `CLAUDE.md` twice with
+   *  nothing to tell the rows apart. */
+  dir: string;
   name: string;
   path: string;
   exists: boolean;
@@ -135,8 +141,16 @@ export const api = {
     invoke<void>('update_tab', { id, layout, slots }),
 
   listTasks: () => invoke<Task[]>('list_tasks'),
-  createTask: (title: string, prompt: string, repoPath: string, baseBranch: string) =>
-    invoke<string>('create_task', { title, prompt, repoPath, baseBranch }),
+  /** `extraRepos` is the repositories beside the first, for a card that spans
+      several. Omitted is the ordinary card. */
+  createTask: (
+    title: string,
+    prompt: string,
+    repoPath: string,
+    baseBranch: string,
+    extraRepos: TaskRepo[] = [],
+  ) =>
+    invoke<string>('create_task', { title, prompt, repoPath, baseBranch, extraRepos }),
   /** Move a card between columns, or reorder within one. Only a drag calls this. */
   moveTask: (id: string, lifecycle: Lifecycle, position: number) =>
     invoke<void>('move_task', { id, lifecycle, position }),

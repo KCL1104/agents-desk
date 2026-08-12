@@ -18,7 +18,14 @@ mod worktree;
 
 use crate::host::{Host, HostRef};
 use crate::shell_env::ShellEnv;
-use crate::worktree::{slug, Worktrees};
+use crate::worktree::{slug, OpenedTree, OpenedWorktree, RepoSpec, Worktrees};
+
+fn spec(repo: &str, base_branch: &str) -> RepoSpec {
+    RepoSpec {
+        repo: repo.to_string(),
+        base_branch: base_branch.to_string(),
+    }
+}
 
 fn env() -> ShellEnv {
     tokio::runtime::Runtime::new()
@@ -93,6 +100,43 @@ impl Fixture {
         git(&self.repo, &["add", "-A"]);
         git(&self.repo, &["commit", "-qm", "another"]);
     }
+
+    /// A second repository beside the first, for the cards that span two.
+    /// `where_` is its directory name under the fixture root, so a test can
+    /// ask for one that collides with the first's.
+    fn second_repo(&self, where_: &str) -> String {
+        let repo = self.root.join("other").join(where_);
+        std::fs::create_dir_all(&repo).unwrap();
+        git(&repo, &["init", "-b", "main", "-q"]);
+        git(&repo, &["config", "user.email", "t@marol.test"]);
+        git(&repo, &["config", "user.name", "Marol Test"]);
+        std::fs::write(repo.join("app.txt"), "one\n").unwrap();
+        git(&repo, &["add", "-A"]);
+        git(&repo, &["commit", "-qm", "first"]);
+        repo.to_string_lossy().to_string()
+    }
+
+    /// One attempt on this fixture's only repository.
+    fn attempt(&self, env: &ShellEnv, slug: &str, seq: i64) -> OpenedWorktree {
+        self.trees
+            .create(
+                &hr(env),
+                &self.trees.local_root(),
+                &[spec(&self.repo_s(), "main")],
+                slug,
+                seq,
+            )
+            .expect("opening an attempt")
+    }
+
+    /// The same thing, as the one checkout it is. A card naming one
+    /// repository puts the checkout *at* the attempt's root, so the tree is
+    /// the whole of what these tests are looking at.
+    fn open(&self, env: &ShellEnv, slug: &str, seq: i64) -> OpenedTree {
+        let mut wt = self.attempt(env, slug, seq);
+        assert_eq!(wt.root, wt.trees[0].path, "one repository, one directory");
+        wt.trees.remove(0)
+    }
 }
 
 impl Drop for Fixture {
@@ -108,14 +152,8 @@ fn two_attempts_on_one_repository_do_not_see_each_other() {
     let env = env();
     let f = Fixture::new("isolation");
 
-    let a = f
-        .trees
-        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "login", 1)
-        .expect("first attempt");
-    let b = f
-        .trees
-        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "login", 2)
-        .expect("second attempt");
+    let a = f.open(&env, "login", 1);
+    let b = f.open(&env, "login", 2);
 
     assert_ne!(a.path, b.path);
     assert_eq!(a.branch, "marol/login-1");
@@ -152,14 +190,14 @@ fn each_attempt_records_the_base_it_actually_started_from() {
     let f = Fixture::new("basesha");
 
     let first_base = f.head();
-    let a = f.trees.create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1).unwrap();
+    let a = f.open(&env, "card", 1);
     assert_eq!(a.base_sha, first_base);
 
     f.commit_on_main("two\n");
     let second_base = f.head();
     assert_ne!(first_base, second_base);
 
-    let b = f.trees.create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 2).unwrap();
+    let b = f.open(&env, "card", 2);
     assert_eq!(b.base_sha, second_base);
     // The first attempt's baseline did not move under it.
     assert_eq!(a.base_sha, first_base);
@@ -173,7 +211,7 @@ fn removing_a_worktree_gives_the_disk_back_and_keeps_the_branch() {
     let env = env();
     let f = Fixture::new("cleanup");
 
-    let a = f.trees.create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1).unwrap();
+    let a = f.open(&env, "card", 1);
     std::fs::write(Path::new(&a.path).join("app.txt"), "uncommitted\n").unwrap();
     std::fs::write(Path::new(&a.path).join("scratch.txt"), "junk\n").unwrap();
     assert!(Path::new(&a.path).exists());
@@ -198,7 +236,7 @@ fn removing_a_worktree_whose_directory_is_already_gone_still_tidies_up() {
     let env = env();
     let f = Fixture::new("gonedir");
 
-    let a = f.trees.create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1).unwrap();
+    let a = f.open(&env, "card", 1);
     // Deleted by hand, or an external volume that did not come back.
     std::fs::remove_dir_all(&a.path).unwrap();
 
@@ -220,10 +258,7 @@ fn a_branch_git_already_has_is_walked_past() {
     git(&f.repo, &["branch", "marol/card-1"]);
     git(&f.repo, &["branch", "marol/card-2"]);
 
-    let a = f
-        .trees
-        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
-        .expect("must not fail on an occupied name");
+    let a = f.attempt(&env, "card", 1);
     assert_eq!(a.branch, "marol/card-3");
     assert_eq!(a.seq, 3, "the number actually taken has to be reported back");
 }
@@ -236,10 +271,7 @@ fn a_title_with_no_ascii_still_produces_a_branch_git_accepts() {
     let f = Fixture::new("cjk");
 
     let s = slug("修好登入頁面的白畫面", "9f8e7d6c-4b2a");
-    let a = f
-        .trees
-        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", &s, 1)
-        .expect("git rejected the branch name");
+    let a = f.open(&env, &s, 1);
 
     assert_eq!(a.branch, "marol/task-9f8e7d6c-1");
     assert!(Path::new(&a.path).exists());
@@ -257,11 +289,11 @@ fn the_diff_shows_files_the_agent_created_as_well_as_ones_it_edited() {
     let env = env();
     let f = Fixture::new("diff");
 
-    let a = f.trees.create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1).unwrap();
+    let a = f.open(&env, "card", 1);
     std::fs::write(Path::new(&a.path).join("app.txt"), "edited by the agent\n").unwrap();
     std::fs::write(Path::new(&a.path).join("brand_new.rs"), "fn main() {}\n").unwrap();
 
-    let diff = f.trees.diff(&hr(&env), &a.path, &a.base_sha).expect("diff");
+    let diff = f.trees.diff(&hr(&env), &a.path, &a.base_sha, "").expect("diff");
 
     assert!(diff.contains("edited by the agent"), "the edit is missing:\n{diff}");
     assert!(
@@ -281,15 +313,191 @@ fn the_diff_covers_committed_and_uncommitted_work_together() {
     let env = env();
     let f = Fixture::new("committed");
 
-    let a = f.trees.create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1).unwrap();
+    let a = f.open(&env, "card", 1);
     std::fs::write(Path::new(&a.path).join("done.txt"), "committed work\n").unwrap();
     git(Path::new(&a.path), &["add", "-A"]);
     git(Path::new(&a.path), &["commit", "-qm", "agent's commit"]);
     std::fs::write(Path::new(&a.path).join("app.txt"), "still in progress\n").unwrap();
 
-    let diff = f.trees.diff(&hr(&env), &a.path, &a.base_sha).unwrap();
+    let diff = f.trees.diff(&hr(&env), &a.path, &a.base_sha, "").unwrap();
     assert!(diff.contains("committed work"), "committed work missing:\n{diff}");
     assert!(diff.contains("still in progress"), "uncommitted work missing:\n{diff}");
+}
+
+/* --------------------------- several repos --------------------------- */
+
+/// The shape of a card that spans two repositories: one workspace, one
+/// directory per repository inside it, one branch name in both — and the
+/// person's own checkouts untouched, which is the safety argument surviving
+/// the generalisation.
+#[test]
+fn a_card_spanning_two_repositories_opens_a_worktree_in_each() {
+    let env = env();
+    let f = Fixture::new("multi");
+    let other = f.second_repo("api");
+
+    let wt = f
+        .trees
+        .create(
+            &hr(&env),
+            &f.trees.local_root(),
+            &[spec(&f.repo_s(), "main"), spec(&other, "main")],
+            "login",
+            1,
+        )
+        .expect("two repositories, one attempt");
+
+    assert_eq!(wt.trees.len(), 2);
+    assert_eq!(wt.branch, "marol/login-1");
+    // The workspace is not itself a checkout; the checkouts are under it.
+    assert_eq!(wt.trees[0].dir, "repo");
+    assert_eq!(wt.trees[1].dir, "api");
+    for tree in &wt.trees {
+        assert_eq!(
+            tree.path,
+            Path::new(&wt.root).join(&tree.dir).to_string_lossy(),
+            "a checkout must sit inside the attempt's own directory"
+        );
+        assert_eq!(
+            git(Path::new(&tree.path), &["rev-parse", "--abbrev-ref", "HEAD"]),
+            "marol/login-1",
+            "both checkouts are one piece of work under one branch name"
+        );
+    }
+    assert!(!Path::new(&wt.root).join(".git").exists(), "the workspace is not a repo");
+
+    // Neither person-facing checkout moved.
+    for repo in [f.repo_s(), other] {
+        assert_eq!(
+            git(Path::new(&repo), &["rev-parse", "--abbrev-ref", "HEAD"]),
+            "main"
+        );
+    }
+}
+
+/// The numbering is one answer for the whole attempt. A branch name free in
+/// one repository but taken in the other must not be handed out, or
+/// `marol/card-2` would mean two different things inside one workspace.
+#[test]
+fn the_attempt_number_walks_past_a_branch_any_of_the_repositories_has() {
+    let env = env();
+    let f = Fixture::new("multi-seq");
+    let other = f.second_repo("api");
+    // Only the second repository has it — the first would have said yes.
+    git(Path::new(&other), &["branch", "marol/card-1"]);
+
+    let wt = f
+        .trees
+        .create(
+            &hr(&env),
+            &f.trees.local_root(),
+            &[spec(&f.repo_s(), "main"), spec(&other, "main")],
+            "card",
+            1,
+        )
+        .unwrap();
+    assert_eq!(wt.branch, "marol/card-2");
+    assert_eq!(wt.seq, 2);
+}
+
+/// The diff is one diff, and its paths are relative to where the session is
+/// standing — which is what lets a review comment name `api/routes.py` and
+/// have the agent find it.
+#[test]
+fn each_checkouts_diff_paths_are_relative_to_the_workspace() {
+    let env = env();
+    let f = Fixture::new("multi-diff");
+    let other = f.second_repo("api");
+
+    let wt = f
+        .trees
+        .create(
+            &hr(&env),
+            &f.trees.local_root(),
+            &[spec(&f.repo_s(), "main"), spec(&other, "main")],
+            "card",
+            1,
+        )
+        .unwrap();
+
+    std::fs::write(Path::new(&wt.trees[0].path).join("app.txt"), "edited\n").unwrap();
+    std::fs::write(Path::new(&wt.trees[1].path).join("brand_new.rs"), "fn main() {}\n").unwrap();
+
+    let first = f
+        .trees
+        .diff(&hr(&env), &wt.trees[0].path, &wt.trees[0].base_sha, &wt.trees[0].dir)
+        .unwrap();
+    assert!(first.contains("a/repo/app.txt"), "not workspace-relative:\n{first}");
+    assert!(first.contains("b/repo/app.txt"), "not workspace-relative:\n{first}");
+
+    // A file the agent created goes through `--no-index`, and has to wear
+    // the same prefix — otherwise half a diff points somewhere else.
+    let second = f
+        .trees
+        .diff(&hr(&env), &wt.trees[1].path, &wt.trees[1].base_sha, &wt.trees[1].dir)
+        .unwrap();
+    assert!(
+        second.contains("b/api/brand_new.rs"),
+        "a created file lost its checkout prefix:\n{second}"
+    );
+}
+
+/// Two repositories can easily share a name, and a workspace with two `api/`
+/// in it could not exist. The second takes the same path hash the worktree
+/// directories are keyed by.
+#[test]
+fn two_repositories_with_one_name_still_get_two_directories() {
+    let env = env();
+    let f = Fixture::new("multi-name");
+    let twin = f.second_repo("repo");
+
+    let wt = f
+        .trees
+        .create(
+            &hr(&env),
+            &f.trees.local_root(),
+            &[spec(&f.repo_s(), "main"), spec(&twin, "main")],
+            "card",
+            1,
+        )
+        .unwrap();
+    assert_eq!(wt.trees[0].dir, "repo");
+    assert_ne!(wt.trees[1].dir, "repo");
+    assert!(wt.trees[1].dir.starts_with("repo-"), "{}", wt.trees[1].dir);
+    assert!(Path::new(&wt.trees[0].path).join("app.txt").exists());
+    assert!(Path::new(&wt.trees[1].path).join("app.txt").exists());
+}
+
+/// A workspace half opened is worse than none: it would diff as if the
+/// missing repository had no changes in it. So a failure takes back what it
+/// already made.
+#[test]
+fn a_failure_part_way_through_leaves_no_half_made_workspace() {
+    let env = env();
+    let f = Fixture::new("multi-unwind");
+    let other = f.second_repo("api");
+    // The second repository has no `develop`, so its worktree cannot open —
+    // but only after the first one's has.
+    let err = f
+        .trees
+        .create(
+            &hr(&env),
+            &f.trees.local_root(),
+            &[spec(&f.repo_s(), "main"), spec(&other, "develop")],
+            "card",
+            1,
+        )
+        .expect_err("a missing base branch must refuse the whole attempt");
+    assert!(err.to_string().contains("no branch `develop`"), "{err}");
+
+    // Nothing of the first repository's survived it, in git or on disk.
+    assert_eq!(
+        git(&f.repo, &["branch", "--list", "marol/card-1"]).trim(),
+        "",
+        "the first repository kept a branch for an attempt that never opened"
+    );
+    let listed = git(&f.repo, &["worktree", "list"]);
+    assert!(!listed.contains("card-1"), "a worktree outlived the failure: {listed}");
 }
 
 /* --------------------------- file at rev ---------------------------- */
@@ -302,10 +510,7 @@ fn the_diff_covers_committed_and_uncommitted_work_together() {
 fn a_files_text_at_the_base_comes_back_exactly() {
     let env = env();
     let f = Fixture::new("file-at-rev");
-    let a = f
-        .trees
-        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
-        .unwrap();
+    let a = f.open(&env, "card", 1);
     std::fs::write(Path::new(&a.path).join("app.txt"), "changed since\n").unwrap();
 
     let base = f
@@ -321,10 +526,7 @@ fn a_files_text_at_the_base_comes_back_exactly() {
 fn a_file_the_attempt_created_has_no_base_side() {
     let env = env();
     let f = Fixture::new("file-new");
-    let a = f
-        .trees
-        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
-        .unwrap();
+    let a = f.open(&env, "card", 1);
     std::fs::write(Path::new(&a.path).join("fresh.rs"), "fn main() {}\n").unwrap();
 
     let base = f
@@ -386,10 +588,7 @@ fn a_base_branch_that_does_not_exist_is_refused_up_front() {
 fn a_checkpoint_leaves_a_ref_and_the_agents_git_status_untouched() {
     let env = env();
     let f = Fixture::new("ckpt-status");
-    let a = f
-        .trees
-        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
-        .unwrap();
+    let a = f.open(&env, "card", 1);
 
     // The agent's typical mess: a tracked edit, a new file, a staged file.
     std::fs::write(Path::new(&a.path).join("app.txt"), "edited\n").unwrap();
@@ -400,7 +599,7 @@ fn a_checkpoint_leaves_a_ref_and_the_agents_git_status_untouched() {
     let before = git(Path::new(&a.path), &["status", "--porcelain=v2", "--branch"]);
     let cp = f
         .trees
-        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha, 1)
         .unwrap()
         .expect("real changes must produce a checkpoint");
     let after = git(Path::new(&a.path), &["status", "--porcelain=v2", "--branch"]);
@@ -417,44 +616,43 @@ fn a_checkpoint_leaves_a_ref_and_the_agents_git_status_untouched() {
     assert!(refs.contains("refs/marol/checkpoints/attempt-1/1"));
 }
 
-/// A quiet turn adds nothing: same tree, no new ref — and the numbering
-/// continues where it left off when something does change.
+/// A quiet turn adds nothing: same tree, no new ref — whatever number it was
+/// offered. The number itself comes from the core, which shares one across an
+/// attempt's checkouts; what this layer owes is that a moment with nothing in
+/// it leaves no trace.
 #[test]
 fn an_unchanged_worktree_produces_no_new_checkpoint() {
     let env = env();
     let f = Fixture::new("ckpt-quiet");
-    let a = f
-        .trees
-        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
-        .unwrap();
+    let a = f.open(&env, "card", 1);
 
     // Nothing has changed since base: even the first ask is a no-op.
     assert!(f
         .trees
-        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha, 1)
         .unwrap()
         .is_none());
 
     std::fs::write(Path::new(&a.path).join("app.txt"), "round one\n").unwrap();
     let one = f
         .trees
-        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha, 1)
         .unwrap()
         .unwrap();
     assert_eq!(one.n, 1);
     assert!(f
         .trees
-        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha, 2)
         .unwrap()
         .is_none());
 
     std::fs::write(Path::new(&a.path).join("app.txt"), "round two\n").unwrap();
     let two = f
         .trees
-        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha, 2)
         .unwrap()
         .unwrap();
-    assert_eq!(two.n, 2, "numbering must continue, not restart");
+    assert_eq!(two.n, 2, "the number asked for is the number written down");
 
     let list = f.trees.checkpoints(&hr(&env), &a.path, "attempt-1").unwrap();
     assert_eq!(list.iter().map(|c| c.n).collect::<Vec<_>>(), vec![1, 2]);
@@ -470,19 +668,16 @@ fn an_unchanged_worktree_produces_no_new_checkpoint() {
 fn refs_are_cleared_at_the_end_and_orphans_are_swept() {
     let env = env();
     let f = Fixture::new("ckpt-clear");
-    let a = f
-        .trees
-        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
-        .unwrap();
+    let a = f.open(&env, "card", 1);
 
     std::fs::write(Path::new(&a.path).join("app.txt"), "live\n").unwrap();
     f.trees
-        .checkpoint(&hr(&env), &a.path, "attempt-live", &a.base_sha)
+        .checkpoint(&hr(&env), &a.path, "attempt-live", &a.base_sha, 1)
         .unwrap()
         .unwrap();
     std::fs::write(Path::new(&a.path).join("app.txt"), "dead\n").unwrap();
     f.trees
-        .checkpoint(&hr(&env), &a.path, "attempt-dead", &a.base_sha)
+        .checkpoint(&hr(&env), &a.path, "attempt-dead", &a.base_sha, 1)
         .unwrap()
         .unwrap();
 
@@ -514,10 +709,7 @@ fn refs_are_cleared_at_the_end_and_orphans_are_swept() {
 fn restore_returns_the_worktree_to_the_snapshot_and_only_the_worktree() {
     let env = env();
     let f = Fixture::new("ckpt-restore");
-    let a = f
-        .trees
-        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
-        .unwrap();
+    let a = f.open(&env, "card", 1);
     let wt = Path::new(&a.path);
 
     // Turn one, snapshotted.
@@ -525,7 +717,7 @@ fn restore_returns_the_worktree_to_the_snapshot_and_only_the_worktree() {
     std::fs::write(wt.join("keeper.txt"), "worth keeping\n").unwrap();
     let cp = f
         .trees
-        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha, 1)
         .unwrap()
         .unwrap();
 
@@ -570,10 +762,7 @@ fn restore_returns_the_worktree_to_the_snapshot_and_only_the_worktree() {
 fn a_parked_worktree_reattaches_at_its_old_path_and_the_shelf_comes_down() {
     let env = env();
     let f = Fixture::new("parked");
-    let a = f
-        .trees
-        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
-        .unwrap();
+    let a = f.open(&env, "card", 1);
     let wt = Path::new(&a.path);
 
     // Mid-flight work: an edit and a brand-new file, neither committed.
@@ -581,7 +770,7 @@ fn a_parked_worktree_reattaches_at_its_old_path_and_the_shelf_comes_down() {
     std::fs::write(wt.join("notes.txt"), "todo\n").unwrap();
     let shelf = f
         .trees
-        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha, 1)
         .unwrap()
         .unwrap();
 
@@ -607,10 +796,7 @@ fn a_parked_worktree_reattaches_at_its_old_path_and_the_shelf_comes_down() {
 fn attach_refuses_an_occupied_path_and_a_missing_branch() {
     let env = env();
     let f = Fixture::new("attach-refuse");
-    let a = f
-        .trees
-        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
-        .unwrap();
+    let a = f.open(&env, "card", 1);
     f.trees.remove(&hr(&env), &f.repo_s(), &a.path).unwrap();
 
     std::fs::create_dir_all(&a.path).unwrap();
@@ -634,23 +820,20 @@ fn attach_refuses_an_occupied_path_and_a_missing_branch() {
 fn the_range_diff_reads_a_parked_attempts_work_without_a_worktree() {
     let env = env();
     let f = Fixture::new("range-diff");
-    let a = f
-        .trees
-        .create(&hr(&env), &f.trees.local_root(), &f.repo_s(), "main", "card", 1)
-        .unwrap();
+    let a = f.open(&env, "card", 1);
     let wt = Path::new(&a.path);
     std::fs::write(wt.join("app.txt"), "changed\n").unwrap();
     std::fs::write(wt.join("fresh.txt"), "new file\n").unwrap();
     let shelf = f
         .trees
-        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha)
+        .checkpoint(&hr(&env), &a.path, "attempt-1", &a.base_sha, 1)
         .unwrap()
         .unwrap();
     f.trees.remove(&hr(&env), &f.repo_s(), &a.path).unwrap();
 
     let diff = f
         .trees
-        .diff_range(&hr(&env), &f.repo_s(), &a.base_sha, &shelf.sha)
+        .diff_range(&hr(&env), &f.repo_s(), &a.base_sha, &shelf.sha, "")
         .unwrap();
     assert!(diff.contains("+changed"));
     assert!(diff.contains("fresh.txt"));

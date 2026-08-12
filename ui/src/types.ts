@@ -93,6 +93,12 @@ export interface AttemptEvent {
   detail: string | null;
 }
 
+/** One repository a card spans. Mirrors store.rs TaskRepo. */
+export interface TaskRepo {
+  repo_path: string;
+  base_branch: string;
+}
+
 /** Mirrors core.rs TaskView. */
 export interface Task {
   id: string;
@@ -100,6 +106,10 @@ export interface Task {
   prompt: string;
   repo_path: string;
   base_branch: string;
+  /** The repositories beside the first one. Absent on a card written by a
+      build that predates cards spanning more than one — which is every card
+      that has only ever had the one. */
+  extra_repos?: TaskRepo[];
   lifecycle: Lifecycle;
   position: number;
   created_at: number;
@@ -107,6 +117,15 @@ export interface Task {
   /** Where this card sits in the start queue, counting from 1, when every
       slot was taken at the moment 開始 was pressed. */
   queued_at: number | null;
+}
+
+/** Every repository a card spans, first one first — the shape the board and
+    the dialogs actually use. Mirrors `StoredTask::repos`. */
+export function taskRepos(task: Task): TaskRepo[] {
+  return [
+    { repo_path: task.repo_path, base_branch: task.base_branch },
+    ...(task.extra_repos ?? []),
+  ];
 }
 
 export interface SessionMeta {

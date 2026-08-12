@@ -377,7 +377,7 @@ Marol 的三視圖 + 抽屜目前沒有「回上一個地方」的概念。
 | 16 | **fork 對話** | Task 1—N Attempt,但都從 base 開 | 需要 agent 側支援,未必做得到 | 存疑 |
 | 17 | **截圖附進初始 prompt** | 無圖片輸入路徑 | 安全 | P3 |
 | 18 | **worktree 位置與命名可設定** | 固定 `~/.marol/worktrees/` | 安全 | P3 |
-| 19 | **三種專案型態 / 父資料夾多 repo** | 硬綁單一 git repo | **動安全論證** | 暫不做 |
+| 19 | **三種專案型態 / 父資料夾多 repo** | ~~硬綁單一 git repo~~ **一張卡可以指名多個 repo** | 論證**沒動**：agent 碰得到的每個 repo 仍然是這次 attempt 自己分支上的 worktree | **已做**（見 §7 第 10 條） |
 | 20 | **工具列與卡片顯示 context-window 百分比**(截圖確認:`🗄 ▬▬ 3%`) | 抽屜顯示 `語境 {ctx} · ↑{out}`,**刻意不換算百分比** | 他們確實顯示百分比 | **不跟進**——沒有誠實的分母 |
 | 21 | **拒絕說明卡**:無標題的散文方塊,就放在「你在找的設定不在這裡」的那個位置 | 拒絕的理由全在 README 與 `docs/decisions/`,不在 UI | 安全,且**是 Marol 哲學的最佳載體** | **做,最高優先** |
 | 22 | **agent 卡片把機制承諾寫進選擇的當下**(「Hand the terminal over to Anthropic's `claude` CLI」) | 定位句只在 README | 安全 | **做**(一行字) |
@@ -598,6 +598,19 @@ Playwright **301 passed + 8 skipped**(新增的 docs 測試含在內)。
 10. **Files 分頁 / 專案實體 / 多 repo**。三者互相牽連,而且會把 Marol 推向 IDE。
     建議最多只走到「⌘P 在 attempt worktree 裡開檔」——review loop 常需要看 diff 以外的檔案,
     這個需求是真的;完整檔案樹與編輯器則超出「監督多個 agent」的產品邊界。
+
+    **多 repo 那一半已拍板做,而且做了(配對 #19);另外兩項的判斷不變。**
+    當初擋下來的理由是「動安全論證」,而查證後那句話是錯的——被綁死的不是安全論證,
+    是**資料模型**:`tasks.repo_path` 是一個字串,`attempts` 只有一組
+    `worktree_path / branch / base_sha`,於是 diff、checkpoint、合併、PR 全部吊在那一組上。
+    安全論證本身是「**一個 attempt 只能花掉自己的分支**」,而它推廣得乾乾淨淨:
+    每個 repo 各開自己的 worktree、各在這次 attempt 自己的分支上,
+    agent 碰得到的沒有一個是人本人的 checkout。只是分支從一條變成好幾條。
+
+    真正被推廣的是那句話的**反面**:如果額外的 repo 只是「掛進來讓 agent 看得到」,
+    那 agent 在那裡寫的字就是寫進你本人的 checkout ——**那才會破壞論證**。
+    所以做的是完整版(每個 repo 都是 worktree,diff/審查/合併逐 repo 涵蓋),
+    唯讀掛目錄那個便宜版本反而是不能做的那個。細節見 README 的「任務與 attempt」。
 11. **門檻 vs 密度**(配對 #29)。**已拍板:不做空首頁,改縮表單 + ⌘K 建卡;已實作。**
     Xirp 的首頁是一個幾乎全空的畫面加一個 prompt 框(「What are we shipping?」),
     Marol 的首頁是一張四欄看板。兩者都合理,但**低門檻正是審查判定最弱的地方**。

@@ -5,7 +5,7 @@ import { useT } from '../i18n';
 import { useArmed } from './armed';
 import { Icon } from './Icon';
 import type { Attempt, Lifecycle, SessionMeta, Task } from '../types';
-import { needsYou } from '../types';
+import { needsYou, taskRepos } from '../types';
 import {
   columnOf,
   COLUMN_KEY,
@@ -580,17 +580,26 @@ function Card({
 
       {/* Which codebase this card is about. Cards from different repos share
           one board, and a title alone cannot say whose login page it means —
-          or which machine's. */}
+          or which machine's. A card spanning several says so with a count
+          rather than a list: the row has one line, and the whole list is in
+          the tooltip and the drawer. */}
       <div
         className="board-card-repo mono small muted"
         data-testid={`repo-${task.id}`}
-        title={task.repo_path}
+        title={taskRepos(task)
+          .map((r) => r.repo_path)
+          .join('\n')}
       >
         <span className="board-card-where">
           {hostLabel(task.repo_path) && (
             <span className="host-badge">{hostLabel(task.repo_path)} · </span>
           )}
-          {repoName(task.repo_path)}
+          {(task.extra_repos?.length ?? 0) > 0
+            ? t('board.repoPlus', {
+                name: repoName(task.repo_path),
+                n: String(task.extra_repos?.length ?? 0),
+              })
+            : repoName(task.repo_path)}
           <span className="board-card-branch"> ⎇ {task.base_branch}</span>
         </span>
         {/* The attempt's footprint, on the row that names what it measures

@@ -1,10 +1,20 @@
-//! Git worktrees, one per attempt.
+//! Git worktrees, one per repository per attempt.
 //!
 //! An attempt is a go at a card with one agent, and it gets its own worktree
 //! and its own branch so two agents can work the same repository at the same
 //! time without seeing each other's files. The base commit is recorded when
 //! the worktree opens, because that — not `main` as it stands later — is what
 //! the attempt's diff is against.
+//!
+//! A card may name more than one repository, because a change that has to
+//! land in a service and its client is one piece of work and one
+//! conversation. Then the attempt gets a *root directory* holding one
+//! worktree per repository, side by side, and the session starts in that
+//! directory rather than in any one checkout. The safety argument is
+//! unchanged and that is the point: every repository the agent can reach is
+//! still a worktree on a branch of this attempt's own, and none of them is
+//! the person's checkout. Nothing here can spend anything but its own
+//! branches — there are simply several of them now.
 //!
 //! Every git invocation goes through the repository's host and its login
 //! environment, for the same reason sessions do: the user's git, the user's
@@ -26,15 +36,51 @@ use crate::host::{Host, HostRef};
 /// `git branch`, short enough that the worktree path stays readable.
 const MAX_SLUG: usize = 32;
 
-/// Where a newly opened attempt lives, in host-side paths.
+/// One repository an attempt is to be opened in, as the card names it.
 #[derive(Debug, Clone, PartialEq)]
-pub struct OpenedWorktree {
+pub struct RepoSpec {
+    /// The path inside the host, already located.
+    pub repo: String,
+    pub base_branch: String,
+}
+
+/// One checkout an attempt opened, in host-side paths.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OpenedTree {
+    pub repo: String,
+    pub base_branch: String,
+    /// Its directory inside the attempt's root, and so the prefix its paths
+    /// wear in the diff. Empty when the card names one repository: the root
+    /// *is* the checkout, and its diff paths are already what a person would
+    /// type.
+    pub dir: String,
     pub path: String,
     pub branch: String,
     pub base_sha: String,
+}
+
+/// Where a newly opened attempt lives, in host-side paths.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OpenedWorktree {
+    /// Where the session starts: the checkout itself for one repository, the
+    /// directory holding them all for several.
+    pub root: String,
+    pub trees: Vec<OpenedTree>,
+    /// The branch every checkout is on — one name across the repositories,
+    /// because they are one piece of work.
+    pub branch: String,
     /// Which attempt number this turned out to be. May be higher than asked
     /// for, if git already had branches in the way.
     pub seq: i64,
+}
+
+impl OpenedWorktree {
+    /// The first repository's checkout — the one the card's badge names and
+    /// the one an attempt row records. Always present: an attempt with no
+    /// tree is refused before it is opened.
+    pub fn first(&self) -> &OpenedTree {
+        &self.trees[0]
+    }
 }
 
 pub struct Worktrees {
@@ -118,8 +164,71 @@ fn branch_exists(hr: &HostRef, repo: &str, branch: &str) -> bool {
 
 /// The directory holding one repository's worktrees, under `root`.
 fn dir_for(host: &Host, root: &str, repo: &str) -> String {
-    let name = repo.rsplit(['/', '\\']).find(|s| !s.is_empty()).unwrap_or("repo");
-    host.join(root, &format!("{name}-{}", path_hash(repo)))
+    host.join(root, &format!("{}-{}", repo_name(repo), path_hash(repo)))
+}
+
+/// What a repository is called: its own last path component.
+fn repo_name(repo: &str) -> &str {
+    repo.rsplit(['/', '\\']).find(|s| !s.is_empty()).unwrap_or("repo")
+}
+
+/// A directory name inside the attempt's root for each repository, in order.
+///
+/// The repository's own name, because that is what the person calls it and
+/// what the agent will type — and what the diff's paths will read as, since
+/// they are rendered relative to the root. Two checkouts very often share a
+/// name (`api`, `web`), so one already taken picks up the same path hash the
+/// worktree directories are keyed by: still recognisable, and unique by
+/// construction rather than by luck.
+fn tree_dirs(repos: &[RepoSpec]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(repos.len());
+    for r in repos {
+        let name = repo_name(&r.repo);
+        let taken = out.iter().any(|d| d == name);
+        out.push(if taken {
+            format!("{name}-{}", path_hash(&r.repo))
+        } else {
+            name.to_string()
+        });
+    }
+    out
+}
+
+/// The directory names an attempt on these repositories *would* get, for the
+/// prompt the start dialog shows before anything has been opened. One
+/// repository gets no directory at all, which is what makes the preview and
+/// the real thing say the same sentence.
+pub fn preview_dirs(repos: &[RepoSpec]) -> Vec<String> {
+    if repos.len() <= 1 {
+        return vec![String::new(); repos.len()];
+    }
+    tree_dirs(repos)
+}
+
+/// The `--src-prefix`/`--dst-prefix` pair that renders one checkout's paths
+/// relative to the attempt's root instead of to its own repository.
+///
+/// Empty for a one-repository attempt, so its diff is byte-for-byte the one
+/// this app has always produced. For the rest it is what makes `web/api.ts`
+/// and `api/routes.py` name two different files in one diff — and what lets
+/// a review comment, and the in-place editor, point at a path the agent can
+/// open from where it is standing.
+fn prefix_args(dir: &str) -> Vec<String> {
+    if dir.is_empty() {
+        return Vec::new();
+    }
+    vec![
+        format!("--src-prefix=a/{dir}/"),
+        format!("--dst-prefix=b/{dir}/"),
+    ]
+}
+
+/// `["diff", <prefixes>, ...rest]` as the borrowed slice `git` takes.
+fn with_prefix<'a>(dir_args: &'a [String], rest: &[&'a str]) -> Vec<&'a str> {
+    let mut out: Vec<&str> = vec!["diff"];
+    out.extend(dir_args.iter().map(String::as_str));
+    out.extend(rest.iter().copied());
+    out
 }
 
 impl Worktrees {
@@ -193,58 +302,115 @@ impl Worktrees {
         Ok(())
     }
 
-    /// Open a worktree for an attempt: a fresh branch off `base_branch`, in a
-    /// directory of its own under `root` — which lives in the same host as
-    /// the repository, never on the app's side of a boundary.
+    /// Open an attempt's ground: one fresh branch, and a worktree on it in
+    /// every repository the card names.
     ///
-    /// `start_seq` is where numbering begins; if git already has that branch
-    /// or the directory is occupied, this walks forward and reports which
-    /// number it actually took.
-    #[allow(clippy::too_many_arguments)]
+    /// The whole attempt lives under `root` — which is in the same host as
+    /// the repositories, never on the app's side of a boundary. One
+    /// repository puts its checkout straight at the attempt's path, exactly
+    /// as this has always done; several put one directory each inside it,
+    /// named after the repository, and the attempt's path becomes the
+    /// workspace the session starts in.
+    ///
+    /// **One branch name, in every repository.** They are one piece of work
+    /// and reviewing them under one name is the point; it also means the
+    /// numbering has a single answer to walk forward from. `start_seq` is
+    /// where that walk begins, and it goes past any number *any* of the
+    /// repositories already has a branch for, so `marol/login-2` never means
+    /// two different things in two checkouts of one attempt.
+    ///
+    /// A failure part-way through takes back what it already opened. A
+    /// half-made workspace would look like a working one and diff as if the
+    /// missing repository had no changes.
     pub fn create(
         &self,
         hr: &HostRef,
         root: &str,
-        repo: &str,
-        base_branch: &str,
+        repos: &[RepoSpec],
         slug: &str,
         start_seq: i64,
     ) -> Result<OpenedWorktree> {
-        self.check_repo(hr, repo, base_branch)?;
+        let Some(first) = repos.first() else {
+            return Err(anyhow!("an attempt needs at least one repository"));
+        };
+        for r in repos {
+            self.check_repo(hr, &r.repo, &r.base_branch)?;
+        }
+        let solo = repos.len() == 1;
 
-        // The base as it stands right now. Recorded rather than re-resolved
-        // later, because `main` keeps moving and the attempt's diff has to
-        // stay against what it actually started from.
-        let base_sha = git(hr, repo, &["rev-parse", base_branch])?;
-
-        let dir = dir_for(hr.host, root, repo);
+        // Keyed on the first repository, so every attempt at a card lands in
+        // the same directory whatever else the card came to span.
+        let dir = dir_for(hr.host, root, &first.repo);
         hr.mkdir_p(&dir)
             .with_context(|| format!("creating {dir}"))?;
 
         let mut seq = start_seq.max(1);
-        let (path, branch) = loop {
+        let (attempt_root, branch) = loop {
             if seq > start_seq + 1000 {
                 return Err(anyhow!("no free attempt number for `{slug}` after 1000 tries"));
             }
             let branch = format!("marol/{slug}-{seq}");
             let path = hr.join(&dir, &format!("{slug}-{seq}"));
-            if !branch_exists(hr, repo, &branch) && !hr.exists(&path) {
+            let free = !hr.exists(&path)
+                && repos.iter().all(|r| !branch_exists(hr, &r.repo, &branch));
+            if free {
                 break (path, branch);
             }
             seq += 1;
         };
 
-        git(
-            hr,
-            repo,
-            &["worktree", "add", "-b", &branch, &path, base_branch],
-        )
-        .with_context(|| format!("opening a worktree for `{branch}`"))?;
+        let dirs = tree_dirs(repos);
+        let mut trees: Vec<OpenedTree> = Vec::with_capacity(repos.len());
+        for (r, d) in repos.iter().zip(dirs) {
+            // The base as it stands right now. Recorded rather than
+            // re-resolved later, because `main` keeps moving and the
+            // attempt's diff has to stay against what it actually started
+            // from.
+            let base_sha = git(hr, &r.repo, &["rev-parse", &r.base_branch])?;
+            let (dir, path) = if solo {
+                (String::new(), attempt_root.clone())
+            } else {
+                let path = hr.join(&attempt_root, &d);
+                (d, path)
+            };
+            trees.push(OpenedTree {
+                repo: r.repo.clone(),
+                base_branch: r.base_branch.clone(),
+                dir,
+                path,
+                branch: branch.clone(),
+                base_sha,
+            });
+        }
+
+        // `git worktree add` makes the leaf; the workspace above it is ours.
+        if !solo {
+            hr.mkdir_p(&attempt_root)
+                .with_context(|| format!("creating {attempt_root}"))?;
+        }
+
+        for (i, t) in trees.iter().enumerate() {
+            let added = git(
+                hr,
+                &t.repo,
+                &["worktree", "add", "-b", &t.branch, &t.path, &t.base_branch],
+            );
+            if let Err(e) = added {
+                for done in &trees[..i] {
+                    let _ = self.remove(hr, &done.repo, &done.path);
+                }
+                if !solo {
+                    let _ = hr.remove_dir(&attempt_root);
+                }
+                return Err(e)
+                    .with_context(|| format!("opening a worktree for `{}` in {}", t.branch, t.repo));
+            }
+        }
 
         Ok(OpenedWorktree {
-            path,
+            root: attempt_root,
+            trees,
             branch,
-            base_sha,
             seq,
         })
     }
@@ -277,8 +443,27 @@ impl Worktrees {
     /// store — no worktree required. This is how a parked attempt gets its
     /// frozen diff: base against its last checkpoint, which holds tracked
     /// and untracked work alike.
-    pub fn diff_range(&self, hr: &HostRef, git_cwd: &str, from: &str, to: &str) -> Result<String> {
-        git(hr, git_cwd, &["diff", from, to])
+    pub fn diff_range(
+        &self,
+        hr: &HostRef,
+        git_cwd: &str,
+        from: &str,
+        to: &str,
+        dir: &str,
+    ) -> Result<String> {
+        let prefix = prefix_args(dir);
+        git(hr, git_cwd, &with_prefix(&prefix, &[from, to]))
+    }
+
+    /// Remove an attempt's root directory once its checkouts have gone.
+    ///
+    /// Only ever the empty shell a multi-repository attempt leaves behind:
+    /// `rmdir` refuses anything still holding a file, which is the guard.
+    /// Something left in there is somebody's — a build output, a copied
+    /// `.env` — and the directory standing is a smaller surprise than a
+    /// tidy-up that took it.
+    pub fn remove_root(&self, hr: &HostRef, root: &str) -> Result<()> {
+        hr.remove_dir(root)
     }
 
     /// Give the worktree back.
@@ -303,6 +488,56 @@ impl Worktrees {
         Ok(())
     }
 
+    /// Every reason this merge would not go, asked before any of them runs.
+    ///
+    /// Split out of `merge_to_base` so an attempt spanning several
+    /// repositories can be refused as a whole. Discovering the second
+    /// repository's uncommitted work after the first has already been merged
+    /// leaves a person half-landed, and that is precisely the outcome these
+    /// refusals exist to prevent.
+    pub fn check_merge(
+        &self,
+        hr: &HostRef,
+        repo: &str,
+        worktree: &str,
+        branch: &str,
+        base_branch: &str,
+    ) -> Result<()> {
+        let dirty = git(hr, worktree, &["status", "--porcelain"])?;
+        if !dirty.trim().is_empty() {
+            return Err(anyhow!(
+                "{branch} 還有沒有 commit 的變更，合併不會包含它們。\
+                 請先在 attempt 的 TUI 裡 commit，或改用「丟棄」。"
+            ));
+        }
+
+        let on = git(hr, repo, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+        if on.trim() != base_branch {
+            return Err(anyhow!(
+                "這個 repo 目前在 `{}`，不是 `{base_branch}`。切過去再合併。",
+                on.trim()
+            ));
+        }
+        let repo_dirty = git(hr, repo, &["status", "--porcelain"])?;
+        if !repo_dirty.trim().is_empty() {
+            return Err(anyhow!(
+                "`{base_branch}` 的工作目錄有未提交的變更，先收乾淨再合併。"
+            ));
+        }
+
+        let ahead = git(
+            hr,
+            repo,
+            &["rev-list", "--count", &format!("{base_branch}..{branch}")],
+        )?;
+        if ahead.trim() == "0" {
+            return Err(anyhow!(
+                "{branch} 沒有任何 `{base_branch}` 還沒有的 commit，沒有東西可以合併。"
+            ));
+        }
+        Ok(())
+    }
+
     /// Fold an attempt's branch back into the base.
     ///
     /// Every refusal here is one that would otherwise lose work quietly:
@@ -317,6 +552,10 @@ impl Worktrees {
     /// Said plainly and refused, rather than worked around: a merge that
     /// silently did something other than what it says is worse than one that
     /// asks you to tidy up first.
+    ///
+    /// Asked again here even when `check_merge` has just asked: the gap
+    /// between the two is a gap a person can commit into, and this is the
+    /// question whose answer has to be true at the moment git acts on it.
     pub fn merge_to_base(
         &self,
         hr: &HostRef,
@@ -418,14 +657,20 @@ impl Worktrees {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
 
-    /// What this attempt has changed since it started.
+    /// What one of this attempt's checkouts has changed since it started.
     ///
     /// Two calls, because `git diff` only knows about tracked files and an
     /// agent's most common act is creating one. A diff that silently omits
     /// every new file cannot answer "what did this attempt do", which is the
     /// only reason the diff exists.
-    pub fn diff(&self, hr: &HostRef, worktree: &str, base_sha: &str) -> Result<String> {
-        let tracked = git(hr, worktree, &["diff", base_sha])?;
+    ///
+    /// `dir` is where this checkout sits inside the attempt, so every path in
+    /// the result is relative to the directory the session is standing in —
+    /// empty, and the result is the repository-relative diff this has always
+    /// produced.
+    pub fn diff(&self, hr: &HostRef, worktree: &str, base_sha: &str, dir: &str) -> Result<String> {
+        let prefix = prefix_args(dir);
+        let tracked = git(hr, worktree, &with_prefix(&prefix, &[base_sha]))?;
         let untracked = git(
             hr,
             worktree,
@@ -437,11 +682,8 @@ impl Worktrees {
             // `--no-index` against /dev/null renders a new file as the patch
             // that would create it, so it reads like the rest of the diff.
             // It exits 1 when there is a difference, which there always is.
-            let rendered = hr.run(
-                "git",
-                &["diff", "--no-index", "--", "/dev/null", file],
-                Some(worktree),
-            );
+            let args = with_prefix(&prefix, &["--no-index", "--", "/dev/null", file]);
+            let rendered = hr.run("git", &args, Some(worktree));
             if let Ok(o) = rendered {
                 if !out.is_empty() && !out.ends_with('\n') {
                     out.push('\n');
@@ -621,12 +863,20 @@ impl Worktrees {
     /// The temp index persists beside the worktree's own git dir, so the
     /// second snapshot onward pays a stat walk, not a re-hash of every file.
     /// A turn that changed nothing produces no ref and returns `None`.
+    ///
+    /// `n` is handed in rather than counted here, because an attempt spanning
+    /// several repositories has to number one moment the same in all of them:
+    /// "checkpoint 3" is a moment in the work, not a count of how often one
+    /// particular checkout happened to change. A repository untouched at that
+    /// moment simply grows no ref for it, and reading back takes the newest
+    /// snapshot at or before the number asked for.
     pub fn checkpoint(
         &self,
         hr: &HostRef,
         worktree: &str,
         attempt_id: &str,
         base_sha: &str,
+        n: u64,
     ) -> Result<Option<Checkpoint>> {
         let gitdir = git(hr, worktree, &["rev-parse", "--absolute-git-dir"])?;
         let index = format!("{}/marol-checkpoint.index", gitdir.trim_end_matches('/'));
@@ -642,7 +892,6 @@ impl Worktrees {
             return Ok(None);
         }
 
-        let n = prev.map(|c| c.n + 1).unwrap_or(1);
         // Its own identity, so a repo (or host) with no user.name configured
         // can still snapshot — and no checkpoint ever wears the user's name.
         let id_env = [
@@ -759,6 +1008,16 @@ pub struct Checkpoint {
 
 fn checkpoint_prefix(attempt_id: &str) -> String {
     format!("refs/marol/checkpoints/{attempt_id}")
+}
+
+/// The snapshot a checkout actually holds for the moment numbered `n`.
+///
+/// The newest one at or before it, because a repository that was untouched
+/// at that moment grew no ref for it, and the honest answer to "how did this
+/// checkout look at checkpoint 3" is then "the way it looked at 2". `None`
+/// means it had not changed at all yet, and the attempt's base is the answer.
+pub fn at_or_before(checkpoints: &[Checkpoint], n: u64) -> Option<&Checkpoint> {
+    checkpoints.iter().rfind(|c| c.n <= n)
 }
 
 /// Full refnames into offerable branch names: `refs/heads/x` and

@@ -252,6 +252,21 @@ textarea { resize: vertical; }
 .modal .fields .field { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .modal .fields .field label { margin-top: 0; }
 .recents { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+/* A label with its own affordance at the far end: the extra repo rows, whose
+   "remove" belongs to the row it heads rather than to the form. */
+.modal .row.between { align-items: baseline; justify-content: space-between; }
+.modal .row.between label { margin-bottom: 0; }
+/* Quiet enough to stay out of the reading order, loud enough to be found:
+   the row it removes was added on purpose, so taking it back is a normal
+   act and not a warning. */
+.modal .quiet {
+  background: none; border: none; padding: 0;
+  color: var(--fg-dim); font-size: var(--fs-label);
+}
+.modal .quiet:hover { color: var(--fg); text-decoration: underline; }
+/* The button that adds one. It sits below the base field on its own line,
+   and reads as an offer rather than a step. */
+.modal .add-repo { margin-top: 14px; cursor: pointer; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 /* The chord rides the button it fires. A gesture that lives only in a
    tooltip is a gesture most people never find — and the ⌘/ sheet is a

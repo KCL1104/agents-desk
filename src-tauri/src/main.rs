@@ -393,6 +393,9 @@ fn list_tasks(state: State<'_, AppState>) -> StdResult<Vec<crate::core::TaskView
     Ok(state.core()?.task_board())
 }
 
+/// `extra_repos` is the repositories beside the first, for a card that spans
+/// several. Absent is the ordinary card, and every caller written before this
+/// existed keeps working unchanged.
 #[tauri::command]
 fn create_task(
     state: State<'_, AppState>,
@@ -400,10 +403,17 @@ fn create_task(
     prompt: String,
     repo_path: String,
     base_branch: String,
+    extra_repos: Option<Vec<store::TaskRepo>>,
 ) -> StdResult<String, String> {
     state
         .core()?
-        .create_task(title, prompt, repo_path, base_branch)
+        .create_task(
+            title,
+            prompt,
+            repo_path,
+            base_branch,
+            extra_repos.unwrap_or_default(),
+        )
         .map_err(|e| format!("{e:#}"))
 }
 

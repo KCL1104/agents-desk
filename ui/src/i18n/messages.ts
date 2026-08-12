@@ -75,6 +75,15 @@ export const en = {
   'newTask.repoHint': 'A local path, or wsl://<distro>/<path>, or ssh://<host>/<path>.',
   'newTask.base': 'Base branch',
   'newTask.baseHint': 'Attempts branch from here, and diff against it.',
+  'newTask.addRepo': 'Add another repo',
+  'newTask.addRepoHint':
+    'A change that has to land in a service and its client is one card. Each repo gets its own worktree on the same branch name, side by side in one directory — and the agent starts in that directory. The diff, the review and the merge cover all of them. Every repo on a card has to be in the same world.',
+  'newTask.dropRepo': 'Remove',
+  'newTask.repoN': 'Repo {n}',
+  'newTask.baseN': 'Base branch {n}',
+  // The card's badge when it spans more than one: the first repo's name and
+  // how many others ride with it.
+  'board.repoPlus': '{name} +{n}',
   // 建卡成功後由 say() 唸出：對話框關掉、焦點跳到新卡片,這一刻只有
   // 視覺鏈知道發生了什麼 —— 朗讀鏈在這裡補上確認。
   'newTask.created': 'Card created: {title}',
@@ -629,6 +638,13 @@ export const zhTW: Record<MessageKey, string> = {
   'newTask.repoHint': '本機路徑，或 wsl://<distro>/<路徑>，或 ssh://<host>/<路徑>。',
   'newTask.base': 'Base 分支',
   'newTask.baseHint': 'attempt 從這裡開分支，diff 也以這裡為基準。',
+  'newTask.addRepo': '再加一個 repo',
+  'newTask.addRepoHint':
+    '一個要同時改後端和它的客戶端的變更，是一張卡。每個 repo 各開自己的 worktree、用同一個分支名，並排在同一個資料夾裡 —— agent 就起在那個資料夾。diff、審查、合併全部涵蓋。同一張卡上的 repo 必須在同一個世界。',
+  'newTask.dropRepo': '移除',
+  'newTask.repoN': 'Repo {n}',
+  'newTask.baseN': 'Base 分支 {n}',
+  'board.repoPlus': '{name} +{n}',
   'newTask.created': '已建立卡片：「{title}」',
 
   /* -------------------------- start attempt --------------------------- */

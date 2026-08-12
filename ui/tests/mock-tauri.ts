@@ -67,6 +67,9 @@ export interface MockTask {
   prompt: string;
   repo_path: string;
   base_branch: string;
+  /** Absent is a card with the one repository — which is nearly all of
+      them, and what every fixture written before this meant. */
+  extra_repos?: Array<{ repo_path: string; base_branch: string }>;
   lifecycle: string;
   position: number;
   created_at: number;
@@ -109,6 +112,10 @@ declare global {
       dirtyWorktrees: Set<string>;
       /** The repo's `.marol/config.json` run script names. */
       runScripts: string[];
+      /** The checkouts the Knows tab's project rows belong to, for a session
+          standing in a workspace that holds several. Empty is one checkout —
+          the ordinary session, whose rows carry no folder. */
+      knowsDirs: string[];
       /** Each attempt's worktree shell, while one is live — the core's cache. */
       shells: Map<string, string>;
       /** One message per session, held for the end of its turn. */
@@ -213,6 +220,7 @@ export function installMock(): void {
     pendingStarts: new Map<string, { agent: string; prompt: string; mode: string }>(),
     dirtyWorktrees: new Set<string>(),
     runScripts: [] as string[],
+    knowsDirs: [] as string[],
     shells: new Map<string, string>(),
     queuedFollowups: new Map<string, string>(),
     profiles: [] as Array<{ name: string; agent: string; args: string[] }>,
@@ -537,11 +545,31 @@ export function installMock(): void {
     create_task: (args) => {
       const repo = String(args.repoPath);
       const branch = String(args.baseBranch);
-      // The core checks both when the card is made, not when it is first run,
-      // so a card that could never produce an attempt cannot be created.
-      const branches = mock.repos[repo];
-      if (!branches) throw new Error(`${repo} is not a git repository`);
-      if (!branches.includes(branch)) throw new Error(`${repo} has no branch \`${branch}\``);
+      const extra = (args.extraRepos ?? []) as Array<{
+        repo_path: string;
+        base_branch: string;
+      }>;
+      // The core checks every repository when the card is made, not when it
+      // is first run, so a card that could never produce an attempt cannot be
+      // created. The mock refuses the same things for the same reasons: one
+      // that was more generous than the product would turn a real refusal
+      // into a test that never sees it.
+      const world = (p: string) => /^(wsl|ssh):\/\/[^/]+/.exec(p)?.[0] ?? '';
+      const seen = new Set<string>();
+      for (const r of [{ repo_path: repo, base_branch: branch }, ...extra]) {
+        if (world(r.repo_path) !== world(repo)) {
+          throw new Error(
+            `一張卡上的 repo 必須在同一個世界：${repo} 和 ${r.repo_path} 不在。`,
+          );
+        }
+        if (seen.has(r.repo_path)) throw new Error(`${r.repo_path} 在這張卡上出現了兩次`);
+        seen.add(r.repo_path);
+        const branches = mock.repos[r.repo_path];
+        if (!branches) throw new Error(`${r.repo_path} is not a git repository`);
+        if (!branches.includes(r.base_branch)) {
+          throw new Error(`${r.repo_path} has no branch \`${r.base_branch}\``);
+        }
+      }
 
       const id = `k${mock.tasks.length + 1}`;
       mock.tasks.push({
@@ -550,6 +578,7 @@ export function installMock(): void {
         prompt: String(args.prompt),
         repo_path: repo,
         base_branch: branch,
+        extra_repos: extra,
         lifecycle: 'backlog',
         position: mock.tasks.filter((t) => t.lifecycle === 'backlog').length,
         created_at: now(),
@@ -668,9 +697,18 @@ export function installMock(): void {
       if (mock.dirtyWorktrees.has(attempt.id)) {
         throw new Error(`${attempt.branch} 還有沒有 commit 的變更，推上去不會包含它們。`);
       }
-      // The attempt deliberately stays open: review is when there is still
-      // something to change.
-      return `https://github.com/test/repo/pull/${attempt.seq}`;
+      // One per repository the card spans, newline-separated in the order
+      // the card names them — a pull request belongs to a repository, so a
+      // card spanning two produces two. The attempt deliberately stays open:
+      // review is when there is still something to change.
+      const task = mock.tasks.find((x) => x.attempts.some((a) => a.id === attempt.id))!;
+      return [
+        `https://github.com/test/repo/pull/${attempt.seq}`,
+        ...(task.extra_repos ?? []).map((r) => {
+          const name = r.repo_path.split('/').filter(Boolean).slice(-1)[0];
+          return `https://github.com/test/${name}/pull/${attempt.seq}`;
+        }),
+      ].join('\n');
     },
   };
 
@@ -1107,15 +1145,27 @@ export function installMock(): void {
     'plugin:opener|open_path': () => null,
 
     /** Slots and discoveries together, the way the core returns them: two
-     *  rules files present, one absent, plus a skill read off disk. */
-    agent_docs: () => [
-      { scope: 'project', agent: 'claude', kind: 'rules', name: 'CLAUDE.md', path: '/wt/CLAUDE.md', exists: true },
-      { scope: 'project', agent: 'shared', kind: 'rules', name: 'AGENTS.md', path: '/wt/AGENTS.md', exists: false },
-      { scope: 'project', agent: 'gemini', kind: 'rules', name: 'GEMINI.md', path: '/wt/GEMINI.md', exists: false },
-      { scope: 'project', agent: 'claude', kind: 'skill', name: 'release', path: '/wt/.claude/skills/release/SKILL.md', exists: true },
-      { scope: 'global', agent: 'claude', kind: 'rules', name: 'CLAUDE.md', path: '/home/me/.claude/CLAUDE.md', exists: true },
-      { scope: 'global', agent: 'codex', kind: 'rules', name: 'AGENTS.md', path: '/home/me/.codex/AGENTS.md', exists: false },
-    ],
+     *  rules files present, one absent, plus a skill read off disk. `dir` is
+     *  empty throughout — one checkout, which is what every fixture here has;
+     *  `mock.knowsDir` makes the project rows wear a checkout instead, for
+     *  the card that spans two. */
+    agent_docs: () =>
+      [
+        { scope: 'project', agent: 'claude', kind: 'rules', name: 'CLAUDE.md', path: '/wt/CLAUDE.md', exists: true },
+        { scope: 'project', agent: 'shared', kind: 'rules', name: 'AGENTS.md', path: '/wt/AGENTS.md', exists: false },
+        { scope: 'project', agent: 'gemini', kind: 'rules', name: 'GEMINI.md', path: '/wt/GEMINI.md', exists: false },
+        { scope: 'project', agent: 'claude', kind: 'skill', name: 'release', path: '/wt/.claude/skills/release/SKILL.md', exists: true },
+        { scope: 'global', agent: 'claude', kind: 'rules', name: 'CLAUDE.md', path: '/home/me/.claude/CLAUDE.md', exists: true },
+        { scope: 'global', agent: 'codex', kind: 'rules', name: 'AGENTS.md', path: '/home/me/.codex/AGENTS.md', exists: false },
+      ].flatMap((d) =>
+        d.scope === 'project' && mock.knowsDirs.length > 0
+          ? mock.knowsDirs.map((dir) => ({
+              ...d,
+              dir,
+              path: `/wt/${dir}/${d.path.slice('/wt/'.length)}`,
+            }))
+          : [{ ...d, dir: '' }],
+      ),
     'plugin:notification|is_permission_granted': () => true,
     'plugin:notification|notify': () => null,
   };

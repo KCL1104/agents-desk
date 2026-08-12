@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { api } from '../api';
 import { useT } from '../i18n';
 import { chord } from '../platform';
+import type { TaskRepo } from '../types';
 import { composePath, storedWorld, type World } from '../worlds';
 import { Modal } from './Modal';
 import { WorldSelect } from './WorldSelect';
@@ -10,12 +11,34 @@ import { FriendlyError } from './FriendlyError';
 
 interface Props {
   onCancel: () => void;
-  onCreate: (title: string, prompt: string, repoPath: string, baseBranch: string) => void | Promise<void>;
+  onCreate: (
+    title: string,
+    prompt: string,
+    repoPath: string,
+    baseBranch: string,
+    extraRepos: TaskRepo[],
+  ) => void | Promise<void>;
   /** Set when the core refused the repository or the base branch. */
   error: string | null;
   /** A goal typed into the palette, taken as the prompt. Empty when the
    *  dialog was opened the ordinary way. */
   goal?: string;
+}
+
+/** One of the repositories beside the first, while the dialog is open. */
+interface Extra {
+  /** Stable for as long as the row exists, so React keys the row to the row
+   *  rather than to its position. Keyed by index, removing one would hand
+   *  the survivor the removed row's component — and with it the removed
+   *  row's debounced branch lookup, which lands a moment later and rewrites
+   *  a base nobody touched. */
+  key: number;
+  repo: string;
+  branch: string;
+  /** Whether the base has been typed into. A default is a guess; it may be
+   *  corrected by what the repository actually has — but never over
+   *  something somebody wrote. */
+  edited: boolean;
 }
 
 const RECENT_KEY = 'marol.recentRepos';
@@ -34,11 +57,147 @@ export function rememberRepo(path: string) {
 }
 
 /**
- * A card is a repository, a base branch, and something to do.
+ * The branches a repository has, asked of the repository itself once the path
+ * stops moving.
  *
- * The repository and the branch are checked when the card is made rather than
+ * The cleanup is the staleness guard: a fetch for a path no longer in the
+ * field can never land. A path that is not a repository (yet) answers with an
+ * empty list rather than an error — half-typed paths land there on every
+ * keystroke, and the create step still checks for real.
+ */
+function useBranches(path: string): string[] {
+  const [branches, setBranches] = useState<string[]>([]);
+  useEffect(() => {
+    if (path === '') {
+      setBranches([]);
+      return;
+    }
+    let live = true;
+    const timer = setTimeout(() => {
+      void api
+        .listBranches(path)
+        .then((found) => {
+          if (live) setBranches(found);
+        })
+        .catch(() => {
+          if (live) setBranches([]);
+        });
+    }, 300);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [path]);
+  return branches;
+}
+
+/** What a repository's base should read as, given what it turned out to
+ *  have. `main` when it is there, otherwise its most recent branch — and
+ *  never over a name somebody typed. */
+function correctedBase(found: string[], current: string, edited: boolean): string {
+  if (edited || found.length === 0 || found.includes(current)) return current;
+  return found.includes('main') ? 'main' : found[0];
+}
+
+/** Enter finishes the form from any single-line field — but never the Enter
+ *  that is confirming an IME composition, which zh-TW typing ends every
+ *  phrase with. */
+function onEnter(submit: () => void) {
+  return (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit();
+  };
+}
+
+/**
+ * One repository beside the first: the same two fields, plus the button that
+ * takes the row back off again.
+ *
+ * The world is the card's, not the row's — every repository on a card has to
+ * live in one, because the checkouts share a directory and a directory
+ * cannot straddle the boundary into a WSL distro or an SSH host. Offering a
+ * per-row world picker would be offering a card the core will refuse.
+ */
+function ExtraRepo({
+  n,
+  world,
+  value,
+  onChange,
+  onDrop,
+  onSubmit,
+}: {
+  n: number;
+  world: World;
+  value: Extra;
+  onChange: (patch: Partial<Extra>) => void;
+  onDrop: () => void;
+  onSubmit: () => void;
+}) {
+  const t = useT();
+  const path = value.repo.trim() === '' ? '' : composePath(world, value.repo);
+  const branches = useBranches(path);
+  const corrected = correctedBase(branches, value.branch, value.edited);
+  // Settles in one pass: when they differ the correction goes up, and the
+  // re-run sees them equal and does nothing.
+  useEffect(() => {
+    if (corrected !== value.branch) onChange({ branch: corrected });
+  }, [corrected, value.branch]);
+
+  const pick = async () => {
+    const picked = await open({ directory: true, multiple: false });
+    if (typeof picked === 'string') onChange({ repo: picked });
+  };
+
+  return (
+    <>
+      <div className="row between">
+        <label>{t('newTask.repoN', { n: String(n) })}</label>
+        <button className="quiet" data-testid={`task-drop-repo-${n}`} onClick={onDrop}>
+          {t('newTask.dropRepo')}
+        </button>
+      </div>
+      <div className="row">
+        <input
+          className="mono"
+          value={value.repo}
+          data-testid={`task-repo-${n}`}
+          autoFocus
+          placeholder={world === '' ? '~/code/the-other-one' : '/home/you/the-other-one'}
+          onChange={(e) => onChange({ repo: e.target.value })}
+          onKeyDown={onEnter(onSubmit)}
+        />
+        <button onClick={pick}>{t('common.choose')}</button>
+      </div>
+
+      <label>{t('newTask.baseN', { n: String(n) })}</label>
+      <input
+        className="mono"
+        value={value.branch}
+        data-testid={`task-branch-${n}`}
+        list={`branch-options-${n}`}
+        onChange={(e) => onChange({ branch: e.target.value, edited: true })}
+        onKeyDown={onEnter(onSubmit)}
+      />
+      <datalist id={`branch-options-${n}`}>
+        {branches.map((b) => (
+          <option key={b} value={b} />
+        ))}
+      </datalist>
+    </>
+  );
+}
+
+/**
+ * A card is one or more repositories, a base branch for each, and something
+ * to do.
+ *
+ * Every repository and branch is checked when the card is made rather than
  * when someone first tries to run it, so a card that can never produce an
  * attempt cannot sit on the board looking like work.
+ *
+ * The second repository is deliberately behind a button rather than in the
+ * form: nearly every card has one, and a form that asks about the case that
+ * is rare makes everyone pay for it. Pressing it is the whole of the
+ * ceremony — the row that appears is the same two fields as the first.
  */
 export function NewTaskDialog({ onCancel, onCreate, error, goal = '' }: Props) {
   const t = useT();
@@ -51,64 +210,39 @@ export function NewTaskDialog({ onCancel, onCreate, error, goal = '' }: Props) {
       win over the dropdown. */
   const [world, setWorld] = useState<World>(storedWorld);
   const [branch, setBranch] = useState('main');
+  /** The repositories beside the first. Empty for nearly every card. */
+  const [extras, setExtras] = useState<Extra[]>([]);
+  /** Only ever counts up: a key a removed row had must never come back. */
+  const nextKey = useRef(0);
   /** Creating checks the repository on disk, which takes real time on a
    *  WSL or SSH host — and a button still live during it makes two cards
    *  from one double-click. Same discipline as the Finish footer. */
   const [busy, setBusy] = useState(false);
-  /** The typed repository's branches, most recently committed first. */
-  const [branches, setBranches] = useState<string[]>([]);
-  /** Whether the person has touched the base field. A default is a guess;
-   *  it may be corrected by what the repository actually has — but never
-   *  over something someone typed. */
+  /** Whether the person has touched the base field. See `correctedBase`. */
   const branchEdited = useRef(false);
   const list = recents();
 
-  // Ask the repository itself, once the path stops moving. The cleanup is
-  // the staleness guard: a fetch for a path no longer in the field can
-  // neither land in the list nor rewrite the base.
+  const repoPath = repo.trim() === '' ? '' : composePath(world, repo);
+  /** The typed repository's branches, most recently committed first. */
+  const branches = useBranches(repoPath);
   useEffect(() => {
-    const path = repo.trim() === '' ? '' : composePath(world, repo);
-    if (path === '') {
-      setBranches([]);
-      return;
-    }
-    let live = true;
-    const timer = setTimeout(() => {
-      void api
-        .listBranches(path)
-        .then((found) => {
-          if (!live) return;
-          setBranches(found);
-          if (found.length > 0) {
-            setBranch((cur) =>
-              branchEdited.current || found.includes(cur)
-                ? cur
-                : found.includes('main')
-                  ? 'main'
-                  : found[0],
-            );
-          }
-        })
-        .catch(() => {
-          // Not a repository (yet) — half-typed paths land here on every
-          // keystroke, and the create step still checks for real.
-          if (live) setBranches([]);
-        });
-    }, 300);
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [repo, world]);
+    setBranch((cur) => correctedBase(branches, cur, branchEdited.current));
+  }, [branches]);
 
   const pick = async () => {
     const picked = await open({ directory: true, multiple: false });
     if (typeof picked === 'string') setRepo(picked);
   };
 
+  const editExtra = (i: number, patch: Partial<Extra>) =>
+    setExtras((cur) => cur.map((e, n) => (n === i ? { ...e, ...patch } : e)));
+
   // 標題是選填:一張卡真正非有不可的是 repo 和「要做什麼」——
   // prompt 的第一行本來就是多數人會打的標題。
-  const ready = prompt.trim() !== '' && repo.trim() !== '';
+  // 加出來卻留白的那一列擋著送出:它是有人按了按鈕才存在的,無聲丟掉會讓
+  // 卡片少一個 repo 而沒人知道。
+  const ready =
+    prompt.trim() !== '' && repo.trim() !== '' && extras.every((e) => e.repo.trim() !== '');
   const dirty = title.trim() !== '' || prompt.trim() !== '';
 
   const submit = () => {
@@ -120,16 +254,23 @@ export function NewTaskDialog({ onCancel, onCreate, error, goal = '' }: Props) {
     const fallback = prompt.trim().split('\n')[0].trim().slice(0, 80);
     const finalTitle = title.trim() !== '' ? title.trim() : fallback;
     void Promise.resolve(
-      onCreate(finalTitle, prompt.trim(), composePath(world, repo), branch.trim()),
+      onCreate(
+        finalTitle,
+        prompt.trim(),
+        composePath(world, repo),
+        branch.trim(),
+        extras.map((e) => ({
+          repo_path: composePath(world, e.repo),
+          base_branch: e.branch.trim(),
+        })),
+      ),
     ).finally(() => setBusy(false));
   };
 
   /** Enter finishes the form from any single-line field — but never the
    *  Enter that is confirming an IME composition, which zh-TW typing ends
    *  every phrase with. */
-  const submitOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit();
-  };
+  const submitOnEnter = onEnter(submit);
 
   return (
     <Modal onCancel={onCancel} dirty={dirty} onSubmit={submit}>
@@ -206,6 +347,32 @@ export function NewTaskDialog({ onCancel, onCreate, error, goal = '' }: Props) {
           ))}
         </datalist>
         <p className="muted small">{t('newTask.baseHint')}</p>
+
+        {extras.map((extra, i) => (
+          <ExtraRepo
+            key={extra.key}
+            n={i + 2}
+            world={world}
+            value={extra}
+            onChange={(patch) => editExtra(i, patch)}
+            onDrop={() => setExtras((cur) => cur.filter((_, n) => n !== i))}
+            onSubmit={submit}
+          />
+        ))}
+
+        <button
+          className="chip add-repo"
+          data-testid="task-add-repo"
+          onClick={() =>
+            setExtras((cur) => [
+              ...cur,
+              { key: (nextKey.current += 1), repo: '', branch: 'main', edited: false },
+            ])
+          }
+        >
+          ＋ {t('newTask.addRepo')}
+        </button>
+        <p className="muted small">{t('newTask.addRepoHint')}</p>
 
         {error && <FriendlyError text={error} testid="task-error" />}
 

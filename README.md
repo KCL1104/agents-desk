@@ -136,6 +136,11 @@ pixel for pixel, beside a plain test runner.
   own git worktree and branch, so two agents on the same repo never collide.
   Finishing an attempt freezes its diff into the database before the worktree
   goes back
+- **A card can span several repos**: a change that has to land in a service
+  and its client is one card and one conversation. Each repo gets its own
+  worktree on the same branch name, side by side in one directory, and the
+  agent starts in that directory. The diff, the review and the merge cover
+  all of them
 - **The board**: four columns, cards drag between them. A card carries its own
   live state, so a card sitting in "in progress" can light up with "⚠ waiting
   on permission", and clicking it drops you into that session's TUI. Every
@@ -909,6 +914,27 @@ Three more, from measuring Codex 0.147:
 `Task 1 ─ N Attempt 1 ─ 1 Session`. An attempt is one go at a card with one
 agent, carrying its own worktree and branch; switching agent and retrying
 means opening a new attempt.
+
+A card names **one or more repositories**, and an attempt opens a worktree in
+each of them, all on the same branch name. One repository — nearly every card
+— puts its checkout at the attempt's own path, exactly as this always did.
+Several put one directory each inside it, named after the repository, and the
+attempt's path becomes the workspace the session starts in. Everything
+downstream covers all of them: the diff is one diff whose paths are rendered
+relative to that workspace (`web/api.ts`, `api/routes.py`), so a review
+comment names a path the agent can open from where it stands; the merge is
+several merges, every one of them *checked* before any of them runs; parking
+gives back every checkout and resuming grows them all back.
+
+The safety argument is unchanged, and that is the point of the design rather
+than a happy accident. Every repository the agent can reach is still a
+worktree on a branch of this attempt's own, and none of them is the person's
+checkout. Nothing an attempt can do spends anything but its own branches —
+there are simply several of them now. Two refusals hold that line at card
+creation: the repositories must be **in one world** (the checkouts share a
+directory, and a directory cannot straddle the boundary into a WSL distro or
+an SSH host) and **no repository twice** (two worktrees of one branch, which
+git refuses anyway and which nothing downstream could tell apart).
 
 State has two axes, and **the second never drives the first**:
 

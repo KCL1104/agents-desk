@@ -99,6 +99,12 @@ test.describe('language', () => {
     // because they are the words the tools themselves use.
     const SHARED = new Set([
       'newTask.repo',
+      // The same loanword, numbered — the extra rows on a card that spans
+      // more than one repository.
+      'newTask.repoN',
+      // Pure format: a repository's own name and a count. There is no word
+      // in it to translate.
+      'board.repoPlus',
       'attempt.agent',
       'env.shell',
       // Both CLIs' diagnostics labels are their own binary names, which is
