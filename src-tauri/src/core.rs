@@ -15,6 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::agent::{self, Cli, Ledger, Resume};
 use crate::config;
 use crate::hooks::{self, Activity, HookHandler, HookReport, HookServer, HookState};
+use crate::i18n;
 use crate::host::{self, Host, HostRef};
 use crate::prompt::{self, Delivery};
 use crate::pty::{self as pty, PtyRegistry, PtySink};
@@ -1608,13 +1609,15 @@ impl Core {
             let (loc, he) = self.located(&r.repo_path)?;
             if loc.host != first_host {
                 return Err(anyhow!(
-                    "同一張卡的 repo 必須在同一台主機：{} 和 {} 不是。",
-                    repos[0].repo_path,
-                    r.repo_path
+                    i18n::repos_cross_host(
+                        self.locale.get(),
+                        &repos[0].repo_path,
+                        &r.repo_path
+                    )
                 ));
             }
             if seen.insert(loc.path.clone(), ()).is_some() {
-                return Err(anyhow!("{} 在這張卡上出現了兩次。", r.repo_path));
+                return Err(anyhow!(i18n::repo_twice(self.locale.get(), &r.repo_path)));
             }
             self.worktrees
                 .check_repo(&he.hr(&self.env), &loc.path, &r.base_branch)?;
@@ -3229,7 +3232,8 @@ impl Core {
         task: &StoredTask,
         wt: Option<&worktree::OpenedWorktree>,
     ) -> Result<String> {
-        let template = prompt::load_or_create(&self.data_dir)?;
+        let locale = self.locale.get();
+        let template = prompt::load_or_create(&self.data_dir, locale)?;
 
         // `(dir, repo, base_branch, base_sha)`, owned here so the borrowed
         // `TreeVar`s below have something to point at.
@@ -3294,6 +3298,7 @@ impl Core {
                 base_sha: first.map(|t| t.base_sha).unwrap_or(""),
                 trees: &vars,
                 prompt: &task.prompt,
+                locale,
             },
         ))
     }
@@ -3320,6 +3325,7 @@ impl Core {
             .get_attempt(attempt_id)?
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         let trees = self.trees(&attempt)?;
+        let locale = self.locale.get();
 
         let mut situated = Vec::with_capacity(trees.len());
         for tree in &trees {
@@ -3331,6 +3337,7 @@ impl Core {
                 &wt_loc.path,
                 &tree.branch,
                 &tree.base_branch,
+                locale,
             )?;
             situated.push((tree, repo_loc, he, wt_loc));
         }
@@ -3344,6 +3351,7 @@ impl Core {
                 &wt_loc.path,
                 &tree.branch,
                 &tree.base_branch,
+                locale,
             );
             match merged {
                 Ok(sha) => {
@@ -3362,12 +3370,13 @@ impl Core {
                         .iter()
                         .map(|t| t.repo_path.as_str())
                         .collect::<Vec<_>>()
-                        .join("、");
-                    return Err(anyhow!(
-                        "{} 合併失敗：{e:#}\n已合併：{}",
-                        tree.repo_path,
-                        if landed.is_empty() { "（沒有）" } else { &landed },
-                    ));
+                        .join(i18n::list_sep(locale));
+                    return Err(anyhow!(i18n::merge_partial(
+                        locale,
+                        &tree.repo_path,
+                        &format!("{e:#}"),
+                        &landed,
+                    )));
                 }
             }
         }
@@ -3517,6 +3526,7 @@ impl Core {
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         let task = self.task(&attempt.task_id)?;
         let trees = self.trees(&attempt)?;
+        let locale = self.locale.get();
 
         let mut urls: Vec<String> = Vec::with_capacity(trees.len());
         for tree in &trees {
@@ -3536,16 +3546,18 @@ impl Core {
                 &tree.base_branch,
                 &task.title,
                 &body,
+                locale,
             );
             match opened {
                 Ok(url) => urls.push(url),
                 Err(e) if urls.is_empty() => return Err(e),
                 Err(e) => {
-                    return Err(anyhow!(
-                        "{} 開 PR 失敗：{e:#}\n已開好：\n{}",
-                        tree.repo_path,
-                        urls.join("\n")
-                    ))
+                    return Err(anyhow!(i18n::pr_partial(
+                        locale,
+                        &tree.repo_path,
+                        &format!("{e:#}"),
+                        &urls.join("\n"),
+                    )))
                 }
             }
         }

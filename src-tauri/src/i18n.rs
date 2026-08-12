@@ -172,6 +172,129 @@ pub fn tray_tooltip(locale: Locale, waiting: usize) -> String {
     }
 }
 
+/* ---------------------------- refusals ----------------------------------
+
+Everything below is rendered by the core rather than the webview, because it
+is decided deep inside git work and reaches the interface as a plain error
+string. `FriendlyError` shows what it does not recognise verbatim, so these
+are read exactly as written — which is why they were the one surface still
+speaking only Chinese to every user.
+
+Same rule as the catalogue: name what is in the way and stop. What to do
+about uncommitted work is not something a person running coding agents needs
+told.
+------------------------------------------------------------------------ */
+
+/// The attempt's own worktree has work that a merge would silently drop.
+pub fn merge_dirty_worktree(locale: Locale, branch: &str) -> String {
+    match locale {
+        Locale::En => format!("{branch} has uncommitted changes; a merge would not include them."),
+        Locale::ZhTw => format!("{branch} 有未提交的變更，合併不會包含。"),
+    }
+}
+
+/// The repository is checked out somewhere other than the base.
+pub fn merge_wrong_branch(locale: Locale, on: &str, base_branch: &str) -> String {
+    match locale {
+        Locale::En => format!("This repo is on `{on}`, not `{base_branch}`."),
+        Locale::ZhTw => format!("這個 repo 目前在 `{on}`，不是 `{base_branch}`。"),
+    }
+}
+
+/// The base branch's own working tree is dirty, so merging into it would mix
+/// somebody else's edits into the attempt's landing.
+pub fn merge_dirty_base(locale: Locale, base_branch: &str) -> String {
+    match locale {
+        Locale::En => format!("`{base_branch}`'s working tree has uncommitted changes."),
+        Locale::ZhTw => format!("`{base_branch}` 的工作目錄有未提交的變更。"),
+    }
+}
+
+/// Nothing to fold back.
+pub fn merge_nothing_ahead(locale: Locale, branch: &str, base_branch: &str) -> String {
+    match locale {
+        Locale::En => format!("{branch} has no commits `{base_branch}` does not already have."),
+        Locale::ZhTw => format!("{branch} 沒有任何 `{base_branch}` 還沒有的 commit。"),
+    }
+}
+
+/// A push would leave the uncommitted half behind.
+pub fn push_dirty(locale: Locale, branch: &str) -> String {
+    match locale {
+        Locale::En => format!("{branch} has uncommitted changes; the push would not include them."),
+        Locale::ZhTw => format!("{branch} 有未提交的變更，推送不會包含。"),
+    }
+}
+
+/// Opening a pull request is `gh`'s job, and `gh` is not here.
+pub fn gh_missing(locale: Locale) -> &'static str {
+    match locale {
+        Locale::En => "`gh` is not on this environment's PATH.",
+        Locale::ZhTw => "`gh` 不在這個環境的 PATH 上。",
+    }
+}
+
+/// `gh` ran and refused. Its own stderr is the payload and is never
+/// translated — it is the tool's answer, not ours.
+pub fn gh_failed(locale: Locale, stderr: &str) -> String {
+    match locale {
+        Locale::En => format!("gh pr create failed: {stderr}"),
+        Locale::ZhTw => format!("gh pr create 失敗：{stderr}"),
+    }
+}
+
+/// One card, two hosts. Names the two that clashed and stops: which one to
+/// change is the reader's call, and they can see both.
+pub fn repos_cross_host(locale: Locale, first: &str, other: &str) -> String {
+    match locale {
+        Locale::En => {
+            format!("All repos on a card must be on the same host: {first} and {other} are not.")
+        }
+        Locale::ZhTw => format!("同一張卡的 repo 必須在同一台主機：{first} 和 {other} 不是。"),
+    }
+}
+
+pub fn repo_twice(locale: Locale, repo: &str) -> String {
+    match locale {
+        Locale::En => format!("{repo} appears twice on this card."),
+        Locale::ZhTw => format!("{repo} 在這張卡上出現了兩次。"),
+    }
+}
+
+/// A card spanning several repositories merged some and then failed. Which
+/// ones already landed is the disclosure that makes the failure recoverable.
+pub fn merge_partial(locale: Locale, repo: &str, err: &str, landed: &str) -> String {
+    let landed = if landed.is_empty() { none(locale) } else { landed };
+    match locale {
+        Locale::En => format!("{repo} failed to merge: {err}\nAlready merged: {landed}"),
+        Locale::ZhTw => format!("{repo} 合併失敗：{err}\n已合併：{landed}"),
+    }
+}
+
+/// The same, for pull requests. The URLs already opened are one per line.
+pub fn pr_partial(locale: Locale, repo: &str, err: &str, opened: &str) -> String {
+    match locale {
+        Locale::En => format!("{repo} failed to open a PR: {err}\nAlready opened:\n{opened}"),
+        Locale::ZhTw => format!("{repo} 開 PR 失敗：{err}\n已開好：\n{opened}"),
+    }
+}
+
+/// What joins a list of repository paths. `、` in Chinese, `, ` in English —
+/// the same split the webview catalogue makes between `sep` and `listSep`.
+pub fn list_sep(locale: Locale) -> &'static str {
+    match locale {
+        Locale::En => ", ",
+        Locale::ZhTw => "、",
+    }
+}
+
+fn none(locale: Locale) -> &'static str {
+    match locale {
+        Locale::En => "(none)",
+        Locale::ZhTw => "（沒有）",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

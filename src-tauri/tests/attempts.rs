@@ -937,7 +937,11 @@ fn merging_refuses_while_the_worktree_still_has_uncommitted_work() {
         .core
         .merge_attempt(&a.attempt_id)
         .expect_err("a merge that would drop the work must not happen");
-    assert!(err.to_string().contains("沒有 commit"), "unhelpful: {err}");
+    assert!(
+        err.to_string()
+            .contains(&i18n::merge_dirty_worktree(i18n::Locale::default(), &a.branch)),
+        "unhelpful: {err}"
+    );
 
     // Nothing was given up on the way to finding out.
     assert!(Path::new(&a.worktree_path).exists());
@@ -1016,7 +1020,14 @@ fn merging_says_so_when_the_attempt_did_nothing() {
         .core
         .merge_attempt(&a.attempt_id)
         .expect_err("an empty branch has nothing to merge");
-    assert!(err.to_string().contains("沒有東西可以合併"), "unhelpful: {err}");
+    assert!(
+        err.to_string().contains(&i18n::merge_nothing_ahead(
+            i18n::Locale::default(),
+            &a.branch,
+            "main"
+        )),
+        "unhelpful: {err}"
+    );
 }
 
 /* --------------------------- cards spanning repos ---------------------- */
@@ -1126,7 +1137,11 @@ fn merging_a_spanning_card_refuses_as_a_whole_before_it_moves_anything() {
         .core
         .merge_attempt(&a.attempt_id)
         .expect_err("a merge that would half-land must not start");
-    assert!(err.to_string().contains("沒有 commit"), "unhelpful: {err}");
+    assert!(
+        err.to_string()
+            .contains(&i18n::merge_dirty_worktree(i18n::Locale::default(), &a.branch)),
+        "unhelpful: {err}"
+    );
     // Nothing moved: the first repository is still where it was.
     assert_eq!(
         std::fs::read_to_string(h.repo.join("app.txt")).unwrap(),
@@ -1260,7 +1275,11 @@ fn a_card_cannot_span_two_worlds_or_name_one_repository_twice() {
             }],
         )
         .expect_err("a directory cannot straddle a world boundary");
-    assert!(err.to_string().contains("同一個世界"), "{err}");
+    assert!(
+        err.to_string()
+            .contains("must be on the same host"),
+        "{err}"
+    );
 
     let err = h
         .core
@@ -1275,7 +1294,11 @@ fn a_card_cannot_span_two_worlds_or_name_one_repository_twice() {
             }],
         )
         .expect_err("one repository twice is two worktrees of one branch");
-    assert!(err.to_string().contains("兩次"), "{err}");
+    assert!(
+        err.to_string()
+            .contains(&i18n::repo_twice(i18n::Locale::default(), &here)),
+        "{err}"
+    );
 
     assert!(h.core.task_board().is_empty(), "a refused card was created anyway");
 }

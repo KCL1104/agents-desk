@@ -31,6 +31,7 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 use crate::host::{Host, HostRef};
+use crate::i18n::{self, Locale};
 
 /// Longest slug taken from a title. Long enough to recognise the card in
 /// `git branch`, short enough that the worktree path stays readable.
@@ -502,26 +503,24 @@ impl Worktrees {
         worktree: &str,
         branch: &str,
         base_branch: &str,
+        locale: Locale,
     ) -> Result<()> {
         let dirty = git(hr, worktree, &["status", "--porcelain"])?;
         if !dirty.trim().is_empty() {
-            return Err(anyhow!(
-                "{branch} 有未提交的變更，合併不會包含。"
-            ));
+            return Err(anyhow!(i18n::merge_dirty_worktree(locale, branch)));
         }
 
         let on = git(hr, repo, &["rev-parse", "--abbrev-ref", "HEAD"])?;
         if on.trim() != base_branch {
-            return Err(anyhow!(
-                "這個 repo 目前在 `{}`，不是 `{base_branch}`。",
-                on.trim()
-            ));
+            return Err(anyhow!(i18n::merge_wrong_branch(
+                locale,
+                on.trim(),
+                base_branch
+            )));
         }
         let repo_dirty = git(hr, repo, &["status", "--porcelain"])?;
         if !repo_dirty.trim().is_empty() {
-            return Err(anyhow!(
-                "`{base_branch}` 的工作目錄有未提交的變更。"
-            ));
+            return Err(anyhow!(i18n::merge_dirty_base(locale, base_branch)));
         }
 
         let ahead = git(
@@ -530,9 +529,11 @@ impl Worktrees {
             &["rev-list", "--count", &format!("{base_branch}..{branch}")],
         )?;
         if ahead.trim() == "0" {
-            return Err(anyhow!(
-                "{branch} 沒有任何 `{base_branch}` 還沒有的 commit。"
-            ));
+            return Err(anyhow!(i18n::merge_nothing_ahead(
+                locale,
+                branch,
+                base_branch
+            )));
         }
         Ok(())
     }
@@ -562,11 +563,12 @@ impl Worktrees {
         worktree: &str,
         branch: &str,
         base_branch: &str,
+        locale: Locale,
     ) -> Result<String> {
         // Asked again, in one call rather than a second copy of the four
         // sentences: the questions have to be true at the moment git acts,
         // but only one place should own how the refusals read.
-        self.check_merge(hr, repo, worktree, branch, base_branch)?;
+        self.check_merge(hr, repo, worktree, branch, base_branch, locale)?;
 
         // `--no-ff` so the attempt stays legible as one piece of work in the
         // history rather than dissolving into the base.
@@ -598,12 +600,11 @@ impl Worktrees {
         base_branch: &str,
         title: &str,
         body: &str,
+        locale: Locale,
     ) -> Result<String> {
         let dirty = git(hr, worktree, &["status", "--porcelain"])?;
         if !dirty.trim().is_empty() {
-            return Err(anyhow!(
-                "{branch} 有未提交的變更，推送不會包含。"
-            ));
+            return Err(anyhow!(i18n::push_dirty(locale, branch)));
         }
 
         git(hr, worktree, &["push", "--set-upstream", "origin", branch])?;
@@ -617,12 +618,12 @@ impl Worktrees {
                 ],
                 Some(worktree),
             )
-            .map_err(|_| anyhow!("`gh` 不在這個環境的 PATH 上，無法開 PR"))?;
+            .map_err(|_| anyhow!(i18n::gh_missing(locale)))?;
         if !out.status.success() {
-            return Err(anyhow!(
-                "gh pr create 失敗：{}",
+            return Err(anyhow!(i18n::gh_failed(
+                locale,
                 String::from_utf8_lossy(&out.stderr).trim()
-            ));
+            )));
         }
         // gh prints the URL of the pull request it made.
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())

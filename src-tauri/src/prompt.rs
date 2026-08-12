@@ -19,10 +19,25 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-/// Written in Chinese to match the prompts these cards carry. An agent
-/// answers in the language it was addressed in, and a bilingual first message
-/// makes it drift mid-session.
-pub const DEFAULT_TEMPLATE: &str = r#"[Marol 任務] {title}
+use crate::i18n::Locale;
+
+/// The opening message, in the language the desk is set to.
+///
+/// One language per message: an agent answers in the language it was
+/// addressed in, so an English scaffold around a Chinese prompt (or the
+/// reverse) is what makes it drift mid-session. Written once into the
+/// person's own template file, which is theirs from then on.
+pub const DEFAULT_TEMPLATE_EN: &str = r#"[Marol task] {title}
+
+{repos}
+When you are done, commit your changes on these branches.
+
+---
+
+{prompt}
+"#;
+
+pub const DEFAULT_TEMPLATE_ZH: &str = r#"[Marol 任務] {title}
 
 {repos}
 完成時請把變更 commit 到這些分支上。
@@ -31,6 +46,13 @@ pub const DEFAULT_TEMPLATE: &str = r#"[Marol 任務] {title}
 
 {prompt}
 "#;
+
+pub fn default_template(locale: Locale) -> &'static str {
+    match locale {
+        Locale::En => DEFAULT_TEMPLATE_EN,
+        Locale::ZhTw => DEFAULT_TEMPLATE_ZH,
+    }
+}
 
 /// One checkout, as the opening message names it.
 pub struct TreeVar<'a> {
@@ -52,6 +74,15 @@ pub struct Vars<'a> {
     /// Every checkout this attempt opened, first one first. Never empty.
     pub trees: &'a [TreeVar<'a>],
     pub prompt: &'a str,
+    /// Which language to address the agent in.
+    ///
+    /// The doc comment on `DEFAULT_TEMPLATE` has always said why this
+    /// matters: an agent answers in the language it was addressed in, and a
+    /// bilingual first message makes it drift mid-session. That was written
+    /// as an argument for writing everything in Chinese — which produced the
+    /// exact drift it warned about for anyone whose card prompt is English.
+    /// One language per message; the person's own is the one to pick.
+    pub locale: Locale,
 }
 
 /// The paragraph that says what ground the agent is standing on.
@@ -68,18 +99,31 @@ pub fn repos_block(vars: &Vars) -> String {
         let t = vars.trees.first();
         let base_branch = t.map(|t| t.base_branch).unwrap_or(vars.base_branch);
         let base_sha = t.map(|t| t.base_sha).unwrap_or(vars.base_sha);
-        return format!(
-            "你在一個專為這張卡開的 git worktree：分支 {}，從 {base_branch} @ {} 開出。\n\
-             這個 worktree 只屬於這張卡，不要切換分支，也不要動 {base_branch}。",
-            vars.branch,
-            short(base_sha),
-        );
+        let (branch, sha) = (vars.branch, short(base_sha));
+        return match vars.locale {
+            Locale::En => format!(
+                "You are in a git worktree opened for this card: branch {branch}, from \
+                 {base_branch} @ {sha}. It belongs to this card alone — do not switch \
+                 branches, and do not touch {base_branch}."
+            ),
+            Locale::ZhTw => format!(
+                "你在一個專為這張卡開的 git worktree：分支 {branch}，從 {base_branch} @ {sha} 開出。\n\
+                 這個 worktree 只屬於這張卡，不要切換分支，也不要動 {base_branch}。"
+            ),
+        };
     }
-    let mut out = format!(
-        "你在一個專為這張卡開的工作區。底下每個資料夾各是一個 repo 的 git worktree，\
-         全部都在同一個分支 {}：\n",
-        vars.branch
-    );
+    let mut out = match vars.locale {
+        Locale::En => format!(
+            "You are in a workspace opened for this card. Each folder below is a git \
+             worktree of one repo, all on the same branch {}:\n",
+            vars.branch
+        ),
+        Locale::ZhTw => format!(
+            "你在一個專為這張卡開的工作區。底下每個資料夾各是一個 repo 的 git worktree，\
+             全部都在同一個分支 {}：\n",
+            vars.branch
+        ),
+    };
     for t in vars.trees {
         out.push_str(&format!(
             "- {}/ ← {}，從 {} @ {} 開出\n",
@@ -89,9 +133,13 @@ pub fn repos_block(vars: &Vars) -> String {
             short(t.base_sha),
         ));
     }
-    out.push_str(
-        "這些 worktree 都只屬於這張卡，不要切換分支，也不要動它們的 base。",
-    );
+    out.push_str(match vars.locale {
+        Locale::En => {
+            "These worktrees belong to this card alone. Do not switch branches, and do \
+             not touch their base branches."
+        }
+        Locale::ZhTw => "這些 worktree 都只屬於這張卡，不要切換分支，也不要動它們的 base。",
+    });
     out
 }
 
@@ -161,16 +209,20 @@ pub fn template_path(data_dir: &Path) -> PathBuf {
 /// Never overwrites: once someone has edited this, an upgrade that quietly
 /// restored the stock wording would be indistinguishable from the edit having
 /// silently failed.
-pub fn load_or_create(data_dir: &Path) -> Result<String> {
+pub fn load_or_create(data_dir: &Path, locale: Locale) -> Result<String> {
     let path = template_path(data_dir);
     if let Ok(existing) = std::fs::read_to_string(&path) {
         return Ok(existing);
     }
+    // Written in whatever language the desk is set to at the moment it is
+    // first needed. After that the file belongs to the person: switching the
+    // interface language never rewrites what they may have edited.
+    let default = default_template(locale);
     std::fs::create_dir_all(data_dir)
         .with_context(|| format!("creating {}", data_dir.display()))?;
-    std::fs::write(&path, DEFAULT_TEMPLATE)
+    std::fs::write(&path, default)
         .with_context(|| format!("writing {}", path.display()))?;
-    Ok(DEFAULT_TEMPLATE.to_string())
+    Ok(default.to_string())
 }
 
 /// Fill the template in.
@@ -297,6 +349,7 @@ mod tests {
             base_sha: "2bc172c2deadbeefcafe",
             trees: ONE,
             prompt,
+            locale: Locale::ZhTw,
         }
     }
 
@@ -309,7 +362,7 @@ mod tests {
 
     #[test]
     fn the_default_template_names_the_situation_the_agent_cannot_discover() {
-        let out = render(DEFAULT_TEMPLATE, &vars("登入頁在 Safari 會白畫面"));
+        let out = render(DEFAULT_TEMPLATE_ZH, &vars("登入頁在 Safari 會白畫面"));
         assert!(out.contains("修好登入"));
         assert!(out.contains("marol/login-2"));
         assert!(out.contains("main"));
@@ -369,6 +422,7 @@ mod tests {
                 base_sha: "abc",
                 trees: &[],
                 prompt: "p",
+                locale: Locale::ZhTw,
             },
         );
         assert!(out.starts_with("abc"));
@@ -379,7 +433,7 @@ mod tests {
     /// look for the files where it is standing and find directories.
     #[test]
     fn a_card_spanning_two_repositories_names_every_checkout() {
-        let out = render(DEFAULT_TEMPLATE, &spanning("讓兩邊的欄位對得起來"));
+        let out = render(DEFAULT_TEMPLATE_ZH, &spanning("讓兩邊的欄位對得起來"));
         assert!(out.contains("web/"), "the first checkout is unnamed:\n{out}");
         assert!(out.contains("api/"), "the second checkout is unnamed:\n{out}");
         assert!(out.contains("/Users/me/code/api"), "{out}");
@@ -396,7 +450,7 @@ mod tests {
     /// telling it to `cd` somewhere would be telling it something false.
     #[test]
     fn one_repository_still_gets_the_sentence_it_always_got() {
-        let out = render(DEFAULT_TEMPLATE, &vars("登入頁在 Safari 會白畫面"));
+        let out = render(DEFAULT_TEMPLATE_ZH, &vars("登入頁在 Safari 會白畫面"));
         assert!(out.contains("git worktree"), "{out}");
         assert!(!out.contains("工作區"), "a single checkout was called a workspace:\n{out}");
         assert!(!out.contains("- /"), "a single checkout was listed as a folder:\n{out}");
@@ -460,16 +514,58 @@ mod tests {
         assert!(wrapped.contains("one line\x1b[201~\r"), "{wrapped:?}");
     }
 
+    /// The bug the `DEFAULT_TEMPLATE` comment described and then caused: an
+    /// English desk was handed a Chinese scaffold wrapped around an English
+    /// prompt, which is precisely the bilingual first message it warned makes
+    /// an agent drift.
+    #[test]
+    fn an_english_desk_is_addressed_in_english() {
+        let v = Vars {
+            locale: Locale::En,
+            ..vars("the login page goes white in Safari")
+        };
+        let out = render(DEFAULT_TEMPLATE_EN, &v);
+        assert!(out.contains("[Marol task]"), "{out}");
+        assert!(out.contains("You are in a git worktree opened for this card"), "{out}");
+        assert!(out.contains("do not touch main"), "{out}");
+        assert!(out.contains("commit your changes on these branches"), "{out}");
+        // Not one character of the other language in the scaffolding. The
+        // card's own title and prompt are the person's text and are never
+        // touched, so they come out of the sample before it is judged.
+        let scaffold = out
+            .replace("the login page goes white in Safari", "")
+            .replace("修好登入", "");
+        assert!(
+            !scaffold.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)),
+            "the English opening prompt still carries Chinese:\n{scaffold}"
+        );
+    }
+
+    /// The same for a card spanning several repositories, whose block is
+    /// generated rather than templated.
+    #[test]
+    fn an_english_workspace_names_its_checkouts_in_english() {
+        let v = Vars {
+            locale: Locale::En,
+            ..spanning("line the two schemas up")
+        };
+        let out = repos_block(&v);
+        assert!(out.contains("You are in a workspace opened for this card"), "{out}");
+        assert!(out.contains("These worktrees belong to this card alone"), "{out}");
+        assert!(out.contains("web/"), "{out}");
+    }
+
     #[test]
     fn an_edited_template_survives_the_next_launch() {
         let dir = std::env::temp_dir().join(format!("marol-tpl-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
 
-        let first = load_or_create(&dir).unwrap();
-        assert_eq!(first, DEFAULT_TEMPLATE);
+        let first = load_or_create(&dir, Locale::ZhTw).unwrap();
+        assert_eq!(first, DEFAULT_TEMPLATE_ZH);
 
         std::fs::write(template_path(&dir), "我的版本 {prompt}").unwrap();
-        assert_eq!(load_or_create(&dir).unwrap(), "我的版本 {prompt}");
+        // Not even a language change rewrites it: the file is the person's.
+        assert_eq!(load_or_create(&dir, Locale::En).unwrap(), "我的版本 {prompt}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

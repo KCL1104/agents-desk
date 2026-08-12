@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 mod host;
 #[path = "../src/shell_env.rs"]
 mod shell_env;
+#[path = "../src/i18n.rs"]
+mod i18n;
 #[path = "../src/worktree.rs"]
 mod worktree;
 
