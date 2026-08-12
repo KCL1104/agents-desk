@@ -5,7 +5,7 @@ import type { SessionMeta, Status } from './types';
 export type Section = 'waiting' | 'working' | 'idle' | 'done';
 
 export const SECTION_KEY: Record<Section, MessageKey> = {
-  waiting: 'section.waiting',
+  waiting: 'status.waiting_input',
   working: 'section.working',
   idle: 'section.idle',
   done: 'section.done',

@@ -83,7 +83,7 @@ export const KEY_DOCS: readonly { combo: string; what: MessageKey }[] = [
   { combo: '⌘/Ctrl + ⌥/Alt + ← · →', what: 'keys.cyclePanes' },
   { combo: '⌘/Ctrl + ← → · ↑ ↓', what: 'keys.moveCard' },
   { combo: 'Ctrl + PgDn · PgUp', what: 'keys.cycleTabs' },
-  { combo: 'J · K', what: 'keys.diff' },
+  { combo: 'J · K', what: 'inspector.diffKeys' },
   { combo: 'Esc', what: 'keys.escape' },
 ];
 

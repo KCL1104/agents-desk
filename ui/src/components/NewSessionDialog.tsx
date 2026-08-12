@@ -54,10 +54,6 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) create();
   };
 
-  // The hint reads better with `cd` set as code, so it is spliced back into
-  // the translated sentence rather than each language carrying markup.
-  const [hintBefore, hintAfter] = t('newSession.cwdHint').split('{cd}');
-
   return (
     <Modal onCancel={onCancel} dirty={args.trim() !== ''}>
         <h2>{t('newSession.title')}</h2>
@@ -76,12 +72,6 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
           />
           <button onClick={pick}>{t('common.choose')}</button>
         </div>
-        <p className="muted small">
-          {hintBefore}
-          <code className="mono">cd</code>
-          {hintAfter}
-        </p>
-
         {list.length > 0 && (
           <div className="recents">
             {list.map((r) => (
@@ -107,7 +97,7 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
         <input
           className="mono"
           value={args}
-          placeholder="--continue     --model sonnet"
+          placeholder="--model sonnet"
           onChange={(e) => setArgs(e.target.value)}
           onKeyDown={submitOnEnter}
         />

@@ -123,6 +123,12 @@ test.describe('language', () => {
       // "worktree" is the catalogue's standing loanword (every zh sentence
       // already says it in English); the chip-row label is the bare word.
       'inspector.worktreeGroup',
+      // The settings nav item for the same rows the sidebar heads: one
+      // spelling of the product's deliberate loanword, not three.
+      'set.sessions',
+      // A field label naming the attempt's base — the same word the create
+      // dialog's own "Base branch" field uses.
+      'ckpt.compareBase',
       // Pure format: a component name, a middot, a file:line. There is no
       // word in it to translate, and the separator is the app's own.
       'preview.pick',

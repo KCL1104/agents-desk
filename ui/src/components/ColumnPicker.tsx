@@ -28,7 +28,7 @@ export function ColumnPicker({
       <select
         data-testid="col-picker"
         value={value}
-        title={manual ? t('cols.manualHint') : t('cols.autoHint')}
+        title={manual ? t('cols.manualHint') : undefined}
         onChange={(e) => {
           const v = e.target.value;
           onPick(v === 'auto' ? 'auto' : Number(v));

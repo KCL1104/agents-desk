@@ -67,19 +67,15 @@ test.describe('the first-run panel', () => {
     await expect(page.locator('.modal')).toHaveCount(0);
   });
 
-  test('a true first run lands on the board, with the long first-card invitation', async ({
+  test('a true first run lands on the board, on the door to the first card', async ({
     page,
   }) => {
     await bootFresh(page);
     // 歡迎面板浮在看板上;關掉它,腳下已經是看板 —— 不是空的終端牆。
     await page.locator('.modal button', { hasText: '關閉' }).click();
     await expect(page.getByTestId('board')).toBeVisible();
-    // 整張桌子還沒有卡片:CTA 說完整的一句。
-    await expect(page.getByTestId('board-cta')).toHaveText(
-      '開第一張卡：一個 repo、一個分支、一件要做的事',
-    );
-    // 有了第一張卡,短標籤就夠了(backlog 空著時才有 CTA 可看:把卡
-    // 拖去進行中就看得到)。
+    // 空的待辦欄本身就是那扇門,第一分鐘與第一百次說同一句話。
+    await expect(page.getByTestId('board-cta')).toHaveText('新增一張卡片');
   });
 
   test('the mental model wears the board’s dot vocabulary, statically', async ({ page }) => {
@@ -106,9 +102,7 @@ test.describe('the first-run panel', () => {
     });
     await bootFresh(page);
     await expect(page.getByTestId('welcome-no-agents')).toBeVisible();
-    await expect(page.getByTestId('welcome-no-agents')).toContainText(
-      '找不到任何 agent CLI',
-    );
+    await expect(page.getByTestId('welcome-no-agents')).toContainText('找不到 agent CLI');
 
     // 裝好 CLI 之後按「重新偵測」:真的重跑 boot_status,發現就換新。
     await page.evaluate(() =>
@@ -162,19 +156,16 @@ test.describe('the first-run panel', () => {
     expect((zh as { url: string }).url).toContain('README.zh-TW.md');
   });
 
-  /**
-   * 面板是門口,導覽是課。介面的字收短之後,五個 coach 才是概念的家 ——
-   * 一堂只上得了一次的課,得有一條重修的路。
-   */
-  test('the walkthrough can be replayed from the environment panel', async ({ page }) => {
+  /** The one mark left still deserves a way back to it. */
+  test('the first-run tip can be shown again from the settings panel', async ({ page }) => {
     await page.addInitScript(installMock);
     await page.addInitScript(() =>
-      localStorage.setItem('marol.coach', JSON.stringify({ attempt: true, finish: true })),
+      localStorage.setItem('marol.coach', JSON.stringify({ terminal: true })),
     );
     await land(page);
     await page.getByRole('button', { name: '設定' }).click();
     await page.getByTestId('replay-coach').click();
-    await expect(page.locator('.toast')).toContainText('重新教');
+    await expect(page.locator('.toast')).toContainText('已重設');
     const marks = await page.evaluate(() => localStorage.getItem('marol.coach'));
     expect(marks).toBeNull();
   });
@@ -221,7 +212,15 @@ test.describe('the first-run panel', () => {
 });
 
 test.describe('one-shot coaching', () => {
-  test('the first attempt teaches the worktree, exactly once', async ({ page }) => {
+  /**
+   * Four of the five marks taught what the screen was already saying at the
+   * moment they fired — the worktree (the welcome panel's three lines), the
+   * permission mode (the label on the select just used), that finishing is
+   * final (the buttons arm), that an agent is waiting (the sidebar counts it,
+   * the card wears it, the pane pulses, the tab badges it). Starting an
+   * attempt now teaches nothing, because there is nothing left to teach.
+   */
+  test('starting an attempt no longer interrupts to explain itself', async ({ page }) => {
     await bootFresh(page);
     await page.locator('.modal button', { hasText: '關閉' }).click();
     await page.getByTestId('view-board').click();
@@ -229,83 +228,35 @@ test.describe('one-shot coaching', () => {
 
     await page.locator('[data-testid="task-k1"] button.primary').click();
     await page.getByTestId('attempt-start').click();
-    await expect(page.getByTestId('coach-attempt')).toBeVisible();
-    await expect(page.getByTestId('coach-attempt')).toContainText('worktree');
-    await page.getByTestId('coach-dismiss').click();
-    await expect(page.getByTestId('coach-attempt')).toHaveCount(0);
+    await expect(page.locator('.pane:visible')).toHaveCount(1);
 
-    // A second attempt has nothing left to teach about worktrees.
-    await page.getByTestId('view-board').click();
-    await page.getByTestId('task-k1').hover();
-    await page.getByTestId('retry-k1').click();
-    await page.getByTestId('attempt-start').click();
-    await expect(page.locator('.pane:visible')).toHaveCount(2);
+    // Landing in the pane raises the one mark that survives — the keyboard
+    // trap — and nothing about worktrees.
+    await expect(page.getByTestId('coach-terminal')).toBeVisible();
     await expect(page.getByTestId('coach-attempt')).toHaveCount(0);
+    await expect(page.locator('.coach')).toHaveCount(1);
   });
 
-  test('a ⚡ start teaches the mode, not the worktree', async ({ page }) => {
-    await bootFresh(page);
-    await page.locator('.modal button', { hasText: '關閉' }).click();
-    await page.getByTestId('view-board').click();
-    await newCard(page, '修好登入');
-
-    await page.locator('[data-testid="task-k1"] button.primary').click();
-    await page.getByTestId('attempt-mode').selectOption('yolo');
-    await page.getByTestId('attempt-start').click();
-
-    // The sharper edge wins when both are new.
-    await expect(page.getByTestId('coach-mode')).toBeVisible();
-    await expect(page.getByTestId('coach-attempt')).toHaveCount(0);
-  });
-
-  test('the finish footer teaches finality before the second click', async ({ page }) => {
+  /** Nor does opening the drawer, nor a turn going into 等你. */
+  test('neither the drawer nor a blocked turn raises a mark', async ({ page }) => {
     await bootFresh(page);
     await page.locator('.modal button', { hasText: '關閉' }).click();
     await page.getByTestId('view-board').click();
     await newCard(page, '修好登入');
     await page.locator('[data-testid="task-k1"] button.primary').click();
     await page.getByTestId('attempt-start').click();
-
-    // Dismiss the attempt mark so the drawer's own lesson can surface.
+    // Retire the terminal mark so anything left on screen is a new one.
     await page.getByTestId('coach-dismiss').click();
+
     await page.getByTestId('view-board').click();
     await page.getByTestId('inspect-k1').click();
-    await expect(page.getByTestId('coach-finish')).toBeVisible();
-    await expect(page.getByTestId('coach-finish')).toContainText('最終');
-  });
-
-  test('the first turn into waiting teaches the amber breath, exactly once', async ({
-    page,
-  }) => {
-    await bootFresh(page);
-    await page.locator('.modal button', { hasText: '關閉' }).click();
-    await newCard(page, '修好登入');
-    await page.locator('[data-testid="task-k1"] button.primary').click();
-    await page.getByTestId('attempt-start').click();
-
-    // 出生就停在信任門上教的是 attempt(worktree 與信任門是同一課);
-    // 等待的課留給真正「從在做轉進等你」的那一刻。
-    await expect(page.getByTestId('coach-attempt')).toBeVisible();
-    await expect(page.getByTestId('coach-waiting')).toHaveCount(0);
-    await page.getByTestId('coach-dismiss').click();
+    await expect(page.locator('.coach')).toHaveCount(0);
 
     await page.evaluate(() => window.__mock.report('s1', 'running'));
-    // 先等「在做」真的畫出來:兩個 report 若在同一幀被批次合併,app
-    // 根本沒看見 running,working→等你 的轉換就不存在 —— CI 比本機慢
-    // 一拍,恰好照出這個時序假設(這裡修的是測試,不是 app 的規則)。
     await expect(page.locator('.dot.running').first()).toBeVisible();
     await page.evaluate(() => window.__mock.report('s1', 'waiting_permission'));
-    await expect(page.getByTestId('coach-waiting')).toBeVisible();
-    await expect(page.getByTestId('coach-waiting')).toContainText('琥珀');
-    await page.getByTestId('coach-dismiss').click();
-
-    // 第二次等待沒有課可教 —— 同樣先讓 running 落幀,否則轉換沒發生,
-    // 「沒有課」就是白驗的。
-    await page.evaluate(() => window.__mock.report('s1', 'running'));
-    await expect(page.locator('.dot.running').first()).toBeVisible();
-    await page.evaluate(() => window.__mock.report('s1', 'waiting_input'));
-    await expect(page.locator('.dot.waiting_input').first()).toBeVisible();
-    await expect(page.getByTestId('coach-waiting')).toHaveCount(0);
+    await expect(page.locator('.dot.waiting_permission').first()).toBeVisible();
+    await expect(page.locator('.coach')).toHaveCount(0);
   });
 });
 
@@ -318,8 +269,8 @@ test.describe('the first-run terminal wall', () => {
     // 第一次落在看板;去看終端牆。
     await page.keyboard.press('ControlOrMeta+1');
     await expect(page.getByTestId('term-keymap')).toBeVisible();
-    await expect(page.getByTestId('term-keymap')).toContainText('終端牆 · 看板 · 總覽');
-    await expect(page.getByTestId('term-keymap')).toContainText('全部快捷鍵');
+    await expect(page.getByTestId('term-keymap')).toContainText('終端機 · 看板 · 總覽');
+    await expect(page.getByTestId('term-keymap')).toContainText('快捷鍵');
 
     // 開過 session 之後讓位:退出佈局後的空網格說的是老話,不再上課。
     await page.locator('.sidebar-head button.icon').click();
@@ -375,14 +326,12 @@ test.describe('settings', () => {
    */
   test('the refusals answer where the search for them ends', async ({ page }) => {
     await open(page);
-    await page.getByTestId('sec-sessions').click();
-    await expect(page.getByTestId('note-cost')).toContainText('分母');
     await page.getByTestId('sec-agents').click();
     await expect(page.getByTestId('note-agents')).toContainText('憑證');
     await page.getByTestId('sec-terminal').click();
     await expect(page.getByTestId('note-scrollback')).toContainText('不留副本');
     await page.getByTestId('sec-advanced').click();
-    await expect(page.getByTestId('note-telemetry')).toContainText('沒有東西被收集');
+    await expect(page.getByTestId('note-telemetry')).toContainText('不收集任何資料');
     // Apache-2.0 要求的那份清單,也在這裡。
     await expect(page.getByTestId('licenses')).toContainText('xterm.js');
   });

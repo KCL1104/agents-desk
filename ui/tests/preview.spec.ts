@@ -66,7 +66,7 @@ test.describe('dev server preview', () => {
       window.__mock.portListening = false;
     });
     await page.getByTestId('preview-reload').click();
-    await expect(page.getByTestId('preview-unreachable')).toContainText('沒有回應');
+    await expect(page.getByTestId('preview-unreachable')).toContainText('沒有東西在監聽');
     await page.evaluate(() => {
       window.__mock.portListening = true;
     });
@@ -82,7 +82,7 @@ test.describe('dev server preview', () => {
       }
       window.__mock.emit('sessions:changed', window.__mock.sorted());
     });
-    await expect(page.getByTestId('preview-dead')).toContainText('server 已結束');
+    await expect(page.getByTestId('preview-dead')).toContainText('終端機已關閉');
   });
 
   test('an ssh attempt gets the disabled chip wearing its reason', async ({ page }) => {
@@ -96,7 +96,7 @@ test.describe('dev server preview', () => {
     const chip = page.getByTestId('open-preview');
     await expect(chip).toBeVisible();
     await expect(chip).toBeDisabled();
-    await expect(chip).toHaveAttribute('title', /遠端機器/);
+    await expect(chip).toHaveAttribute('title', /遠端主機/);
   });
 
   test('a pick speaks only from the preview’s origin, and telling the agent is a human click', async ({

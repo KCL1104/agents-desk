@@ -94,7 +94,7 @@ test.describe('concurrency queue', () => {
     await start(page, 'k2');
     await expect(page.getByTestId('state-k2')).toHaveText(/排隊中/);
 
-    await page.getByRole('button', { name: '增加同時執行數' }).click();
+    await page.getByRole('button', { name: '提高上限' }).click();
 
     await expect(page.getByTestId('state-k2')).toHaveText(/等你確認資料夾/);
     await expect(page.getByTestId('concurrency-max')).toHaveText('2 / 2');

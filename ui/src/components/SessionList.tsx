@@ -3,6 +3,7 @@ import { needsYou, type SessionMeta } from '../types';
 import { elapsed, SECTION_KEY, STATUS_KEY, useSections, type Section } from '../sections';
 import { useT } from '../i18n';
 import { DRAG_MIME, encodeDrag } from '../layout';
+import { Icon } from './Icon';
 import { WorldPicker } from './WorldPicker';
 
 interface Props {
@@ -79,6 +80,7 @@ export function SessionList({
             onSelect(waiting[(i + 1) % waiting.length].id);
           }}
         >
+          <Icon name="warn" />
           {t('sidebar.waitingCount', { count: waiting.length })}
         </button>
       )}

@@ -86,6 +86,6 @@ test.describe('the queued follow-up', () => {
   test('an idle session sends now, exactly as before', async ({ page }) => {
     await reviewMidTurn(page);
     await page.evaluate(() => window.__mock.report('s1', 'idle'));
-    await expect(page.getByTestId('review-send')).toHaveText(/把 1 則意見送回給 agent/);
+    await expect(page.getByTestId('review-send')).toHaveText(/送出 1 則意見給 agent/);
   });
 });

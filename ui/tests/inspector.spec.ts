@@ -259,7 +259,7 @@ test.describe('the timeline rollup', () => {
     await page.getByTestId('inspect-k1').click();
     await page.getByTestId('inspector-timeline-tab').click();
 
-    await expect(page.locator('.tl-row').first()).toContainText('等了 1m05s');
+    await expect(page.locator('.tl-row').first()).toContainText('等候 1m05s');
     await expect(page.locator('.tl-row.tl-send .tl-tool')).toContainText('→ SendMessage');
   });
 });
@@ -272,7 +272,7 @@ test.describe('manual checkpoint', () => {
 
     await page.getByTestId('checkpoint-now').click();
     // The answer wears the button, not a toast: "kept #1" is the whole story.
-    await expect(page.getByTestId('checkpoint-now')).toHaveText('已留存 #1 ✓');
+    await expect(page.getByTestId('checkpoint-now')).toHaveText('檢查點 #1 ✓');
     const kept = await page.evaluate(() => window.__mock.checkpoints.get('k1-a1'));
     expect(kept?.map((c) => c.n)).toEqual([1]);
 
@@ -305,11 +305,11 @@ test.describe('restore from the timeline', () => {
     await page.evaluate(() => window.__mock.report('s1', 'idle'));
     await expect(restore).toBeEnabled();
     await restore.click();
-    await expect(restore).toHaveText('確定還原到此輪之前？');
+    await expect(restore).toHaveText('確定還原到本回合之前？');
     await restore.click();
 
     // No checkpoints yet, so "before this turn" is the attempt's base.
-    await expect(page.getByTestId('restore-say')).toContainText('已還原到 attempt 起點');
+    await expect(page.getByTestId('restore-say')).toContainText('已還原到 attempt 的 base');
     const call = await page.evaluate(
       () => window.__mock.calls.filter((c) => c.cmd === 'restore_checkpoint').at(-1)?.args,
     );
@@ -414,7 +414,7 @@ test.describe('what the agent already knows', () => {
     await page.getByTestId('inspector-knows-tab').click();
 
     const knows = page.getByTestId('knows');
-    await expect(knows).toContainText('來自這個 checkout');
+    await expect(knows).toContainText('來自這個 repo');
     await expect(knows).toContainText('來自這台機器');
 
     // 存在的可以開;不存在的照樣列出來,戴著「尚未建立」——

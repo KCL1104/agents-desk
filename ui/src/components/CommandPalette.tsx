@@ -247,7 +247,7 @@ function buildGroups(
   if (waiting.length > 0) {
     waiting.forEach((s) => claimed.add(s.id));
     groups.push({
-      label: t('palette.waiting'),
+      label: t('status.waiting_input'),
       items: waiting.map((session) => ({ kind: 'session', session })),
     });
   }
@@ -258,7 +258,7 @@ function buildGroups(
   if (unread.length > 0) {
     unread.forEach((s) => claimed.add(s.id));
     groups.push({
-      label: t('palette.unseen'),
+      label: t('unseen.label'),
       items: unread.map((session) => ({ kind: 'session', session })),
     });
   }

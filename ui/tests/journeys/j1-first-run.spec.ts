@@ -58,7 +58,7 @@ test('J1 · the first run, end to end', async ({ page }) => {
 
     // (c) 腳下已經是看板(第一次的預設落點),新卡對話框開著。
     await expect(page.getByTestId('board')).toBeVisible();
-    await expect(page.locator('.modal h2')).toHaveText('新卡片');
+    await expect(page.locator('.modal h2')).toHaveText('新增卡片');
     // (a) 焦點落在目標欄 —— 對話框開門即可打字,而且打的是那件要做的事。
     //     標題是選填而且由 prompt 第一行推導,把它排在最前面等於一開口
     //     就要人做一個不必做的決定。
@@ -77,9 +77,13 @@ test('J1 · the first run, end to end', async ({ page }) => {
     await expect(page.getByTestId('task-repo')).toHaveValue(REPO);
     await expect(page.getByTestId('task-branch')).toHaveValue('main');
 
-    // 多行欄位裡 Enter 是換行;送出走 ⌘/Ctrl+Enter,review 框的同一慣例。
+    // 多行欄位裡 Enter 是換行,不會送出表單。
     await page.getByTestId('task-prompt').click();
-    await chord(page, 'Enter');
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.modal')).toHaveCount(1);
+    // ⌘/Ctrl+Enter 屬於主要動作(建立並開始);這一段走規劃路徑,
+    // 把卡片放進待辦,好讓下一步驗開始對話框。
+    await page.getByTestId('task-create').click();
 
     // (c) 對話框關了,backlog 的卡片戴著 prompt 的第一行。
     await expect(page.locator('.modal')).toHaveCount(0);
@@ -107,7 +111,7 @@ test('J1 · the first run, end to end', async ({ page }) => {
     await expect(page.getByLabel('權限模式')).toHaveValue('normal');
     await expect(
       page.getByTestId('attempt-mode').locator('option:checked'),
-    ).toHaveText('照常詢問');
+    ).toHaveText('每次詢問');
     await expect(page.getByTestId('attempt-prompt')).toHaveValue(
       new RegExp(`Marol 任務.*${FIRST_LINE}`, 's'),
     );
@@ -121,9 +125,9 @@ test('J1 · the first run, end to end', async ({ page }) => {
     await expect(page.locator('.pane[data-session-id="s1"]')).toBeVisible();
     // (a) 插入點真的在終端裡 —— 信任門的回答只差一個鍵。
     await expectFocusWithin(page, '.pane[data-session-id="s1"] .term-host');
-    // 第一次開 attempt 的 coach 出現,但不偷焦點 —— 教學不能打斷被教的事。
-    await expect(page.getByTestId('coach-attempt')).toBeVisible();
-    await expect(page.getByTestId('coach-attempt')).toContainText('worktree');
+    // 落進終端機的 coach 出現,但不偷焦點 —— 教學不能打斷被教的事。
+    await expect(page.getByTestId('coach-terminal')).toBeVisible();
+    await expect(page.getByTestId('coach-terminal')).toContainText('Shift');
     expect(
       await page.evaluate(
         () => document.querySelector('.coach')?.contains(document.activeElement) ?? false,
@@ -165,19 +169,15 @@ test('J1 · the first run, end to end', async ({ page }) => {
     await expect(
       page.locator('[data-section="waiting"] [data-testid="session-s1"]'),
     ).toBeVisible();
-    await expect(page.locator('.waiting-banner')).toHaveText('⚠ 1 個等你');
+    await expect(page.locator('.waiting-banner')).toHaveText('1 個等你');
     // (c-3) 分頁徽章:blocked 壓過一切的那一顆。
     await expect(page.locator('.tab-badge.waiting')).toHaveText('1');
-    // 第一次「從在做轉進等你」的 coach —— 教琥珀,只教這一次。
-    await expect(page.getByTestId('coach-waiting')).toBeVisible();
-    await expect(page.getByTestId('coach-waiting')).toContainText('琥珀');
+    // 轉進「等你」不再彈 coach:上面三個表面已經在說同一件事。
+    await expect(page.locator('.coach')).toHaveCount(0);
     // (a) 焦點沒被任何一個表面偷走。
     await expect(door).toBeFocused();
     // (b) 朗讀通道說了同一件事。
     await expectAnnounce(page, '等你授權');
-
-    await page.getByTestId('coach-dismiss').click();
-    await expect(page.getByTestId('coach-waiting')).toHaveCount(0);
   });
 
   await test.step('6. answered; the turn ends off-screen — the unseen grammar appears', async () => {
@@ -311,11 +311,11 @@ test('J1 · the first run, end to end', async ({ page }) => {
     // 把卡片收進完成欄 —— 欄位只聽人的手,鍵盤也是一隻手。
     await card.focus();
     await chord(page, 'ArrowRight');
-    await expectAnnounce(page, '移到 待驗收');
+    await expectAnnounce(page, '移到 待檢視');
     await expect(card).toBeFocused();
     await chord(page, 'ArrowRight');
     // (b)+(a)+(c) 搬移的三重奏:說出落點、焦點跟著卡片、完成欄收下它。
-    await expectAnnounce(page, '移到 完成');
+    await expectAnnounce(page, '移到 已完成');
     await expect(card).toBeFocused();
     await expect(page.locator('[data-testid="col-done"] [data-testid="task-k1"]')).toBeVisible();
     await expect(card).toHaveAttribute('data-outcome', 'merged');
@@ -334,7 +334,7 @@ test('J1 · the first run, end to end', async ({ page }) => {
     await expect(card).toHaveAttribute('data-outcome', 'merged');
     await expect(page.getByTestId('state-k1')).toContainText('已合併');
     // 桌子用過了:backlog 的 CTA 縮回短標籤,不再說第一分鐘的長句。
-    await expect(page.getByTestId('board-cta')).toHaveText('按 ＋ 新增卡片');
+    await expect(page.getByTestId('board-cta')).toHaveText('新增一張卡片');
     // (a) 重新整理從中性起點出發,(b) 朗讀通道乾淨。
     await expectFocusNeutral(page);
     await expect(live).toHaveText('');

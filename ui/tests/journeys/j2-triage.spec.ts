@@ -156,7 +156,7 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
     ).toBeVisible();
     await expect(page.locator('[data-section="waiting"] .section-count')).toHaveText('2');
     // (c-2) 琥珀橫幅與分頁徽章同一個數：blocked 壓過一切的那一顆。
-    await expect(page.locator('.waiting-banner')).toHaveText('⚠ 2 個等你');
+    await expect(page.locator('.waiting-banner')).toHaveText('2 個等你');
     await expect(page.locator('.tab-badge.waiting')).toHaveText('2');
 
     // (b) 兩個同時堵著，開機那一刻一次點名（多重朗讀，逐一指名）。
@@ -236,7 +236,7 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
     // 你在終端裡答了，hook 回報：等你 → 在做。狀態轉變節點。
     await driveStatus(page, 's91', 'running');
     // (c) 橫幅與徽章一起降到 1；看板側的另一張卡還在等。
-    await expect(page.locator('.waiting-banner')).toHaveText('⚠ 1 個等你');
+    await expect(page.locator('.waiting-banner')).toHaveText('1 個等你');
     await expect(page.locator('.tab-badge.waiting')).toHaveText('1');
     // (a) 狀態轉變一步都不准偷焦點：插入點原地在 s91 終端。
     await expectFocusWithin(page, '.pane[data-session-id="s91"] .term-host');
@@ -287,7 +287,7 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
     await expect(page.getByTestId('palette')).toBeVisible();
     await expect(page.getByTestId('palette-input')).toBeFocused();
     const heads = page.locator('.palette-group-head');
-    await expect(heads.nth(0)).toHaveText('完成未看');
+    await expect(heads.nth(0)).toHaveText('已完成未看');
     await expect(page.getByTestId('pal-session-s93')).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByTestId('pal-session-s93')).toContainText(`${T3} #1`);
     await page.keyboard.press('Escape');
@@ -418,14 +418,14 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
     await page.keyboard.press('Tab');
     const park = page.getByTestId('park-k4');
     await expect(park).toBeFocused();
-    await expect(park).toHaveText('暫停');
+    await expect(park).toHaveText('擱置');
 
     // 單擊即停 —— 可逆的動作不武裝，武裝留給不可逆的。一個 Enter，
     // 事情就發生了：這本身就是「沒有武裝」的證明。
     await page.keyboard.press('Enter');
     // 合併的 toast 可能還沒自清（4 秒壽命）—— 指名這一張，別讓兩張
     // ok toast 撞上 strict mode。
-    const parkToast = page.locator('.toast.ok').filter({ hasText: '已暫停' });
+    const parkToast = page.locator('.toast.ok').filter({ hasText: '已擱置' });
     await expect(parkToast).toBeVisible();
     await expect(parkToast).toContainText('marol/k4');
     await expect(page.locator('[data-testid^="confirm-"]')).toHaveCount(0);

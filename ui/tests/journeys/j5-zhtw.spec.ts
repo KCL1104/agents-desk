@@ -152,7 +152,7 @@ test('J5 · the zh-TW journey, end to end', async ({ page }) => {
     await expect(page.locator('[data-testid="col-backlog"] .board-col-head')).toContainText(
       zh('lifecycle.backlog'),
     );
-    await expect(page.getByTestId('board-cta')).toHaveText(zh('board.emptyBacklogFirst'));
+    await expect(page.getByTestId('board-cta')).toHaveText(zh('board.emptyBacklog'));
     // (a) Modal 收起時把焦點還回它借走的地方 —— 開場那裡是 <body>。
     await expectFocusNeutral(page);
     // (b) 關一扇門不是要朗讀的事。
@@ -162,7 +162,7 @@ test('J5 · the zh-TW journey, end to end', async ({ page }) => {
   await test.step('3. 新卡片 — IME 組字中的 Enter 不許送出', async () => {
     // 空 backlog 的字就是按鈕：長 CTA 本人開對話框。
     await page.getByTestId('board-cta').click();
-    await expect(page.locator('.modal h2')).toHaveText(zh('newTask.title'));
+    await expect(page.locator('.modal h2')).toHaveText(zh('board.newCard'));
     // (a) 開門即可打字（焦點在目標欄）；(b) 開對話框保持安靜。
     await expect(page.getByTestId('task-prompt')).toBeFocused();
     await expect(live).toHaveText('');
@@ -269,9 +269,9 @@ test('J5 · the zh-TW journey, end to end', async ({ page }) => {
     await expect(page.locator('.modal')).toHaveCount(0);
     await expect(page.locator('.pane[data-session-id="s1"]')).toBeVisible();
     await expectFocusWithin(page, '.pane[data-session-id="s1"] .term-host');
-    // 第一次的 coach 用中文教 worktree，而且不偷焦點。
-    await expect(page.getByTestId('coach-attempt').locator('.coach-title')).toHaveText(
-      zh('coach.attempt.title'),
+    // 落進終端機的 coach 用中文說話，而且不偷焦點。
+    await expect(page.getByTestId('coach-terminal').locator('.coach-title')).toHaveText(
+      zh('coach.terminal.title'),
     );
     await expect(page.getByTestId('coach-dismiss')).toHaveText(zh('coach.gotIt'));
     expect(
@@ -285,7 +285,7 @@ test('J5 · the zh-TW journey, end to end', async ({ page }) => {
 
   await test.step('6. 信任門的看板真相 — aria-label 用「，」連接', async () => {
     await page.getByTestId('coach-dismiss').click();
-    await expect(page.getByTestId('coach-attempt')).toHaveCount(0);
+    await expect(page.getByTestId('coach-terminal')).toHaveCount(0);
 
     await chord(page, '2');
     await expect(page.getByTestId('board')).toBeVisible();
@@ -329,29 +329,12 @@ test('J5 · the zh-TW journey, end to end', async ({ page }) => {
     // (c-3) 分頁徽章：blocked 壓過一切的那一顆。
     await expect(page.locator('.tab-badge.waiting')).toHaveText('1');
 
-    // coach 的中文課：標題是型錄那句「有 agent 在等你」，內文的 {jump}
-    // 代入的是「這台機器」的和弦 —— 判準與 app 的 platform.ts 同一份
-    // 事實（mac 家族 ⌘E，其餘 Ctrl+E）：教一顆鍵盤上不存在的鍵，教的
-    // 就是錯的。
-    const jump = await page.evaluate(() =>
-      /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '')
-        ? '⌘E'
-        : 'Ctrl+E',
-    );
-    const coach = page.getByTestId('coach-waiting');
-    await expect(coach.locator('.coach-title')).toHaveText(zh('coach.waiting.title'));
-    await expect(coach.locator('.coach-body')).toHaveText(
-      zhTW['coach.waiting.body'].replace('{jump}', jump),
-    );
-    // 佔位符本人絕不許漏到畫面上。
-    await expect(coach.locator('.coach-body')).not.toContainText('{jump}');
+    // 轉進「等你」不再彈 coach：四個表面已經在說同一件事。
+    await expect(page.locator('.coach')).toHaveCount(0);
 
     // (a) 焦點沒被任何表面偷走；(b) 朗讀通道說了同一個中文狀態詞。
     await expect(door).toBeFocused();
     await expectAnnounce(page, zh('status.waiting_permission'));
-
-    await page.getByTestId('coach-dismiss').click();
-    await expect(coach).toHaveCount(0);
   });
 
   await test.step('8. 授權後回合在看板前結束 — 中文的未讀朗讀', async () => {

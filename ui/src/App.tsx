@@ -462,12 +462,6 @@ export default function App() {
       const prev = lastStatus.current.get(s.id);
       lastStatus.current.set(s.id, s.status);
       if (prev === undefined || prev === s.status) continue;
-      // 第五個 coach:第一次有 session 從「在做」轉進「等你」,教琥珀
-      // 色呼吸是什麼、⌘/Ctrl+E 怎麼跳。只看「轉進」,不看「生下來就在
-      // 等」—— attempt 一開就停在信任門上,那一刻 attempt coach 正在說
-      // 同一件事,而且開始當下已有一張 coach 在場,一次一張的規則會讓
-      // 這張留到下一次真正的等待。
-      if (needsYou(s.status) && !needsYou(prev)) teach('waiting');
       if (ended(s.status) && !ended(prev) && prev !== 'saved') {
         // Read live only if that pane was on screen with the caret and the
         // window itself had the user's attention.
@@ -529,12 +523,6 @@ export default function App() {
     // Deliberately not re-run on sessions/tasks: the question is what the
     // desk held at the moment it became ready, not after the first card.
   }, [loaded, boot?.ready]);
-
-  // The first sight of the Finish footer: an outcome is final, and that is
-  // better learned before the second click than after it.
-  useEffect(() => {
-    if (inspected && inspected.outcome === null) teach('finish');
-  }, [inspected, teach]);
 
   // The first time the caret lands in a pane: which keys leave it, and that
   // Ctrl+letter belongs to the shell in there.
@@ -937,14 +925,13 @@ export default function App() {
           INITIAL_COLS,
           INITIAL_ROWS,
         );
-        teach(mode !== 'normal' ? 'mode' : 'attempt');
         if (result.attempt) await onOpen(result.attempt.session_id);
         else setBoardFocusId(id);
       } catch (e) {
         setDialogError(String(e));
       }
     },
-    [onOpen, teach],
+    [onOpen],
   );
 
   /**
@@ -967,10 +954,6 @@ export default function App() {
           INITIAL_ROWS,
         );
         setStarting(null);
-        // The first start is the moment its concept bites: what a worktree
-        // is on an ordinary launch, what fewer prompts mean on a ⚡ one.
-        // The sharper edge wins when both are new.
-        teach(mode !== 'normal' ? 'mode' : 'attempt');
         // Over the limit it waits its turn instead of starting. There is no
         // terminal to go to yet, so the board is where you want to be left —
         // the card says where it is in the queue.
@@ -1276,7 +1259,7 @@ export default function App() {
                 ? t('view.overview')
                 : view === 'board'
                   ? t('view.board')
-                  : t('view.noSession')}
+                  : t('sidebar.empty')}
             </strong>
           )}
           <span className="spacer" />

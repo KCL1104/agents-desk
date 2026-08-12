@@ -328,6 +328,7 @@ export function AttemptInspector({
         data-testid="inspector-grip"
         title={t('inspector.resize')}
         aria-label={t('inspector.resize')}
+      aria-keyshortcuts="ArrowLeft ArrowRight"
         onPointerDown={onGripDown}
         onKeyDown={onGripKeys}
       />
@@ -441,7 +442,7 @@ export function AttemptInspector({
           <button
             className="chip mono"
             data-testid="open-shell"
-            title={t('inspector.shellHint')}
+           
             onClick={onOpenShell}
           >
             $ {t('inspector.shell')}
@@ -492,7 +493,7 @@ export function AttemptInspector({
               className="chip mono"
               data-testid="open-preview"
               disabled={previewState === 'ssh'}
-              title={previewState === 'ssh' ? t('preview.sshHint') : t('preview.openHint')}
+              title={previewState === 'ssh' ? t('preview.sshHint') : undefined}
               onClick={onOpenPreview}
             >
               <Icon name="frame" /> {t('preview.open')}
@@ -528,7 +529,7 @@ export function AttemptInspector({
               })
             }
           >
-            {t('inspector.cancelQueued')}
+            {t('common.cancel')}
           </button>
         </p>
       )}
@@ -1388,8 +1389,7 @@ function DiffPane({
               ]
                 .filter(Boolean)
                 .join(' ')}
-              title={commentable(l) ? t('review.hint') : undefined}
-              // The review loop is the flagship; it cannot be mouse-only.
+                            // The review loop is the flagship; it cannot be mouse-only.
               // Roving focus: the <pre> is the single tab stop and j/k move
               // within it — per-line tabstops made a 300-line diff a
               // 300-stop wall between the header and the merge button.
@@ -1514,11 +1514,6 @@ function Timeline({
   }
   return (
     <>
-      {/* The net gets one visible line: yolo advertises the leap loudly,
-          and the retreat that makes it rational must not be a ghost. */}
-      {onRestore !== null && checkpoints.length > 0 && (
-        <p className="tl-restore-hint muted small">{t('ckpt.timelineHint')}</p>
-      )}
       <ol className="timeline" data-testid="timeline">
       {rows.map((e, i) => (
         <li

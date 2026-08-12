@@ -259,7 +259,6 @@ export function SettingsPanel({
                   </div>
                 )}
                 <Checkpoints />
-                <Note testid="note-cost">{t('note.cost')}</Note>
               </>
             )}
 

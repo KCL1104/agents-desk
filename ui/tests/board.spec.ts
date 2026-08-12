@@ -67,7 +67,13 @@ test.describe('one dialog, one act', () => {
     // second one to answer.
     await expect(page.getByTestId('task-agent')).toBeVisible();
     await expect(page.getByTestId('task-mode')).toBeVisible();
-    await page.getByTestId('task-start').click();
+
+    // Enter inside the prompt is a newline; ⌘/Ctrl+Enter is the primary
+    // action, which is the one printed on the button.
+    await page.getByTestId('task-prompt').click();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.modal')).toHaveCount(1);
+    await page.keyboard.press('ControlOrMeta+Enter');
 
     // Straight into the TUI — no board stop, no start dialog.
     await expect(page.getByTestId('attempt-prompt')).toHaveCount(0);
@@ -163,7 +169,7 @@ test.describe('board', () => {
     await start(page, 'k1', 'gemini');
     await page.getByTestId('view-board').click();
 
-    await expect(page.getByTestId('nosignal-k1')).toHaveText('無狀態訊號');
+    await expect(page.getByTestId('nosignal-k1')).toHaveText('沒有狀態回報');
 
     // The first real report retires the disclaimer for good.
     await page.evaluate(() => window.__mock.report('s1', 'running'));
@@ -339,7 +345,7 @@ test.describe('board', () => {
   test('a base branch that does not exist is refused in the dialog', async ({ page }) => {
     await boot(page);
     await newCard(page, '修好登入', REPO, 'no-such-branch');
-    await expect(page.getByTestId('task-error')).toContainText('沒有叫「no-such-branch」的分支');
+    await expect(page.getByTestId('task-error')).toContainText('沒有名為「no-such-branch」的分支');
     await expect(page.locator('.board-card')).toHaveCount(0);
   });
 
@@ -690,7 +696,7 @@ test.describe('a card tmux is still holding', () => {
       window.__mock.pushSessions();
     });
 
-    await expect(page.getByTestId('state-k1')).toContainText('執行中，尚未回報');
+    await expect(page.getByTestId('state-k1')).toContainText('執行中，無回報');
     const door = page.locator('[data-testid="task-k1"] .card-door');
     await expect(door).toHaveCount(1);
 

@@ -59,7 +59,7 @@ export function TabStrip({
             className={`tab${t.id === activeId ? ' active' : ''}`}
             onClick={() => onSelect(t.id)}
             onDoubleClick={() => setEditing(t.id)}
-            title={tr('tabs.rename', { name: t.name })}
+            title={t.name}
             data-testid={`tab-${t.id}`}
             // Roving tabindex: the strip is one tab stop, arrows move within
             // it, Enter or F2 renames — the whole contract role="tab" makes.
@@ -90,7 +90,7 @@ export function TabStrip({
                 className="tab-rename"
                 autoFocus
                 // 改名輸入框沒有旁邊的 label 可以指，借分頁自己的那句話。
-                aria-label={tr('tabs.rename', { name: t.name })}
+                aria-label={tr('tabs.rename')}
                 defaultValue={t.name}
                 onBlur={(e) => {
                   onRename(t.id, e.target.value.trim() || t.name);
@@ -114,12 +114,12 @@ export function TabStrip({
                     Unread wears a count in a filled pill — mail's unread
                     grammar — so it never reads as the busy dot. */}
                 {waiting > 0 ? (
-                  <span className="tab-badge waiting" title={tr('tabs.waiting')}>
+                  <span className="tab-badge waiting" title={tr('status.waiting_input')}>
                     <Icon name="warn" />
                     {waiting}
                   </span>
                 ) : unread > 0 ? (
-                  <span className="tab-badge unseen" title={tr('tabs.unseen')}>
+                  <span className="tab-badge unseen" title={tr('unseen.label')}>
                     {unread}
                   </span>
                 ) : busy ? (

@@ -208,12 +208,12 @@ test.describe('the keyboard can drive', () => {
     await expect(page.locator('.tab')).toHaveCount(2);
     // A fresh tab opens in rename mode; keep the offered name and move on.
     await page.keyboard.press('Escape');
-    await expect(page.locator('.tab.active')).toContainText('工作 2');
+    await expect(page.locator('.tab.active')).toContainText('工作區 2');
 
     await page.keyboard.press('Control+PageDown');
     await expect(page.locator('.tab.active')).toContainText('工作區');
     await page.keyboard.press('Control+PageUp');
-    await expect(page.locator('.tab.active')).toContainText('工作 2');
+    await expect(page.locator('.tab.active')).toContainText('工作區 2');
   });
 
   test('⌘/Ctrl+I toggles the inspector beside the terminal', async ({ page }) => {
@@ -370,7 +370,7 @@ test.describe('signals reach everyone', () => {
     await boot(page);
     await page.locator('.tab-add').click();
     await page.keyboard.press('Escape');
-    await expect(page.locator('.tab.active')).toContainText('工作 2');
+    await expect(page.locator('.tab.active')).toContainText('工作區 2');
 
     // The strip is one tab stop; arrows move the selection.
     await page.locator('[data-testid="tab-t2"]').focus();
@@ -410,7 +410,7 @@ test.describe('the accessibility tree tells the truth', () => {
       const id = d.getAttribute('aria-labelledby')!;
       return document.getElementById(id)?.textContent ?? '';
     });
-    expect(labelled).toContain('新卡片');
+    expect(labelled).toContain('新增卡片');
   });
 
   test('rows and cards are groups holding one door, not nested buttons', async ({ page }) => {

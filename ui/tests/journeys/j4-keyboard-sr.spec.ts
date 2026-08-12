@@ -134,7 +134,7 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
 
     // (c) 腳下已是看板,新卡對話框開著。
     await expect(page.getByTestId('board')).toBeVisible();
-    await expect(page.locator('.modal h2')).toHaveText('新卡片');
+    await expect(page.locator('.modal h2')).toHaveText('新增卡片');
     // (a) 開門即可打字:焦點在目標欄 —— 標題是選填而且由 prompt 推導。
     await expect(page.getByTestId('task-prompt')).toBeFocused();
     // (b) 開一扇對話框不是要朗讀的事。
@@ -148,9 +148,11 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
     await page.getByTestId('task-repo').fill(REPO);
     await page.getByTestId('task-branch').fill('main');
 
-    // 多行欄位裡 Enter 是換行;送出走 ⌘/Ctrl+Enter。
+    // 多行欄位裡 Enter 是換行,不會送出表單。
     await page.getByTestId('task-prompt').focus();
-    await chord(page, 'Enter');
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.modal')).toHaveCount(1);
+    await page.getByTestId('task-create').click();
 
     // (c) 對話框關了,backlog 收下第一張卡,標題是 prompt 的第一行。
     await expect(page.locator('.modal')).toHaveCount(0);
@@ -211,9 +213,9 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
     // (b) 出生就停在信任門上,整句逐字:標題＋狀態。
     await expect(live).toHaveText(`${FIRST_LINE} #1 等你確認資料夾`);
 
-    // 第一次開 attempt 的 coach 出現,但一毫米焦點都不偷。
-    await expect(page.getByTestId('coach-attempt')).toBeVisible();
-    await expect(page.getByTestId('coach-attempt')).toContainText('worktree');
+    // 落進終端機的那一張 coach 出現,但一毫米焦點都不偷。
+    await expect(page.getByTestId('coach-terminal')).toBeVisible();
+    await expect(page.getByTestId('coach-terminal')).toContainText('Shift');
     expect(
       await page.evaluate(
         () => document.querySelector('.coach')?.contains(document.activeElement) ?? false,
@@ -353,7 +355,7 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
     await expect(
       page.locator('[data-section="waiting"] [data-testid="session-s1"]'),
     ).toBeVisible();
-    await expect(page.locator('.waiting-banner')).toHaveText('⚠ 1 個等你');
+    await expect(page.locator('.waiting-banner')).toHaveText('1 個等你');
     // (c-3) 分頁徽章:blocked 壓過一切(s95 還在跑,busy 讓位)。
     await expect(page.locator('.tab-badge.waiting')).toHaveText('1');
     // 分頁的可讀名字:徽章的「數字」進了名字,但「意義」(等你處理)
@@ -363,14 +365,11 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
     await expect(page.locator('[data-testid="tab-t1"]')).toHaveAccessibleName('工作區 1');
     // (b) 朗讀逐字。
     await expect(live).toHaveText(`${FIRST_LINE} #1 等你授權`);
-    // 第一次「在做轉等你」的 coach:教琥珀,不偷焦點。
-    await expect(page.getByTestId('coach-waiting')).toBeVisible();
-    await expect(page.getByTestId('coach-waiting')).toContainText('琥珀');
-    // (a) 三個表面亮起、coach 上場,焦點一步都沒被偷。
+    // 轉進「等你」不再彈出任何 coach:側欄數它、卡片戴它、pane 跳動、
+    // 分頁掛徽章 —— 第五份拷貝是多的。
+    await expect(page.locator('.coach')).toHaveCount(0);
+    // (a) 三個表面亮起,焦點一步都沒被偷。
     await expect(door).toBeFocused();
-
-    await page.getByTestId('coach-dismiss').focus();
-    await page.keyboard.press('Enter');
     await expect(page.getByTestId('coach-waiting')).toHaveCount(0);
   });
 
@@ -383,14 +382,10 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
     // (b) 跳轉不朗讀。
     await expect(live).not.toContainText('終端機');
 
-    // 第一次插入點落進 pane 的 coach(真終端、Ctrl+字母屬於 shell),
-    // 照樣不偷焦點,照樣鍵盤收下。
-    await expect(page.getByTestId('coach-terminal')).toBeVisible();
-    await expect(page.getByTestId('coach-terminal')).toContainText('真終端');
+    // 那張 coach 早在第一次落進 pane 時就上過課並被收下了 —— 一次就是
+    // 一次,回到同一個終端不會再教一遍。
+    await expect(page.locator('.coach')).toHaveCount(0);
     await expectFocusWithin(page, '.pane[data-session-id="s1"] .term-host');
-    await page.getByTestId('coach-dismiss').focus();
-    await page.keyboard.press('Enter');
-    await expect(page.getByTestId('coach-terminal')).toHaveCount(0);
   });
 
   await test.step('10. the splitter: aria-valuenow moves when the arrows do', async () => {
@@ -441,14 +436,14 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
     await expect(page.getByTestId('unseen-s1')).toBeVisible();
     await expect(page.getByTestId('unseen-card-k1')).toBeVisible();
     await expect(page.locator('.tab-badge.unseen')).toHaveText('1');
-    // 卡片與側欄列的 aria-label 都把「已完成,還沒看過」唸進去。
+    // 卡片與側欄列的 aria-label 都把「已完成未看」唸進去。
     await expect(card).toHaveAttribute(
       'aria-label',
-      `${FIRST_LINE}，待命，已完成，還沒看過`,
+      `${FIRST_LINE}，待命，已完成未看`,
     );
     await expect(page.getByTestId('session-s1')).toHaveAttribute(
       'aria-label',
-      `${FIRST_LINE} #1，待命，已完成，還沒看過`,
+      `${FIRST_LINE} #1，待命，已完成未看`,
     );
     // (a) 狀態轉變仍不動焦點;(b) 回合結束逐字。
     await expect(door).toBeFocused();
@@ -530,12 +525,9 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
       'j k n p e v Enter',
     );
 
-    // 第一次見到 Finish 腳注的 coach(結束是最終的),照樣不偷焦點。
-    await expect(page.getByTestId('coach-finish')).toBeVisible();
+    // 打開抽屜不再彈 coach:結束的後果寫在按鈕上,而且按鈕自己會武裝。
+    await expect(page.locator('.coach')).toHaveCount(0);
     await expect(page.getByTestId('diff-body')).toBeFocused();
-    await page.getByTestId('coach-dismiss').focus();
-    await page.keyboard.press('Enter');
-    await expect(page.getByTestId('coach-finish')).toHaveCount(0);
 
     // 檢視器把手:separator 曝露範圍與現值(預設寬 460 → 21%),
     // ← 加寬、→ 收窄,數字跟著動。
@@ -545,7 +537,9 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
     await expect(grip).toHaveAttribute('aria-valuemin', '0');
     await expect(grip).toHaveAttribute('aria-valuemax', '100');
     await expect(grip).toHaveAttribute('aria-valuenow', '21');
-    await expect(grip).toHaveAccessibleName('拖曳調整寬度；← 加寬、→ 收窄');
+    // 名字是名字,不是滑鼠指令;方向鍵的對應改掛 aria-keyshortcuts。
+    await expect(grip).toHaveAccessibleName('調整檢視器寬度');
+    await expect(grip).toHaveAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
     await grip.focus();
     await expect(grip).toBeFocused();
     await page.keyboard.press('ArrowLeft');
@@ -585,7 +579,7 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
 
     // 一批一則,整包送回 session 自己的終端 —— 按鈕有真名字。
     const send = page.getByTestId('review-send');
-    await expect(send).toHaveText('把 1 則意見送回給 agent');
+    await expect(send).toHaveText('送出 1 則意見給 agent');
     await send.focus();
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('review-pending')).toHaveCount(0);

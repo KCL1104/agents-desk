@@ -1397,7 +1397,10 @@ button.board-cta:hover {
 
 /* The one state-appropriate next step, read off git. ok says the way is
    clear; warn says something stands in it. */
+/* The arrow is decoration: as a text node it was inside the card's
+   accessible name, so a board of ten cards read "right arrow" ten times. */
 .card-next { font-size: var(--fs-data); }
+.card-next::before { content: '→ '; }
 .card-next.finish { color: var(--ok); }
 .card-next.commit, .card-next.rebase { color: var(--warn); }
 /* A repo living in another world says so, ahead of its name. */
@@ -1582,7 +1585,6 @@ button.board-cta:hover {
 .tl-row.tl-send .tl-tool { color: var(--accent); }
 
 /* One line, once: the retreat exists. */
-.tl-restore-hint { margin: 0; padding: 6px var(--gutter-x) 0; }
 
 /* The retreat, anchored where a turn began. Quiet until armed — then it
    names the act, the two-click grammar every destructive button speaks. */

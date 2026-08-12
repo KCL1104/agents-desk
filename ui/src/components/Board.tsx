@@ -325,14 +325,12 @@ export function Board({
                   (col === 'backlog' ? (
                     // The empty backlog is a door, not a caption: the words
                     // already say "add a card", so the words are the button.
-                    // 整張桌子一張卡都沒有時(第一分鐘),說完整的一句 ——
-                    // 卡片是什麼、由什麼組成;桌子用過之後短標籤就夠了。
                     <button
                       className="board-empty board-cta muted small"
                       data-testid="board-cta"
                       onClick={onNewTask}
                     >
-                      {t(tasks.length === 0 ? 'board.emptyBacklogFirst' : 'board.emptyBacklog')}
+                      {t('board.emptyBacklog')}
                     </button>
                   ) : (
                     <p className="board-empty muted small">{t('board.emptyDrop')}</p>
@@ -734,12 +732,8 @@ function Card({
         {live.kind === 'session' &&
           !live.session.reports_status &&
           !isMeasured(live.attempt.agent) && (
-            <span
-              className="chip no-signal"
-              data-testid={`nosignal-${task.id}`}
-              title={t('overview.noStatus')}
-            >
-              {t('status.noSignal')}
+            <span className="chip no-signal" data-testid={`nosignal-${task.id}`}>
+              {t('env.cliQuiet')}
             </span>
           )}
         {/* How long it has been stuck — the number triage runs on, on the
@@ -786,7 +780,7 @@ function Card({
             // and the inspector's banner says it in full besides.
             title={text ?? undefined}
           >
-            {advice ? `→ ${advice}` : activity}
+            {advice ?? activity}
           </div>
         );
       })()}

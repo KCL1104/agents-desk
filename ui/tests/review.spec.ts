@@ -77,7 +77,7 @@ test.describe('the review loop', () => {
     );
     const sent = call as { id: string; text: string };
     expect(sent.id).toBe('s1');
-    expect(sent.text).toContain('[Marol 檢視回饋]');
+    expect(sent.text).toContain('[Marol review]');
     expect(sent.text).toContain('1. src/auth.py:2');
     expect(sent.text).toContain('> +    return session');
     expect(sent.text).toContain('session 可能是 undefined，要先檢查');
@@ -137,7 +137,7 @@ test.describe('the review loop', () => {
     await page.getByTestId('review-note').fill('算了，沒事');
     await page.getByTestId('review-add').click();
 
-    await page.getByRole('button', { name: '移除這則意見' }).click();
+    await page.getByRole('button', { name: '移除', exact: true }).click();
     await expect(page.getByTestId('review')).toHaveCount(0);
     await expect(page.locator('.diff-line.noted')).toHaveCount(0);
   });

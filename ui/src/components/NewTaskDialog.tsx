@@ -320,14 +320,23 @@ export function NewTaskDialog({ onCancel, onCreate, onCreateAndStart, error, goa
     ).finally(() => setBusy(false));
   };
 
-  /** Enter finishes the form from any single-line field — but never the
-   *  Enter that is confirming an IME composition, which zh-TW typing ends
-   *  every phrase with. */
-  const submitOnEnter = onEnter(submit);
+  /**
+   * Enter finishes the form from any single-line field — but never the Enter
+   * that is confirming an IME composition, which zh-TW typing ends every
+   * phrase with.
+   *
+   * It files the card rather than starting it. The two actions differ in
+   * consequence: one adds a row to the backlog, the other spawns a git
+   * worktree and a PTY. A key this easy to hit by accident — and the one an
+   * IME sends to confirm a phrase — belongs to the reversible half, the same
+   * way the board arms its destructive buttons. The starting half prints its
+   * chord on its own face, so it stays discoverable; nothing prints "Enter".
+   */
+  const submitOnEnter = onEnter(createOnly);
 
   return (
     <Modal onCancel={onCancel} dirty={dirty} onSubmit={submit}>
-        <h2>{t('newTask.title')}</h2>
+        <h2>{t('board.newCard')}</h2>
 
         {/* 目標第一。原本第一眼看到的是「標題(選填)」—— 一個可以留白的
             欄位站在最前面,等於一開口就要人做一個不必做的決定。 */}
@@ -341,16 +350,15 @@ export function NewTaskDialog({ onCancel, onCreate, onCreateAndStart, error, goa
           // 對話框上 —— 按鈕上印著那顆和弦,它就必須處處為真。
           onChange={(e) => setPrompt(e.target.value)}
         />
-        <p className="muted small">{t('newTask.promptHint')}</p>
 
         <label>{t('newTask.titleLabel')}</label>
         <input
           value={title}
           data-testid="task-title"
+          placeholder={t('newTask.titleHint')}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={submitOnEnter}
         />
-        <p className="muted small">{t('newTask.titleHint')}</p>
 
         <WorldSelect value={world} onChange={setWorld} testid="task-world" />
 
@@ -411,7 +419,6 @@ export function NewTaskDialog({ onCancel, onCreate, onCreateAndStart, error, goa
             <option key={b} value={b} />
           ))}
         </datalist>
-        <p className="muted small">{t('newTask.baseHint')}</p>
 
         {/* Which CLI runs it, and how much it asks. Both used to live in a
             second dialog that opened after the card existed — the step this

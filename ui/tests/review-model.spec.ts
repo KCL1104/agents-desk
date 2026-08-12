@@ -80,14 +80,14 @@ test.describe('the diff, read back into places feedback can point at', () => {
     ];
     const msg = composeReview(comments, zh);
 
-    expect(msg).toContain('[Marol 檢視回饋]');
+    expect(msg).toContain('[Marol review]');
     expect(msg).toContain('1. src/auth.py:13');
     expect(msg).toContain('> +    if ok:');
     expect(msg).toContain('這裡少了 else');
     expect(msg).toContain('2. new.rs:1');
     expect(msg.indexOf('1. src/auth.py')).toBeLessThan(msg.indexOf('2. new.rs'));
     // And it ends by saying what to do with the feedback.
-    expect(msg.trimEnd().endsWith('commit 在這個分支上。')).toBe(true);
+    expect(msg.trimEnd().endsWith('commit 到這個分支。')).toBe(true);
   });
 
   /** Mirrors prompt.rs: only the CLIs whose conventions were measured are

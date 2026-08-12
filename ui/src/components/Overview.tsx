@@ -50,7 +50,7 @@ export function Overview({ sessions, unseen, onOpen, onComplete, onClose }: Prop
   if (sessions.length === 0) {
     return (
       <div className="overview empty">
-        <p className="muted">{t('overview.empty')}</p>
+        <p className="muted">{t('sidebar.empty')}</p>
       </div>
     );
   }
@@ -168,7 +168,7 @@ function Card({
               onComplete(s.id, !s.completed);
             }}
           >
-            {s.completed ? t('overview.unmarkDone') : t('overview.markDone')}
+            {s.completed ? t('sidebar.unmarkDone') : t('sidebar.markDone')}
           </button>
           {s.live && (
             <button

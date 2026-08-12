@@ -83,7 +83,7 @@ export function Splitter({
       className={`splitter ${handle.dir}`}
       role="separator"
       aria-orientation={handle.dir === 'row' ? 'vertical' : 'horizontal'}
-      aria-label={t('splitter.hint')}
+      aria-label={t('gesture.splitter')}
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={valueNow}

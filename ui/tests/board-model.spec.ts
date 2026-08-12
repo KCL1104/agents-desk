@@ -233,11 +233,11 @@ test('a wsl repository is labelled with its distro', async () => {
  * 卡片再用 `live.stopped` 講一次。兩處都要說實話。
  */
 test.describe('a session tmux kept running', () => {
-  test('reads as 執行中，尚未回報 on the card, not as 未執行', () => {
+  test('reads as 執行中，無回報 on the card, not as 未執行', () => {
     const t = task({ attempts: [attempt({ id: 'a1', seq: 1, session_id: 's1' })] });
     const live = liveStateOf(t, [session({ id: 's1', live: false, status: 'detached' })]);
     expect(live.kind).toBe('detached');
-    expect(liveLabel(live, zh)).toBe('執行中，尚未回報');
+    expect(liveLabel(live, zh)).toBe('執行中，無回報');
   });
 
   test('wears the neutral dot — running is known, what it is doing is not', () => {
@@ -251,12 +251,12 @@ test.describe('a session tmux kept running', () => {
 
   // 接回去之後,session 變成 live,但狀態仍是 detached —— 因為 attach 不是
   // 啟動,不會有新的 SessionStart。卡片這時走 `session` 這一格,而標籤必須
-  // 還是那句「執行中,尚未回報」,不能變成「啟動中」。
+  // 還是那句「執行中,無回報」,不能變成「啟動中」。
   test('after reattaching it is live and still not reporting', () => {
     const t = task({ attempts: [attempt({ id: 'a1', seq: 1, session_id: 's1' })] });
     const live = liveStateOf(t, [session({ id: 's1', live: true, status: 'detached' })]);
     expect(live.kind).toBe('session');
-    expect(liveLabel(live, zh)).toBe('執行中，尚未回報');
+    expect(liveLabel(live, zh)).toBe('執行中，無回報');
   });
 
   test('a session that really did end still reads as 未執行', () => {

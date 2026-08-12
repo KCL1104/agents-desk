@@ -35,7 +35,7 @@
     "publisher": "Marol",
     "homepage": "https://github.com/kcl1104/marol",
     "copyright": "Copyright (c) 2026 Marol contributors",
-    "shortDescription": "Desktop cockpit for multiple coding agent sessions",
+    "shortDescription": "Run and supervise multiple coding agent sessions, each in its own git worktree",
     "longDescription": "Marol is a local-first desktop console for running and supervising multiple coding agent sessions, with git worktree isolation, lifecycle hooks and native notifications.",
     "linux": {
       "deb": {

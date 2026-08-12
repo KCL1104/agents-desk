@@ -86,12 +86,10 @@ test('V · six key screens, one continuous line', async ({ page }) => {
     // 滑鼠停回原點：按鈕消失後游標懸在看板上，:hover 的殘影不准進基準線。
     await page.mouse.move(0, 0);
 
-    // (c) 對話框收起，腳下已是看板，整張桌子空著 —— CTA 說完整的一句。
+    // (c) 對話框收起，腳下已是看板，空的待辦欄本身就是那扇門。
     await expect(page.locator('.modal')).toHaveCount(0);
     await expect(page.getByTestId('board')).toBeVisible();
-    await expect(page.getByTestId('board-cta')).toHaveText(
-      '開第一張卡：一個 repo、一個分支、一件要做的事',
-    );
+    await expect(page.getByTestId('board-cta')).toHaveText('新增一張卡片');
     // (a) 自動浮起的面板沒有召喚者可還，焦點退回 <body>；(b) 通道安靜。
     await expectFocusNeutral(page);
     await expect(live).toHaveText('');
@@ -108,7 +106,7 @@ test('V · six key screens, one continuous line', async ({ page }) => {
     await expect(page.getByTestId('empty-grid')).toBeVisible();
     await expect(page.getByTestId('term-keymap')).toBeVisible();
     await expect(page.locator('.term-keymap-row')).toHaveCount(3);
-    await expect(page.getByTestId('term-keymap')).toContainText('終端牆 · 看板 · 總覽');
+    await expect(page.getByTestId('term-keymap')).toContainText('終端機 · 看板 · 總覽');
     // (a) 視圖和弦不搬焦點；(b) 換視圖不是要朗讀的事。
     await expectFocusNeutral(page);
     await expect(live).toHaveText('');
@@ -259,7 +257,7 @@ test('V · six key screens, one continuous line', async ({ page }) => {
     await expect(page.getByTestId('task-k3')).toHaveAttribute('data-outcome', 'merged');
     await expect(page.getByTestId('state-k3')).toContainText('已合併');
     // (c-4) 側欄同一份事實:琥珀橫幅計 1,等你分區列著 s102。
-    await expect(page.locator('.waiting-banner')).toHaveText('⚠ 1 個等你');
+    await expect(page.locator('.waiting-banner')).toHaveText('1 個等你');
     await expect(
       page.locator('[data-section="waiting"] [data-testid="session-s102"]'),
     ).toBeVisible();
@@ -332,7 +330,7 @@ test('V · six key screens, one continuous line', async ({ page }) => {
     await expectAnnounce(page, '修好登入轉圈圈 #1 等你授權');
     // 側欄橫幅說全桌的真相(2 個);分頁徽章只數自己牆上的 pane ——
     // s102 從沒上過牆,所以徽章是 1。兩個數字各說各的事實,都對。
-    await expect(page.locator('.waiting-banner')).toHaveText('⚠ 2 個等你');
+    await expect(page.locator('.waiting-banner')).toHaveText('2 個等你');
     await expect(page.locator('.tab-badge.waiting')).toHaveText('1');
 
     // 朗讀通道說完 5 秒自清 —— 等它清空(輪詢,不 sleep),下一個斷言

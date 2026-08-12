@@ -136,7 +136,7 @@ test('J3 · restart recovery, end to end', async ({ page }) => {
 
     // ⌘/Ctrl+2 —— 平常的開機落在終端牆，看板要自己走過去。
     await chord(page, '2');
-    // (c) 看板站起來：進行中五張（四停一暫停），待驗收一張（已合併）。
+    // (c) 看板站起來：進行中五張（四停一暫停），待檢視一張（已合併）。
     await expect(page.getByTestId('board')).toBeVisible();
     await expect(page.locator('[data-testid="col-running"] .board-card')).toHaveCount(5);
     await expect(page.locator('[data-testid="col-review"] .board-card')).toHaveCount(1);
@@ -169,7 +169,7 @@ test('J3 · restart recovery, end to end', async ({ page }) => {
     // 瞄準即現身，之一：hover 進卡，兩顆 quiet 全亮；離開就退場。
     await page.getByTestId('task-k2').hover();
     await expect(page.getByTestId('park-k2')).toBeVisible();
-    await expect(page.getByTestId('park-k2')).toHaveText('暫停');
+    await expect(page.getByTestId('park-k2')).toHaveText('擱置');
     await expect(page.getByTestId('retry-k2')).toBeVisible();
     await expect(page.getByTestId('retry-k2')).toHaveText('換 agent');
     await page.mouse.move(0, 0);
@@ -253,7 +253,7 @@ test('J3 · restart recovery, end to end', async ({ page }) => {
     ).toBeVisible();
     await driveStatus(page, 's91', 'waiting_permission');
     // (c) 琥珀橫幅與分頁徽章同時亮。
-    await expect(page.locator('.waiting-banner')).toHaveText('⚠ 1 個等你');
+    await expect(page.locator('.waiting-banner')).toHaveText('1 個等你');
     await expect(page.locator('.tab-badge.waiting')).toHaveText('1');
     // (a) 狀態轉變一次都不准偷走插入點。
     await expectFocusWithin(page, '.pane[data-session-id="s91"] .term-host');
@@ -331,7 +331,7 @@ test('J3 · restart recovery, end to end', async ({ page }) => {
     // 抽屜就不再被拽走。
     await page.locator('.tab-add').click();
     await page.keyboard.press('Escape');
-    await expect(page.locator('.tab.active')).toContainText('工作 2');
+    await expect(page.locator('.tab.active')).toContainText('工作區 2');
     await page.mouse.move(0, 0);
     await chord(page, '2');
     await expect(page.getByTestId('board')).toBeVisible();

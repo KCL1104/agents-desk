@@ -56,7 +56,7 @@ test.describe('the token account', () => {
     const chip = page.getByTestId('inspector-usage');
     // Words, not arrows: ↑ already means "commits ahead" one chip over in
     // the same row, and one glyph must not carry two currencies.
-    await expect(chip).toHaveText('語境 279k · 輸出 2.6M');
+    await expect(chip).toHaveText('context 279k · 輸出 2.6M');
     // The tooltip holds the exact figures the compact form rounds away.
     await expect(chip).toHaveAttribute('title', /278,599/);
     await expect(chip).toHaveAttribute('title', /780,967,984/);
