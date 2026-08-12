@@ -755,6 +755,52 @@ therefore sets it to `""`, and both macOS jobs die with `failed codesign
 application: failed to import keychain certificate`. Add the variables in the
 same change as the real secrets, not before.
 
+**One consolation, and it is a real one: the updater does not go through
+Gatekeeper.** The quarantine attribute is set by whatever *downloads* a file,
+and an in-app update is fetched by the app itself rather than by a browser.
+So the `xattr` line above is a first-install cost, paid once, and every
+version after it arrives without one — even while nothing is signed.
+
+### Signing updates
+
+Update signing is a **different key** from Apple's, with a different job: it
+signs the manifest and the artifact so a running Marol can prove the bytes it
+just downloaded came from this repository. Apple's key vouches for the app to
+the operating system; this one vouches for an update to the app.
+
+There is no such key here either, so released builds carry an empty `pubkey`
+and say "this build carries no update key" where the update button would be.
+To arm it:
+
+```bash
+npm run tauri signer generate -- -w ~/.marol-updater.key
+```
+
+That prints a public key and writes a private one. Then, **in a single
+change**:
+
+1. Paste the public half into `plugins.updater.pubkey` in
+   `src-tauri/tauri.conf.json`.
+2. Add `TAURI_SIGNING_PRIVATE_KEY` (the contents of the private key file) and
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` to the repository secrets.
+
+`release.yml` does the rest: it turns `createUpdaterArtifacts` on for that
+run, signs, and uploads a `latest.json` next to the installers, which is the
+file the app's endpoint reads. Runs without the secret leave all of it off and
+produce exactly the release they produced before — which is why the two halves
+have to land together, and why the workflow **fails loudly** if it finds a
+signing secret and no `pubkey` rather than shipping an app that cannot verify
+its own updates.
+
+Two consequences worth knowing before you generate it:
+
+- **Losing the private key means never updating existing installs again.**
+  Every copy already out there only trusts the public half compiled into it.
+  Back it up somewhere that is not this laptop.
+- **Builds made before the key existed can never update themselves**, for the
+  same reason — there is no public half in them to check a signature against.
+  Whoever installed one has to install the next one by hand, once.
+
 ### Icons
 
 The `.ico`, `.icns` and assorted PNGs under `src-tauri/icons/` are committed,
@@ -1195,10 +1241,47 @@ writing into a shape it does not understand:
     It was written by a newer Marol.
 
 That refusal is the feature: losing a board quietly would be worse than an app
-that will not start. But it means a downgrade needs the older database back,
-so **copy `marol.db` out of the state directory before installing over a
-version you might want to return from**. The settings panel's diagnostics
-section names its exact path on this machine.
+that will not start. But it means a downgrade needs the older database back —
+which is why **the app takes that copy for you** before it replaces anything
+(see below). Installing by hand over a version you might want to return from
+is the case where the copy is still yours to take: `marol.db`, out of the
+state directory, whose exact path on this machine is in the settings panel's
+diagnostics.
+
+### Updating in place
+
+Settings → Updates asks GitHub what the newest release is, once a day, and
+puts a dot in the sidebar corner when there is one. Pressing the button
+downloads it, swaps the binary and restarts into it. No browser, no download
+folder, no installer.
+
+Four things it deliberately does:
+
+- **The database is copied first**, to `marol.db.before-<version>` beside the
+  original, taken with `VACUUM INTO` rather than by copying the file — this
+  database runs in WAL mode, so the file on disk is not the whole of it. The
+  copy is what makes the one-way door above openable again, so a failure to
+  take it stops the update rather than being logged and passed.
+- **It counts what restarting costs, in agents.** Sessions a `tmux` in their
+  own world is holding are detached and handed back; sessions in a world
+  without one end. The second number is what the button asks about before it
+  becomes "end them and update", and on native Windows — where there is no
+  tmux to be the holder — it is every agent you have running.
+- **It refuses on a `.deb` or `.rpm`.** Those belong to the package manager
+  that installed them, which keeps its own record of every file it owns.
+  There the panel says so and offers the releases page instead. An AppImage
+  replaces itself and is treated as self-contained, as are macOS and Windows.
+- **It does nothing on its own.** The check is the app's; the download and
+  the restart wait for a person. There is no silent swap and no "restarting
+  in 10 seconds".
+
+The check can be turned off in the same panel. It sends nothing about this
+machine — it is the same request a browser makes opening the releases page —
+but it is the only outbound request Marol makes on its own behalf, and a
+claim like that should be checkable by being switchable.
+
+**A build with no key cannot do any of this** and says so where the button
+would be. See [Signing updates](#signing-updates).
 
 ---
 

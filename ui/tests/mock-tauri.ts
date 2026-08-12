@@ -228,6 +228,31 @@ export function installMock(): void {
     checkpointsOn: true,
     checkpoints: new Map<string, Array<{ n: number; sha: string; at: number }>>(),
     checkpointQuiet: false,
+    /** The updater's whole surface. Defaults describe the build a person
+     *  actually has: a real version, a key in place, self-contained, and no
+     *  newer release waiting — so every existing test paints the "you are on
+     *  the newest" branch and only the update tests move off it. */
+    update: {
+      version: '0.6.0',
+      configured: true,
+      enabled: true,
+      selfContained: true,
+      /** What a restart would do to the agents running now, split the way
+       *  core.rs splits it: `held` come back, `lost` do not. Seeded by
+       *  tests; zero is the desk with nothing running. */
+      held: 0,
+      lost: 0,
+      lastCheck: null as number | null,
+      due: true,
+      releases: 'https://github.com/KCL1104/marol/releases/latest',
+      /** Seeded by tests: what a check finds. Null is "you are on it". */
+      available: null as { version: string; notes: string | null; date: string | null } | null,
+      /** Seeded by tests: what applying fails with, if it should. */
+      applyError: null as string | null,
+      /** Recorded so a test can assert the snapshot happened before the
+       *  swap, and that acknowledgement was carried rather than assumed. */
+      applied: [] as boolean[],
+    },
     resumeRestoreError: null as string | null,
     sessionSeq: 0,
     portListening: true,
@@ -659,6 +684,37 @@ export function installMock(): void {
       mock.queue = mock.queue.filter((x) => x !== taskId);
       mock.pendingStarts.delete(taskId);
       mock.pushTasks();
+      return null;
+    },
+
+    /* ---------------------------- updates ---------------------------- */
+
+    update_status: () => ({
+      version: mock.update.version,
+      configured: mock.update.configured,
+      enabled: mock.update.enabled,
+      selfContained: mock.update.selfContained,
+      held: mock.update.held,
+      lost: mock.update.lost,
+      lastCheck: mock.update.lastCheck,
+      due: mock.update.due,
+      releases: mock.update.releases,
+    }),
+
+    update_check: () => {
+      if (!mock.update.configured || !mock.update.enabled) return null;
+      mock.update.lastCheck = Math.floor(Date.now() / 1000);
+      return mock.update.available;
+    },
+
+    update_apply: (args) => {
+      if (mock.update.applyError) throw new Error(mock.update.applyError);
+      mock.update.applied.push(Boolean(args.acknowledged));
+      return null;
+    },
+
+    set_update_enabled: (args) => {
+      mock.update.enabled = Boolean(args.on);
       return null;
     },
 

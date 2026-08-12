@@ -13,6 +13,8 @@ import type {
   Tab,
   Task,
   TaskRepo,
+  UpdateAvailable,
+  UpdateStatus,
 } from './types';
 
 /** What pressing 開始 did. Mirrors core.rs StartResult. */
@@ -212,6 +214,24 @@ export const api = {
       restored, terminal reopened on the old conversation. */
   resumeAttempt: (attemptId: string, cols: number, rows: number) =>
     invoke<Resumed>('resume_attempt', { attemptId, cols, rows }),
+
+  /** What this build is, whether it can update itself, and what restarting
+      would cost right now. Free of network — see update_status in main.rs. */
+  updateStatus: () => invoke<UpdateStatus>('update_status'),
+  /** Ask GitHub what the newest release is. Null is "you are on it", and is
+      also what a failed check returns: nothing here is worth interrupting
+      the work to report. */
+  updateCheck: () => invoke<UpdateAvailable | null>('update_check'),
+  /** Snapshot the database, download, swap, restart. `acknowledged` is a
+      person's answer to the count of agents this would end — never sent
+      unless that count was on screen. */
+  updateApply: (acknowledged: boolean) => invoke<void>('update_apply', { acknowledged }),
+  setUpdateEnabled: (on: boolean) => invoke<void>('set_update_enabled', { on }),
+  /** How far the download has got. `total` is absent when the server sends
+      no content-length, and the bar stays away rather than inventing a
+      denominator. */
+  onUpdateProgress: (cb: (p: { got: number; total: number | null }) => void): Promise<UnlistenFn> =>
+    listen<{ got: number; total: number | null }>('update:progress', (e) => cb(e.payload)),
 
   /** Whether the end of a turn snapshots the worktree. */
   checkpointsEnabled: () => invoke<boolean>('checkpoints_enabled'),

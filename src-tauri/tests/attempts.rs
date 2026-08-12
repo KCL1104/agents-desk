@@ -33,6 +33,8 @@ mod pty;
 mod shell_env;
 #[path = "../src/store.rs"]
 mod store;
+#[path = "../src/update.rs"]
+mod update;
 #[path = "../src/worktree.rs"]
 mod worktree;
 

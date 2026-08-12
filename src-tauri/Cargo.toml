@@ -12,6 +12,11 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+# Not target-gated. Upstream spells this dependency with a
+# `cfg(any(target_os = "macos", windows, target_os = "linux"))` because the
+# plugin has no mobile support; this app has no mobile targets either, so the
+# gate would be a condition that is true on every platform it is built for.
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "sync", "time", "net"] }

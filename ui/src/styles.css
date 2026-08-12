@@ -407,6 +407,18 @@ textarea { resize: vertical; }
   background: color-mix(in srgb, var(--fg) 4%, var(--bg-2));
 }
 
+/* A newer version exists. Deliberately the quietest thing in the sidebar:
+   no count, no motion, and --accent rather than the amber that means an
+   agent is blocked on you. An update is never urgent, and borrowing the
+   colour of the one signal this app asks people to trust at a glance would
+   spend that trust on a courtesy. Absent entirely when there is nothing —
+   the tray's rule, applied to the other corner. */
+.update-dot {
+  display: inline-block; width: 6px; height: 6px; margin-left: 6px;
+  border-radius: 50%; background: var(--accent);
+  vertical-align: middle;
+}
+
 /* The world switch, in the corner VS Code taught hands to reach for.
    position: relative stays — it is the box the menu is positioned against,
    which keeps this fix inside the sidebar's own coordinate space: no portal,

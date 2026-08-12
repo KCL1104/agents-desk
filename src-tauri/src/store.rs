@@ -1051,6 +1051,45 @@ impl Store {
         Ok(())
     }
 
+    /* -------------------------- snapshots -------------------------- */
+
+    /// Write a complete copy of this database to `dest`.
+    ///
+    /// The one direction migration does not go is backwards: a build refuses
+    /// to open a database a newer one wrote, which is the whole reason
+    /// `Upgrading` tells people to copy the file out before installing over a
+    /// version they might want to return from. An in-app update removes the
+    /// moment that advice was addressed to — nobody is standing at a download
+    /// page to read it — so the copy has to be taken by the thing doing the
+    /// updating instead.
+    ///
+    /// `VACUUM INTO` rather than copying the file: this database runs in WAL
+    /// mode, so the bytes on disk are `marol.db` plus a `-wal` that may hold
+    /// committed pages the main file does not have yet. Copying the one file
+    /// gets a database missing its most recent transactions; copying all
+    /// three racing a checkpoint gets a set that disagree. `VACUUM INTO` asks
+    /// SQLite for a consistent snapshot as one file and is the only version
+    /// of this that is right by construction.
+    pub fn snapshot_to(&self, dest: &Path) -> Result<()> {
+        // SQLite refuses to overwrite an existing file here, and reporting
+        // "file exists" for a backup somebody asked for twice would be a
+        // refusal with nothing behind it.
+        if dest.exists() {
+            std::fs::remove_file(dest)
+                .with_context(|| format!("clearing the previous snapshot at {}", dest.display()))?;
+        }
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating {}", parent.display()))?;
+        }
+        self.conn
+            .lock()
+            .unwrap()
+            .execute("VACUUM INTO ?1", params![dest.to_string_lossy()])
+            .with_context(|| format!("snapshotting the database into {}", dest.display()))?;
+        Ok(())
+    }
+
     /* ---------------------------- queue ---------------------------- */
 
     /// Put a start in the queue, or replace the one this card already had.

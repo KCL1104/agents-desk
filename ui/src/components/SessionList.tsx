@@ -3,6 +3,7 @@ import { needsYou, type SessionMeta } from '../types';
 import { elapsed, SECTION_KEY, STATUS_KEY, useSections, type Section } from '../sections';
 import { useT } from '../i18n';
 import { DRAG_MIME, encodeDrag } from '../layout';
+import { api } from '../api';
 import { Icon } from './Icon';
 import { WorldPicker } from './WorldPicker';
 
@@ -131,6 +132,7 @@ export function SessionList({
         <WorldPicker />
         <button className="sidebar-foot" onClick={onShowSettings}>
           {t('common.env')}
+          <UpdateDot />
         </button>
       </div>
     </aside>
@@ -233,3 +235,57 @@ function Row({
   );
 }
 
+
+/**
+ * A dot on the settings button when a newer version exists.
+ *
+ * Everything about this is a decision not to interrupt. It is in the corner
+ * rather than over the board, because the board is the triage loop and a
+ * "there is an update!" panel landing on a card that just turned amber is
+ * the worst thing this app could do with the news. It carries no number and
+ * no animation — the tray's own rule, that a thing which always says its own
+ * name spends a permanent slice of attention to tell you something you knew.
+ * And it says nothing at all when there is nothing: no dot is the resting
+ * state, not a state that had to be earned.
+ *
+ * The check behind it runs once per mount and only when the desk has already
+ * decided it is due — once a day, off entirely if the switch is off, and
+ * never at all on a build with no key or a copy a package manager owns.
+ * A failure leaves the corner exactly as it was.
+ */
+function UpdateDot() {
+  const t = useT();
+  const [waiting, setWaiting] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void api
+      .updateStatus()
+      .then((s) => {
+        if (!alive) return;
+        if (!s.configured || !s.selfContained || !s.enabled || !s.due) return;
+        return api.updateCheck().then((found) => {
+          if (alive && found) setWaiting(found.version);
+        });
+      })
+      .catch(() => {
+        /* offline, or a desk that has not booted: the corner stays quiet */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!waiting) return null;
+  return (
+    <span
+      className="update-dot"
+      data-testid="update-dot"
+      // The dot is decoration; the sentence is the meaning, and it goes to
+      // the button's own label so a screen reader reads "Settings, Marol
+      // 0.7.0 available" as one thing rather than announcing a bullet.
+      aria-label={t('up.newVersion', { version: waiting })}
+      title={t('up.newVersion', { version: waiting })}
+    />
+  );
+}

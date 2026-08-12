@@ -273,6 +273,15 @@ jobs:
             rust_targets: ""
 
     runs-on: ${{ matrix.runner }}
+    env:
+      # Asked once, here, because four steps below need the same answer: is
+      # there a key to sign an update manifest with?
+      #
+      # It is a *presence* test that produces a plain string, never a bare
+      # reference. The bundler decides to sign whenever the variable exists,
+      # empty value included — the trap documented on the Apple variables
+      # further down — so nothing may depend on the secret's own emptiness.
+      UPDATER_ARMED: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && 'true' || 'false' }}
     defaults:
       run:
         # Windows runners default to pwsh; force bash so one script works everywhere.
@@ -336,10 +345,47 @@ jobs:
         working-directory: ui
         run: npm ci
 
+      # `createUpdaterArtifacts` ships as false and is turned on here, only on
+      # a run that has a key. The alternative — committing it as true — makes
+      # every build on a repository without the secret fail at bundle time,
+      # asking for a private key to sign an artifact nobody can produce. Same
+      # ruling as the Apple variables: arm it in the same run as the real
+      # secret, never ahead of it.
+      #
+      # Edited rather than templated so the committed config stays the honest
+      # description of a default build.
+      - name: Arm updater artifacts, when there is a key to sign them with
+        if: env.UPDATER_ARMED == 'true'
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const p = "src-tauri/tauri.conf.json";
+            const c = JSON.parse(fs.readFileSync(p, "utf8"));
+            if (!c.plugins?.updater?.pubkey?.trim()) {
+              console.error(
+                "There is a signing key but tauri.conf.json has no plugins.updater.pubkey.\n" +
+                "The two halves are generated together by `npm run tauri signer generate`;\n" +
+                "shipping one without the other builds an app that cannot verify its own\n" +
+                "updates. Paste the public half into tauri.conf.json and re-run."
+              );
+              process.exit(1);
+            }
+            c.bundle.createUpdaterArtifacts = true;
+            fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
+          '
+          echo "updater artifacts armed"
+
       - name: Build and bundle
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Empty on a repository without the secret, which is harmless
+          # precisely because the step above left `createUpdaterArtifacts`
+          # false there: the bundler never reaches for a key it was not asked
+          # to produce a signature with.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # No signing env here on purpose. The bundler treats APPLE_CERTIFICATE as
           # "sign this" whenever the variable EXISTS, empty value included — it does
           # not test for a non-empty one. Wiring the secrets in unconditionally
@@ -358,10 +404,18 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           tauriScript: npm run tauri
           args: ${{ matrix.args }}
-          # This project has no tauri-plugin-updater, so there is nothing to sign
-          # an update manifest for.
-          uploadUpdaterJson: false
-          uploadUpdaterSignatures: false
+          # `latest.json` is what the app's configured endpoint reads —
+          # https://github.com/KCL1104/marol/releases/latest/download/latest.json
+          # — and it can only be written by a run that signed something. On a
+          # repository without the key both stay false and the release is
+          # exactly what it was before the updater existed: installers, and
+          # nothing pointing at them.
+          #
+          # `releases/latest/…` resolves to the newest release that is not a
+          # prerelease, and the rolling nightly is always a prerelease, so a
+          # nightly's own manifest can never become the one running apps read.
+          uploadUpdaterJson: ${{ env.UPDATER_ARMED }}
+          uploadUpdaterSignatures: ${{ env.UPDATER_ARMED }}
           # Always keep a downloadable copy on the run itself, which is the only
           # output when the workflow is dispatched manually.
           uploadWorkflowArtifacts: true

@@ -129,6 +129,16 @@ pub struct SessionMeta {
     /// The attempt this session is running, or `None` for an ad-hoc session
     /// that lives outside the board.
     pub attempt_id: Option<String>,
+    /// Whether this session runs an agent, as opposed to a run script or a
+    /// worktree shell.
+    ///
+    /// Said rather than inferred. The CLI's name cannot answer it — `zsh` is
+    /// a worktree shell and `aider` is an agent, and both are strings this
+    /// desk was handed rather than a list it keeps. What actually separates
+    /// them is a decision made at spawn: only an agent is ever given a tmux
+    /// holder, because only an agent is a thing you started to *leave*
+    /// running. This carries that decision out to whoever needs it.
+    pub agent_session: bool,
     /// A message is queued to go in when this turn ends. Transient, like
     /// the PTY it waits on — never stored, false on every restore.
     pub has_followup: bool,
@@ -159,6 +169,22 @@ pub struct Usage {
     pub cache_read: u64,
     pub cache_write: u64,
     pub context: u64,
+}
+
+/// What quitting would do to the agents currently running, split by whether
+/// something other than this app is holding them.
+///
+/// Two numbers rather than one because they are different facts and only one
+/// of them is a cost. `held` agents are detached and handed back on the next
+/// run; `lost` agents end. An update that restarts the desk has to be able to
+/// say which it is about to do, and to whom.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+pub struct RestartCost {
+    /// Live agents a `tmux` in their own world will hand back.
+    pub held: i64,
+    /// Live agents that end with this process, because nothing is holding
+    /// them — a world without `tmux`, native Windows chief among them.
+    pub lost: i64,
 }
 
 /// One session's progress through its transcript.
@@ -331,6 +357,11 @@ impl SessionMeta {
             activity_since: 0,
             completed: s.completed,
             attempt_id: s.attempt_id,
+            // Not stored, and deliberately not given a column: the only
+            // reader wants to know what a restart would end, and a restored
+            // row is not live, so it is never asked. The one path that makes
+            // one live again is `reopen_session`, which is the agent path.
+            agent_session: true,
             has_followup: false,
             preview_port: None,
             usage: None,
@@ -1096,6 +1127,10 @@ pub struct Core {
     sink: Arc<dyn UiSink>,
     router: Arc<Router>,
     hooks: OnceLock<HookServer>,
+    /// Where the database is, kept so the pre-update snapshot can be put
+    /// beside it. `data_dir` is its parent today and the two would be the
+    /// same answer, but only one of them is the file being copied.
+    db_path: std::path::PathBuf,
     data_dir: std::path::PathBuf,
     worktrees: Worktrees,
     /// The installed CLIs' versions, measured once at startup. `None` for
@@ -1397,6 +1432,7 @@ impl Core {
             sink: Arc::clone(&sink),
             router: Arc::clone(&router),
             hooks: OnceLock::new(),
+            db_path: db_path.clone(),
             data_dir: data_dir.clone(),
             worktrees: Worktrees::new(worktree_root),
             versions,
@@ -1861,6 +1897,35 @@ impl Core {
             .count() as i64
     }
 
+    /// What quitting right now would cost, counted in agent sessions.
+    ///
+    /// An update ends with a restart, and a restart is only cheap where
+    /// something else is holding the agents: a world that answered `tmux -V`
+    /// detaches them and hands them back on the next run, and a world that
+    /// did not ends them. Native Windows is the whole of the second category
+    /// and is not a corner case — there is no native Windows tmux to be the
+    /// holder, so every agent on that desk is in the second column.
+    ///
+    /// Run scripts and worktree shells are deliberately not counted. They are
+    /// never held, by the same ruling that holds agents: a script is a thing
+    /// you started to watch and it goes when the desk does. Counting them
+    /// would price a loss that is not one, on the one number a person uses to
+    /// decide whether to restart.
+    pub fn restart_cost(&self) -> RestartCost {
+        let mut cost = RestartCost::default();
+        for s in self.sessions.lock().unwrap().values() {
+            if !s.live || !s.agent_session {
+                continue;
+            }
+            if self.ptys.is_held(&s.id) {
+                cost.held += 1;
+            } else {
+                cost.lost += 1;
+            }
+        }
+        cost
+    }
+
     pub fn max_concurrent(&self) -> i64 {
         self.store
             .setting(MAX_CONCURRENT_KEY)
@@ -2064,6 +2129,7 @@ impl Core {
             activity_since: 0,
             completed: false,
             attempt_id: Some(attempt_id.clone()),
+            agent_session: true,
             has_followup: false,
             preview_port: None,
             usage: None,
@@ -2233,6 +2299,7 @@ impl Core {
             activity_since: 0,
             completed: false,
             attempt_id: Some(attempt_id.to_string()),
+            agent_session: true,
             has_followup: false,
             preview_port: None,
             usage: None,
@@ -2577,6 +2644,9 @@ impl Core {
             // Ad-hoc: no lifecycle, no slot. The attempt link would also put
             // it on the card, and the card is about the agent.
             attempt_id: None,
+            // A script is watched, not left running: it is never held, and
+            // ending it with the desk is what it is for.
+            agent_session: false,
             has_followup: false,
             // Reachable worlds only: local directly, WSL through mirrored
             // networking. An SSH host's port lives on the remote, and a
@@ -2709,6 +2779,8 @@ impl Core {
             // Ad-hoc, like the ▶ scripts: no lifecycle, no slot — the card
             // is about the agent, and this terminal is about you.
             attempt_id: None,
+            // And for the same reason, not held and not a loss on restart.
+            agent_session: false,
             has_followup: false,
             preview_port: None,
             usage: None,
@@ -3620,6 +3692,9 @@ impl Core {
             activity_since: 0,
             completed: false,
             attempt_id: None,
+            // A session opened without a card is still an agent, and is held
+            // and lost on the same terms as one with a card.
+            agent_session: true,
             has_followup: false,
             preview_port: None,
             usage: None,
@@ -4676,6 +4751,59 @@ impl Core {
         })
     }
 
+    /* --------------------------- updates --------------------------- */
+
+    /// Whether this desk may ask GitHub what the newest release is.
+    ///
+    /// On by default and off by one switch. It is not telemetry — nothing
+    /// about this machine is sent, and the request is the same one a browser
+    /// makes opening the releases page — but it is the only outbound request
+    /// the app makes on its own behalf, and a product that says it phones
+    /// nobody should be able to prove it by being told not to.
+    pub fn update_enabled(&self) -> bool {
+        self.store
+            .setting(crate::update::ENABLED_KEY)
+            .ok()
+            .flatten()
+            .map(|v| v != "0")
+            .unwrap_or(true)
+    }
+
+    pub fn set_update_enabled(&self, on: bool) -> Result<()> {
+        self.store
+            .set_setting(crate::update::ENABLED_KEY, if on { "1" } else { "0" })
+    }
+
+    /// When the last check happened, so ten launches in a day are one
+    /// request. Kept in the database rather than in memory because the thing
+    /// it rate-limits is *starting the app*, which memory does not survive.
+    pub fn update_last_check(&self) -> Option<u64> {
+        self.store
+            .setting(crate::update::LAST_CHECK_KEY)
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse().ok())
+    }
+
+    pub fn mark_update_checked(&self, at: u64) -> Result<()> {
+        self.store
+            .set_setting(crate::update::LAST_CHECK_KEY, &at.to_string())
+    }
+
+    /// Whether enough time has passed to ask again.
+    pub fn update_check_due(&self, now: u64) -> bool {
+        match self.update_last_check() {
+            None => true,
+            Some(last) => now.saturating_sub(last) >= crate::update::CHECK_INTERVAL_SECS,
+        }
+    }
+
+    /// Copy the database aside so the version being installed can be walked
+    /// back out of. See `update::snapshot_db` for why this is not optional.
+    pub fn snapshot_db_before(&self, leaving: &str) -> Result<std::path::PathBuf> {
+        crate::update::snapshot_db(&self.store, &self.db_path, leaving)
+    }
+
     /* ------------------------- checkpoints ------------------------- */
 
     pub fn checkpoints_enabled(&self) -> bool {
@@ -5520,6 +5648,7 @@ mod tests {
             activity_since: 0,
             completed: false,
             attempt_id: None,
+            agent_session: true,
             has_followup: false,
             preview_port: None,
             usage: None,

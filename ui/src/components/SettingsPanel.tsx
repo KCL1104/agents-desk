@@ -3,7 +3,14 @@ import type * as React from 'react';
 import { LOCALE_NAME, LOCALES, useI18n, type Locale, type MessageKey, type TFn } from '../i18n';
 import { api } from '../api';
 import { joinArgs, splitArgs } from '../profiles';
-import { ENV_SOURCE_KEY, envSource, type BootStatus, type NotifyPrefs } from '../types';
+import {
+  ENV_SOURCE_KEY,
+  envSource,
+  type BootStatus,
+  type NotifyPrefs,
+  type UpdateAvailable,
+  type UpdateStatus,
+} from '../types';
 import { setTermSr, termSrEnabled } from '../termSr';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
@@ -32,6 +39,7 @@ type SectionId =
   | 'terminal'
   | 'notifications'
   | 'agents'
+  | 'updates'
   | 'diagnostics'
   | 'advanced';
 
@@ -71,9 +79,22 @@ const SECTIONS: readonly { id: SectionId; title: MessageKey; terms: readonly Mes
   },
   { id: 'agents', title: 'env.profiles', terms: ['profile.add', 'profile.save'] },
   {
+    id: 'updates',
+    title: 'set.updates',
+    terms: ['up.check', 'up.enabled', 'up.apply', 'env.version', 'up.lastCheck'],
+  },
+  {
     id: 'diagnostics',
     title: 'env.diagnostics',
-    terms: ['env.shell', 'env.source', 'env.varCount', 'env.claude', 'env.messaging', 'env.db'],
+    terms: [
+      'env.shell',
+      'env.source',
+      'env.varCount',
+      'env.claude',
+      'env.messaging',
+      'env.db',
+      'env.version',
+    ],
   },
   { id: 'advanced', title: 'set.advanced', terms: ['set.licenses'] },
 ];
@@ -271,6 +292,8 @@ export function SettingsPanel({
 
             {section === 'notifications' && <Notifications />}
 
+            {section === 'updates' && <Updates />}
+
             {section === 'agents' && (
               <>
                 <Profiles onDirty={setDirty} />
@@ -282,6 +305,10 @@ export function SettingsPanel({
               <>
                 {/* The doctor half: what the agents actually inherit. */}
                 <h3 className="modal-section">{t('env.diagnostics')}</h3>
+                {/* First, because it is the first thing anybody reporting a
+                    bug is asked for — and until there was an updater, it was
+                    the one fact the app knew about itself and never said. */}
+                <AppVersion />
                 <Stat label={t('env.shell')} value={boot.shell ?? '—'} />
                 <Stat label={t('env.source')} value={t(ENV_SOURCE_KEY[envSource(boot)])} />
                 <Stat label={t('env.varCount')} value={String(boot.envVarCount ?? 0)} />
@@ -434,6 +461,211 @@ function Notifications() {
           {tested ? t('notify.sent') : t('notify.test')}
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The running build's own version.
+ *
+ * Its own row rather than a field on `BootStatus`, because it is answered by
+ * a different thing: boot reports what the *environment* has — which shell,
+ * which agent CLIs, which database — and this is what *this binary* is. They
+ * were never the same question; the app simply had no way to ask the second
+ * one until the updater needed it.
+ */
+function AppVersion() {
+  const { t } = useI18n();
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api
+      .updateStatus()
+      .then((s) => setVersion(s.version))
+      .catch(() => {
+        /* the rest of the diagnostics still answer */
+      });
+  }, []);
+
+  if (!version) return null;
+  return <Stat label={t('env.version')} value={version} />;
+}
+
+/**
+ * Updating in place.
+ *
+ * Three things this section deliberately does *not* do. It does not apply
+ * anything on its own: a download starts because somebody pressed a button,
+ * the same division this desk keeps everywhere else between a machine-composed
+ * thing and the human who sends it. It does not report a failed check — a
+ * courtesy that interrupts the work to say it could not be performed has
+ * become a cost. And it does not offer a button it cannot honour: a build
+ * without a key, or a copy a package manager owns, says so where somebody
+ * went looking for the button, which is the same shape as every other
+ * refusal in this panel.
+ */
+function Updates() {
+  const { t } = useI18n();
+  const [status, setStatus] = useState<UpdateStatus | null>(null);
+  const [found, setFound] = useState<UpdateAvailable | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [pct, setPct] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api
+      .updateStatus()
+      .then(setStatus)
+      .catch(() => {
+        /* the rest of the panel still works; this section stays out */
+      });
+  }, []);
+
+  /** The download's own progress, the one place in this flow where a number
+   *  keeps somebody company. `total` is absent on a server that sends no
+   *  content-length, and the bar simply does not appear rather than
+   *  inventing a denominator — the same rule the token account keeps. */
+  useEffect(() => {
+    const un = api.onUpdateProgress(({ got, total }) => {
+      setPct(total ? Math.min(100, Math.round((got / total) * 100)) : null);
+    });
+    return () => void un.then((f) => f());
+  }, []);
+
+  if (!status) return null;
+
+  const check = () => {
+    setChecking(true);
+    setError(null);
+    void api
+      .updateCheck()
+      .then(setFound)
+      .catch(() => {
+        /* offline, rate-limited, GitHub down: none of these are actionable */
+      })
+      .finally(() => setChecking(false));
+  };
+
+  const apply = (acknowledged: boolean) => {
+    setApplying(true);
+    setError(null);
+    // No success path on purpose: the app restarts into the new version, so
+    // the only thing that can come back here is a failure.
+    void api.updateApply(acknowledged).catch((e: unknown) => {
+      setApplying(false);
+      setPct(null);
+      setError(String(e));
+    });
+  };
+
+  return (
+    <div data-testid="updates">
+      <h3 className="modal-section">{t('up.section')}</h3>
+
+      <Stat label={t('env.version')} value={status.version} />
+      <Stat
+        label={t('up.lastCheck')}
+        value={
+          status.lastCheck ? new Date(status.lastCheck * 1000).toLocaleString() : t('up.never')
+        }
+      />
+
+      {/* The two absences, each said where the button would have been. */}
+      {!status.configured && <Note testid="up-unconfigured">{t('up.unconfigured')}</Note>}
+      {status.configured && !status.selfContained && (
+        <Note testid="up-managed">{t('up.managed')}</Note>
+      )}
+
+      {(!status.configured || !status.selfContained) && (
+        <div className="row welcome-reopen-row">
+          <button data-testid="up-releases" onClick={() => void api.openExternal(status.releases)}>
+            {t('up.openReleases')}
+          </button>
+        </div>
+      )}
+
+      {status.configured && status.selfContained && (
+        <>
+          <div className="row welcome-reopen-row">
+            <button data-testid="up-check" disabled={checking || applying} onClick={check}>
+              {checking ? t('up.checking') : t('up.check')}
+            </button>
+          </div>
+
+          {found === null && !checking && (
+            <p className="muted small" data-testid="up-current">
+              {t('up.current', { version: status.version })}
+            </p>
+          )}
+
+          {found && (
+            <div data-testid="up-found">
+              <p>{t('up.found', { version: found.version })}</p>
+              {found.notes && (
+                <details>
+                  <summary>{t('up.notes')}</summary>
+                  <pre className="small">{found.notes}</pre>
+                </details>
+              )}
+
+              {/* What the restart costs, in the two kinds it comes in. Held
+                  agents are named too: "3 will come back" is the fact that
+                  makes the button pressable, and leaving it out would let
+                  somebody assume the worse of the two. */}
+              {status.held > 0 && (
+                <p className="muted small" data-testid="up-held">
+                  {t('up.held', { n: String(status.held) })}
+                </p>
+              )}
+              {status.lost > 0 && (
+                <p className="small" data-testid="up-lost">
+                  ⚠ {t('up.lost', { n: String(status.lost) })}
+                </p>
+              )}
+
+              <p className="muted small" data-testid="up-backup">
+                {t('up.backup', { path: `${status.version}` })}
+              </p>
+
+              <div className="row welcome-reopen-row">
+                <button
+                  data-testid="up-apply"
+                  disabled={applying}
+                  onClick={() => apply(status.lost > 0)}
+                >
+                  {applying
+                    ? pct === null
+                      ? t('up.swapping')
+                      : t('up.applying', { pct: String(pct) })
+                    : status.lost > 0
+                      ? t('up.lostConfirm')
+                      : t('up.apply')}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {error && <p className="small" data-testid="up-error">{error}</p>}
+        </>
+      )}
+
+      <label className="notify-row">
+        <input
+          type="checkbox"
+          checked={status.enabled}
+          data-testid="up-toggle"
+          onChange={() => {
+            const next = !status.enabled;
+            setStatus({ ...status, enabled: next });
+            void api
+              .setUpdateEnabled(next)
+              .catch(() => setStatus({ ...status, enabled: !next }));
+          }}
+        />
+        {t('up.enabled')}
+      </label>
+      <p className="muted small">{t('up.enabledHint')}</p>
     </div>
   );
 }

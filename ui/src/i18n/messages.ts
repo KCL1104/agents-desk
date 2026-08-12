@@ -388,8 +388,41 @@ export const en = {
   'env.cliReports': 'status ✓',
   'env.cliQuiet': 'no status',
   'env.db': 'database',
+  'env.version': 'this build',
   'env.degraded':
     'Could not read the login shell environment, so this process’s own was used instead. npx-style MCP servers may fail to start.',
+
+  /* ------------------------------ updates ----------------------------- */
+  'set.updates': 'Updates',
+  'up.section': 'Updates',
+  'up.check': 'Check now',
+  'up.checking': 'Checking…',
+  'up.current': 'Marol {version} — the newest there is.',
+  'up.found': 'Marol {version} is out.',
+  'up.notes': 'Release notes',
+  'up.apply': 'Download and restart',
+  'up.applying': 'Downloading… {pct}%',
+  'up.swapping': 'Installing — the app will restart itself.',
+  'up.enabled': 'Check for updates',
+  // Not telemetry, and the sentence says exactly what leaves the machine so
+  // that claim is checkable rather than asserted.
+  'up.enabledHint':
+    'Asks GitHub for the latest release number, once a day. Nothing about this machine is sent, and this is the only request Marol makes on its own behalf.',
+  'up.never': 'not yet',
+  'up.lastCheck': 'Last checked',
+  // The absence, said where somebody went looking for the button.
+  'up.unconfigured':
+    'This build carries no update key, so it cannot verify a download. Updates are downloaded from the releases page by hand.',
+  'up.managed':
+    'This copy was installed by a package manager, which keeps its own record of the files it owns. Update it the way you installed it.',
+  'up.openReleases': 'Open the releases page',
+  // The two facts a restart turns on, kept separate because only one of them
+  // is a cost.
+  'up.held': '{n} agent session(s) will be handed back after the restart.',
+  'up.lost': '{n} agent session(s) will end — nothing in their world is holding them.',
+  'up.lostConfirm': 'End them and update',
+  'up.backup': 'A copy of the board goes to {path} first, so this is reversible.',
+  'up.newVersion': 'Marol {version} available',
   'env.language': 'Language',
   'env.messaging': 'Cross-session messaging',
   'env.messagingOff': 'needs Claude Code ≥ 2.1.224 (found {version})',
@@ -853,8 +886,34 @@ export const zhTW: Record<MessageKey, string> = {
   'env.cliReports': '狀態回報 ✓',
   'env.cliQuiet': '沒有狀態回報',
   'env.db': '資料庫',
+  'env.version': '目前版本',
   'env.degraded':
     '無法從 login shell 取得環境，已退回本行程的環境。npx 型的 MCP server 可能起不來。',
+
+  /* ------------------------------ updates ----------------------------- */
+  'set.updates': '更新',
+  'up.section': '更新',
+  'up.check': '立刻檢查',
+  'up.checking': '檢查中…',
+  'up.current': 'Marol {version}，已經是最新的了。',
+  'up.found': 'Marol {version} 出來了。',
+  'up.notes': '版本說明',
+  'up.apply': '下載並重啟',
+  'up.applying': '下載中… {pct}%',
+  'up.swapping': '安裝中，裝好會自己重啟。',
+  'up.enabled': '檢查更新',
+  'up.enabledHint':
+    '每天一次，向 GitHub 問最新的版本號。不會送出這台機器的任何資料，而且這是 Marol 唯一一個為自己發出的請求。',
+  'up.never': '還沒查過',
+  'up.lastCheck': '上次檢查',
+  'up.unconfigured': '這個 build 沒有帶更新用的金鑰，無法驗證下載的檔案。請到 releases 頁自己下載。',
+  'up.managed': '這份是套件管理員裝的，它自己記著裝了哪些檔案。請用當初安裝的方式更新。',
+  'up.openReleases': '開啟 releases 頁',
+  'up.held': '重啟後會有 {n} 個 agent session 被交回來。',
+  'up.lost': '有 {n} 個 agent session 會結束 —— 它們所在的世界沒有東西接著。',
+  'up.lostConfirm': '結束它們並更新',
+  'up.backup': '會先把看板複製一份到 {path}，所以這步可以退回來。',
+  'up.newVersion': 'Marol {version} 可更新',
   'env.language': '語言',
   'env.messaging': '跨 session 互傳訊息',
   'env.messagingOff': '需要 Claude Code ≥ 2.1.224（目前 {version}）',

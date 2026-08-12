@@ -605,6 +605,23 @@ impl PtyRegistry {
     pub fn is_live(&self, id: &str) -> bool {
         self.sessions.lock().unwrap().contains_key(id)
     }
+
+    /// Whether a tmux server is holding this session, so quitting the app
+    /// detaches it rather than ending it.
+    ///
+    /// The same field the close path uses, asked as a question: `destroy` is
+    /// resolved at spawn and is `Some` exactly when a holder was found. That
+    /// makes it the honest answer rather than a second opinion — a world that
+    /// reported tmux but whose binary the login shell could not resolve has
+    /// no `destroy`, and this says "not held" for it, which is what actually
+    /// happens to it on quit.
+    pub fn is_held(&self, id: &str) -> bool {
+        self.sessions
+            .lock()
+            .unwrap()
+            .get(id)
+            .is_some_and(|s| s.destroy.is_some())
+    }
 }
 
 #[cfg(test)]

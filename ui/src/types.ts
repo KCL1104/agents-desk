@@ -235,6 +235,41 @@ export interface BootStatus {
   promptTemplate?: string;
 }
 
+/** What this build is and what updating it would take. Mirrors the
+ *  update_status command in main.rs; every field is free to answer, so the
+ *  panel paints without waiting on GitHub. */
+export interface UpdateStatus {
+  /** The running build's own version — the one number the app could not
+      previously tell you about itself. */
+  version: string;
+  /** Whether this build carries a public key to verify a download against.
+      False in a build made before the key existed, and the reason the panel
+      says so rather than offering a button that could only fail. */
+  configured: boolean;
+  /** The off switch. On by default. */
+  enabled: boolean;
+  /** Whether this copy owns the file it runs from. False for a deb or rpm,
+      whose package manager keeps its own record of the files it owns. */
+  selfContained: boolean;
+  /** Live agents a tmux in their own world would hand back after a restart. */
+  held: number;
+  /** Live agents a restart would end, because nothing is holding them. */
+  lost: number;
+  /** When the last check happened, epoch seconds, or null for never. */
+  lastCheck: number | null;
+  /** Whether enough time has passed to ask again. */
+  due: boolean;
+  /** Where to send someone this app will not update itself. */
+  releases: string;
+}
+
+/** A release worth offering. Mirrors update.rs Available. */
+export interface UpdateAvailable {
+  version: string;
+  notes: string | null;
+  date: string | null;
+}
+
 /** A named working arrangement. Mirrors src-tauri/src/store.rs StoredTab. */
 export interface Tab {
   id: string;

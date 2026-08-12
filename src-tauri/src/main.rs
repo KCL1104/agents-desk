@@ -10,6 +10,7 @@ mod pty;
 mod shell_env;
 mod prompt;
 mod store;
+mod update;
 mod worktree;
 
 use ::core::result::Result as StdResult;
@@ -763,6 +764,183 @@ fn resume_attempt(
 
 /* -------------------------- checkpoints ---------------------------- */
 
+/* ---------------------------- updates ----------------------------- */
+
+/// Whether this build was given a public key to check a manifest against.
+///
+/// There is no key in this repository — the same ruling the Apple signing
+/// variables get, and for the same reason: a key referenced before it exists
+/// is an empty string that fails somewhere further from the cause. So the
+/// updater is wired, configured, and honest about being unarmed, and the
+/// panel says "not configured for this build" rather than offering a button
+/// that could only produce an error.
+fn updater_configured(app: &AppHandle) -> bool {
+    app.config()
+        .plugins
+        .0
+        .get("updater")
+        .and_then(|c| c.get("pubkey"))
+        .and_then(|k| k.as_str())
+        .is_some_and(|k| !k.trim().is_empty())
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Everything the panel needs that costs nothing to answer.
+///
+/// Deliberately free of network: this is what paints, and a status that has
+/// to wait for GitHub is a status that makes the settings panel hang on a
+/// train. The one field that needs the network — whether a newer version
+/// exists — arrives from `update_check` and is `null` until it does.
+#[tauri::command]
+fn update_status(app: AppHandle, state: State<'_, AppState>) -> serde_json::Value {
+    let core = state.core().ok();
+    let cost = core.as_ref().map(|c| c.restart_cost()).unwrap_or_default();
+    serde_json::json!({
+        "version": update::current_version(),
+        "configured": updater_configured(&app),
+        // Absent core means the desk failed to boot; the setting lives in its
+        // database, and true is what a fresh install would read anyway.
+        "enabled": core.as_ref().map(|c| c.update_enabled()).unwrap_or(true),
+        "selfContained": update::install_kind() == update::Install::SelfContained,
+        "held": cost.held,
+        "lost": cost.lost,
+        "lastCheck": core.as_ref().and_then(|c| c.update_last_check()),
+        "due": core.as_ref().map(|c| c.update_check_due(now_secs())).unwrap_or(true),
+        "releases": RELEASES_URL,
+    })
+}
+
+/// The releases page, for the installs this app will not update itself and
+/// for anyone who would rather read the notes first.
+const RELEASES_URL: &str = "https://github.com/KCL1104/marol/releases/latest";
+
+/// Ask what the newest release is. `None` is "you are on it".
+///
+/// Silence is the whole error handling. Offline, rate-limited, GitHub down,
+/// a proxy that eats it — none of those are things a person can act on, and
+/// a desk that interrupts the work to report that it could not perform a
+/// courtesy has made the courtesy into a cost. The failure goes to stderr
+/// and the panel keeps saying what it last knew.
+#[tauri::command]
+async fn update_check(app: AppHandle) -> StdResult<Option<update::Available>, String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    if !updater_configured(&app) {
+        return Ok(None);
+    }
+    let core = app.state::<AppState>().core().ok();
+    if core.as_ref().is_some_and(|c| !c.update_enabled()) {
+        return Ok(None);
+    }
+
+    let updater = app.updater().map_err(|e| format!("{e}"))?;
+    let found = updater.check().await.map_err(|e| format!("{e}"))?;
+
+    if let Some(c) = core {
+        let _ = c.mark_update_checked(now_secs());
+    }
+
+    Ok(found.and_then(|u| {
+        // The plugin compares versions itself, but this desk's own rule is
+        // the one it has a test for — and a manifest that ever offered a
+        // downgrade would be applied without this.
+        if !update::is_newer(&u.version, update::current_version()) {
+            return None;
+        }
+        Some(update::Available {
+            version: u.version.clone(),
+            notes: u.body.clone().filter(|b| !b.trim().is_empty()),
+            date: u.date.map(|d| d.to_string()),
+        })
+    }))
+}
+
+/// Download the new version, put a copy of the database somewhere safe, swap
+/// the binary, and restart into it.
+///
+/// In that order, and the order is the point: the snapshot is taken before
+/// anything is replaced, because the case it exists for is the one where the
+/// new version is the problem.
+///
+/// `acknowledged` carries a person's answer to the count of agents this would
+/// end. It is never sent by default — see `update::check_restart`.
+#[tauri::command]
+async fn update_apply(app: AppHandle, acknowledged: bool) -> StdResult<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    if !updater_configured(&app) {
+        return Err("this build has no update key, so it cannot verify a download".into());
+    }
+    if update::install_kind() == update::Install::PackageManaged {
+        return Err(
+            "this copy was installed by a package manager, which keeps its own record of \
+             the files it owns. Update it the way it was installed"
+                .into(),
+        );
+    }
+
+    let core = app.state::<AppState>().core().map_err(|e| e.to_string())?;
+    update::check_restart(core.restart_cost().lost, acknowledged).map_err(|e| format!("{e:#}"))?;
+
+    let updater = app.updater().map_err(|e| format!("{e}"))?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|e| format!("{e}"))?
+        .ok_or_else(|| "there is no newer version to install".to_string())?;
+
+    // Before a single byte is replaced.
+    let snapshot = core
+        .snapshot_db_before(update::current_version())
+        .map_err(|e| format!("{e:#}"))?;
+    eprintln!("[update] database copied to {}", snapshot.display());
+
+    let handle = app.clone();
+    let mut got: u64 = 0;
+    update
+        .download_and_install(
+            move |chunk, total| {
+                got += chunk as u64;
+                let _ = handle.emit(
+                    "update:progress",
+                    serde_json::json!({ "got": got, "total": total }),
+                );
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| format!("{e}"))?;
+
+    // Explicitly, rather than trusting the restart to raise `ExitRequested`.
+    // Two things have to have happened before the next process starts, and
+    // both are this function's: the held agents have to be *detached* rather
+    // than orphaned, and the hook port has to be handed back. That port is
+    // baked into the config of every session already running — it is a
+    // photograph, not a pointer — so a new process that finds it still bound
+    // takes a different one, and every agent this update was careful not to
+    // kill goes silent for the rest of its life instead.
+    if let Some(c) = app.state::<AppState>().core.lock().unwrap().clone() {
+        c.shutdown();
+    }
+    app.restart();
+}
+
+#[tauri::command]
+fn set_update_enabled(state: State<'_, AppState>, on: bool) -> StdResult<(), String> {
+    state
+        .core()?
+        .set_update_enabled(on)
+        .map_err(|e| format!("{e:#}"))
+}
+
+/* -------------------------- checkpoints --------------------------- */
+
 #[tauri::command]
 fn checkpoints_enabled(state: State<'_, AppState>) -> StdResult<bool, String> {
     Ok(state.core()?.checkpoints_enabled())
@@ -877,6 +1055,7 @@ fn main() {
         // For the PR URL: an anchor inside the webview would navigate the
         // app itself, so external links go out through the opener.
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|_, event| {
             if let tauri::WindowEvent::Focused(focused) = event {
                 FOCUSED.store(*focused, Ordering::Relaxed);
@@ -973,6 +1152,10 @@ fn main() {
             set_concurrency,
             merge_attempt,
             open_pr,
+            update_status,
+            update_check,
+            update_apply,
+            set_update_enabled,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Marol")
