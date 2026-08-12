@@ -195,7 +195,7 @@ test('J3 · restart recovery, end to end', async ({ page }) => {
     // 的東西沒有再停一次的理由。
     const parked = page.getByTestId('task-k5');
     await expect(parked).toHaveAttribute('data-live', 'parked');
-    await expect(page.getByTestId('state-k5')).toContainText('已暫停');
+    await expect(page.getByTestId('state-k5')).toContainText('已擱置');
     const parkedFirst = parked.locator('.board-card-foot button').first();
     await expect(parkedFirst).toHaveAttribute('data-testid', 'resume-k5');
     await expect(parkedFirst).toHaveClass(/primary/);
@@ -303,7 +303,7 @@ test('J3 · restart recovery, end to end', async ({ page }) => {
       page.locator('[data-section="working"] [data-testid="session-s1"]'),
     ).toBeVisible();
 
-    // 卡片回到自己的欄位：還在進行中，只是從「已暫停」變成活的。
+    // 卡片回到自己的欄位：還在進行中，只是從「已擱置」變成活的。
     await page.mouse.move(0, 0);
     await chord(page, '2');
     await expect(

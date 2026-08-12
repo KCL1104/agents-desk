@@ -145,8 +145,9 @@ pixel for pixel, beside a plain test runner.
   live state, so a card sitting in "in progress" can light up with "⚠ waiting
   on permission", and clicking it drops you into that session's TUI. Every
   card is the same height, so the board stays scannable while its cards change
-  under you. There is a separate ad-hoc session area, off the board, with no
-  worktree and no lifecycle
+  under you. Sessions opened without a card sit in the same columns, sorted by
+  what they are doing — live in "in progress", closed in "done" — and wear a
+  dashed edge, because they have no worktree and nothing to merge
 - **Changes and activity**: a drawer beside the TUI that says what this attempt
   changed (uncommitted and new files included) and what it did, without going
   into the terminal
@@ -171,7 +172,7 @@ pixel for pixel, beside a plain test runner.
   --ask-for-approval on-request`, `--dangerously-bypass-approvals-and-sandbox`)
   — and this desk stores what a person approved rather than translating one
   agent's settings into another's. The worktree is the safety argument, so
-  the choice exists for attempts and never for ad-hoc sessions. Approved once
+  the choice exists for attempts and never for card-less sessions. Approved once
   in the start dialog, it survives queueing and resumes, and the card wears a
   ⚡ badge for as long as the session runs unprompted
 - **Named profiles**: a profile is a name for "this CLI, with these flags,
@@ -468,7 +469,7 @@ The pieces that carry the triage loop, in roughly the order you meet them:
   by recency instead of asking you to type one from memory. The title is
   optional: left blank, the card takes the prompt's first line, a rule the
   dialog states rather than a lucky default.
-- **Worlds.** The bottom-left switch picks where new cards and sessions open
+- **Hosts.** The bottom-left switch picks where new cards and sessions open
   (WSL distros and SSH hosts enumerated, never invented) and probes the chosen
   world's agents on demand. Repos over WSL or SSH carry a host badge on
   their cards, and the overview separates sessions by machine once more than

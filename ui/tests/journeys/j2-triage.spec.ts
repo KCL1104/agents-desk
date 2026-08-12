@@ -430,11 +430,11 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
     await expect(parkToast).toContainText('marol/k4');
     await expect(page.locator('[data-testid^="confirm-"]')).toHaveCount(0);
 
-    // (c) 卡片睡著了：parked 的邊、「已暫停」的狀態行、「繼續」候著；
+    // (c) 卡片睡著了：parked 的邊、「已擱置」的狀態行、「繼續」候著；
     // 側欄的活分區失去這一列 —— worktree 連著 session 一起還回去，
     // 未讀也跟著人去樓空（膠囊整顆退場，桌上再無未看的結束）。
     await expect(page.getByTestId('task-k4')).toHaveAttribute('data-live', 'parked');
-    await expect(page.getByTestId('state-k4')).toContainText('已暫停');
+    await expect(page.getByTestId('state-k4')).toContainText('已擱置');
     await expect(page.getByTestId('resume-k4')).toBeVisible();
     await expect(page.getByTestId('session-s94')).toHaveCount(0);
     await expect(page.locator('.tab-badge.unseen')).toHaveCount(0);
@@ -442,10 +442,10 @@ test('J2 · parallel triage, end to end', async ({ page }) => {
     // （見報告：park 後沒有安排落點），釘住，改了會被看見。
     await expectFocusNeutral(page);
     // (b) 停放走 toast，不走朗讀通道。
-    await expect(live).not.toContainText('已暫停');
+    await expect(live).not.toContainText('已擱置');
 
     // 桌子的收尾快照：兩張微光（剛答完的 k1/k2）、一張已合併、一張
-    // 已暫停、一張待命且已讀 —— 分流做完，桌面說得清楚。
+    // 已擱置、一張待命且已讀 —— 分流做完，桌面說得清楚。
     await expect(page.locator('.board-card.astir')).toHaveCount(2);
     await expect(page.getByTestId('unseen-card-k3')).toHaveCount(0);
     await expect(page.getByTestId('state-k3')).toContainText('待命');

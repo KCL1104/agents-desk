@@ -12,7 +12,7 @@ repo 上的兩個 agent 不會互相踩到。每個 session 會回報自己是�
 所以唯一值得知道的那個數字就在畫面上。而整件事跑在跟你的 shell 一樣的環境
 裡，所以 agent 找得到的工具跟你一樣。
 
-![看板：agent 分佈在整個生命週期，執行中、等你、可合併、已合併、暫停](docs/media/board.zh.png)
+![看板：agent 分佈在整個生命週期，執行中、等你、可合併、已合併、擱置](docs/media/board.zh.png)
 
 ---
 
@@ -55,12 +55,12 @@ review 迴圈最常見的收尾是一行小修，所以 diff 直接讓你修。`
 
 ![就地編輯、存檔，以及跟在後面的那則訊息](docs/media/clips/zh/edit.gif)
 
-### 它知道什麼
+### 規則檔
 
 在任何人打字之前 agent 就已經讀過的東西：規則檔與 skills，來自這份 checkout
 與這台機器。不存在的也列出來，因為「這裡沒有 CLAUDE.md」正是你來找的答案。
 
-![「它知道什麼」分頁列出規則與 skills，有的和沒有的都列](docs/media/clips/zh/knows.gif)
+![「規則檔」分頁列出規則與 skills，有的和沒有的都列](docs/media/clips/zh/knows.gif)
 
 ### 設定
 
@@ -127,8 +127,9 @@ review 迴圈最常見的收尾是一行小修，所以 diff 直接讓你修。`
   資料夾裡，agent 就起在那個資料夾。diff、審查、合併全部涵蓋
 - **看板**：四欄、卡片可拖曳。卡片帶著自己的即時狀態，所以一張待在「進行中」
   的卡可以亮起「⚠ 等你授權」，點下去直接進那個 session 的 TUI。每張卡片一樣
-  高，所以卡片在你眼前變化時，看板仍然掃得動。另有臨時 session 區，在看板
-  之外，沒有 worktree 也沒有生命週期
+  高，所以卡片在你眼前變化時，看板仍然掃得動。沒有卡片的 session 也落在同樣
+  的欄位裡，依它正在做什麼排：活著的進「進行中」，關掉的進「已完成」，邊緣
+  是虛線 —— 它沒有 worktree，也沒有東西可合併
 - **變更與活動**：TUI 旁邊的抽屜，不進終端機就能說出這個 attempt 改了什麼
   （含未 commit 與新建檔）、做了什麼
 - **收尾與併發**：合併回 base、push 並開 PR、丟棄。同時執行數有上限（預設
@@ -148,7 +149,7 @@ review 迴圈最常見的收尾是一行小修，所以 diff 直接讓你修。`
   `--dangerously-bypass-approvals-and-sandbox`）—— 這張桌子存的是人核准了
   什麼，不替任何 agent 把設定翻譯成另一個 agent 的。安全論證就是 worktree，
   所以這個選項
-  只存在於 attempt，臨時 session 永遠沒有。模式在開始對話框核准一次，排隊與
+  只存在於 attempt，沒有卡片的 session 永遠沒有。模式在建立對話框核准一次，排隊與
   resume 都會沿用；session 全自動跑著的時候，卡片一直掛著 ⚡ 徽章
 - **具名設定檔**：profile 就是幫「這個 CLI、每次都帶這些參數」取一個名字，
   例如 `opus 版` 代表 `claude --model opus`。記錄與 resume 用的都是底下真正
@@ -368,11 +369,11 @@ export PATH="$HOME/.cargo/bin:$PATH"
   時間軸的 prompt 列戴 `↩`：把程式碼還原到此輪之前。對話永不觸碰、還原前先
   自動快照、回合進行中會拒絕並說明理由。diff 可改以任一檢查點為基準比較。
   refs 隨 attempt 終局刪除，凍結 diff 從此是唯一紀錄。
-- **暫停。**「現在不做」不等於「不做了」：對安靜下來的 attempt 按暫停，
+- **擱置。**「現在不做」不等於「不做了」：對安靜下來的 attempt 按擱置，
   worktree 與併發槽還回去，分支、檢查點、對話全部留著（分支名同時進剪貼簿）。
-  繼續時 worktree 在原路徑長回來、暫停時的工作原樣還原，`--continue` 接上原本
+  繼續時 worktree 在原路徑長回來、擱置時的工作原樣還原，`--continue` 接上原本
   的對話。
-- **一張卡一個大聲的動作。** 停下來的卡片只讓「繼續」大聲，暫停與換 agent 要
+- **一張卡一個大聲的動作。** 停下來的卡片只讓「繼續」大聲，擱置與換 agent 要
   對準了才現身；合併完的卡片上「再試一次」不再壓過它底下那場勝利。檢視器的
   五顆工具 chip 也因為同一個理由收成一條有標籤的 worktree 帶：五個一樣大聲，
   等於沒有層次。
@@ -380,9 +381,9 @@ export PATH="$HOME/.cargo/bin:$PATH"
   server 送出的樣子，不代理、不注入。server 死了面板會說，不留白框。repo 自掛
   inspect script（`docs/examples/marol-inspect.js`）後，Alt+click 任何元件
   就變成「{component} · {file}:{line}」，一鍵送進 agent 的終端機。
-- **Token 帳。** 每個實測過的 session 的花費與語境水位，每回合結束從它自己的
+- **Token 帳。** 每個實測過的 session 的花費與 context 水位，每回合結束從它自己的
   transcript 讀一次（路徑由 hooks 遞來，回合中不輪詢）。檢視器顯示
-  「語境 279k · ↑2.6M」，hover 給四欄精確值。只給 token、不給金額或百分比：
+  「context 279k · 輸出 2.6M」，hover 給四欄精確值。只給 token、不給金額或百分比：
   價目表會過期，沒量測過的 context window 是發明出來的分母。兩支 CLI 記帳的
   方式不同 —— Claude Code 一則訊息一列，Codex 每列都是累計總和 —— 所以摺疊
   的方式也不同：把 Codex 的列加起來，會讓一個 session 的帳單乘上它的回合數。
@@ -392,11 +393,11 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - **分支挑選。** 開卡對話框直接建議 repo 的分支、按最近使用排序，而不是要你
   憑記憶打字。標題可以不填：留白就用 prompt 的第一行，這是對話框明講的規則，
   不是碰巧的預設。
-- **世界。** 左下角的切換決定新東西開在哪（WSL distro 與 SSH host 用枚舉的，
-  不發明），點選就地探那個世界有哪些 agent。走 WSL 或 SSH 的 repo 會在卡片上
-  戴 host 徽章；總覽在超過一個世界時按機器分組。
+- **主機。** 左下角的切換決定新東西開在哪（WSL distro 與 SSH host 用枚舉的，
+  不發明），點選就地探那台主機有哪些 agent。走 WSL 或 SSH 的 repo 會在卡片上
+  戴 host 徽章；總覽在超過一台主機時按機器分組。
 - **無訊號 chip。** 狀態來自 agent 自己的 hooks；跑沒有 hooks 的 CLI 的卡片
-  會直說「無狀態訊號」，不讓安靜被讀成沒事。
+  會直說「沒有狀態回報」，不讓安靜被讀成沒事。
 
 ### 鍵盤
 

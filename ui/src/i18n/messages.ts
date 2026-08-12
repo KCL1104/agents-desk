@@ -736,7 +736,7 @@ export const zhTW: Record<MessageKey, string> = {
   'live.notStarted': '尚未開始',
   'live.queued': '排隊中 · 第 {position} 個',
   'live.stopped': '未執行',
-  'live.parked': '已暫停',
+  'live.parked': '已擱置',
   'live.ended': '已結案',
 
   /* ----------------------------- status ------------------------------- */

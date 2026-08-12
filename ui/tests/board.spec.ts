@@ -594,7 +594,7 @@ test.describe('parked — work kept, ground given back', () => {
     // The card is asleep, resumable — and its session left the sidebar:
     // parked things stop paying the attention tax.
     await expect(page.getByTestId('task-k1')).toHaveAttribute('data-live', 'parked');
-    await expect(page.getByTestId('state-k1')).toHaveText(/已暫停/);
+    await expect(page.getByTestId('state-k1')).toHaveText(/已擱置/);
     await expect(page.getByTestId('resume-k1')).toBeVisible();
     await expect(page.locator('[data-testid="session-s1"]')).toHaveCount(0);
     await expect(page.locator('.toast.ok')).toContainText('marol/card-1');
