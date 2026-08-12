@@ -1180,6 +1180,27 @@ is a usable starting point.
 
 ---
 
+## Upgrading
+
+The database is migrated forward on first run, in one transaction per step, so
+a failed step leaves it on the last version that fully applied rather than
+half-way into the next. Nothing is asked of you.
+
+**Going back a version is the direction that does not work.** A build refuses
+to open a database a newer one wrote — it says so and stops, rather than
+writing into a shape it does not understand:
+
+    database is at schema version 6, but this build understands 5.
+    It was written by a newer Marol.
+
+That refusal is the feature: losing a board quietly would be worse than an app
+that will not start. But it means a downgrade needs the older database back,
+so **copy `marol.db` out of the state directory before installing over a
+version you might want to return from**. The settings panel's diagnostics
+section names its exact path on this machine.
+
+---
+
 ## Upgrading from AgentDesk
 
 This app used to be called AgentDesk. Updating carries everything over:
