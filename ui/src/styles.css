@@ -264,9 +264,6 @@ textarea { resize: vertical; }
   color: var(--fg-dim); font-size: var(--fs-label);
 }
 .modal .quiet:hover { color: var(--fg); text-decoration: underline; }
-/* The button that adds one. It sits below the base field on its own line,
-   and reads as an offer rather than a step. */
-.modal .add-repo { margin-top: 14px; cursor: pointer; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 /* The chord rides the button it fires. A gesture that lives only in a
    tooltip is a gesture most people never find — and the ⌘/ sheet is a
