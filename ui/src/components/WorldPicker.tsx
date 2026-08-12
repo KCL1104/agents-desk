@@ -111,50 +111,56 @@ export function WorldPicker() {
   return (
     <div className="world" ref={rootRef}>
       {open && (
-        <div
-          className="world-menu"
-          role="menu"
-          data-testid="world-menu"
-          ref={menuRef}
-          onKeyDown={onMenuKeys}
-        >
-          <p className="world-menu-hint muted small">{t('world.hint')}</p>
+        <div className="world-menu" data-testid="world-menu" ref={menuRef} onKeyDown={onMenuKeys}>
           {worlds === null ? (
-            <p className="muted small world-menu-hint">{t('common.loading')}</p>
+            <p className="world-menu-loading muted small">{t('common.loading')}</p>
           ) : (
-            rows.map((w) => {
-              const probe = probes[w];
-              return (
-                <button
-                  key={w === '' ? 'local' : w}
-                  role="menuitemradio"
-                  aria-checked={w === world}
-                  // 選單項不進 Tab 序：焦點由方向鍵漫遊（上面的 onMenuKeys）。
-                  tabIndex={-1}
-                  className={`world-row${w === world ? ' active' : ''}`}
-                  data-testid={`world-${w === '' ? 'local' : w.replace('://', '-')}`}
-                  onClick={() => pickWorld(w)}
-                >
-                  <span className="world-row-name">
-                    {w === world ? '✓ ' : ''}
-                    {worldLabel(w, t)}
-                  </span>
-                  {probe === 'probing' ? (
-                    <span className="muted small">{t('world.probing')}</span>
-                  ) : probe?.error != null ? (
-                    <span className="world-err small">{probe.error}</span>
-                  ) : probe != null ? (
-                    /* Which agents that world can actually run, named. A
-                       world with one of the two is a world half the board
-                       can open in, and saying only "claude" there would be
-                       a smaller truth than the person asked for. */
-                    <span className="muted small mono">
-                      {found(probe).join(' · ') || t('world.noAgent')}
+            /* role="menu" may own only menu items, so the role sits on a
+               wrapper that owns nothing but the rows. menuRef and onKeyDown
+               stay on the card, so roving focus and the row queries are
+               unchanged. */
+            <div role="menu" aria-label={t('world.where')}>
+              {rows.map((w) => {
+                const probe = probes[w];
+                return (
+                  <button
+                    key={w === '' ? 'local' : w}
+                    role="menuitemradio"
+                    aria-checked={w === world}
+                    // 選單項不進 Tab 序：焦點由方向鍵漫遊（上面的 onMenuKeys）。
+                    tabIndex={-1}
+                    className={`world-row${w === world ? ' active' : ''}`}
+                    data-testid={`world-${w === '' ? 'local' : w.replace('://', '-')}`}
+                    onClick={() => pickWorld(w)}
+                  >
+                    <span className="world-row-name">
+                      {/* A reserved column, not a prefix. Inline, the "✓ "
+                          pushed the checked row's label ~15px right of every
+                          other row's, and the whole list slid sideways each
+                          time a different host was picked. aria-checked is
+                          the state AT hears; this is the eye's copy. */}
+                      <span className="world-row-mark" aria-hidden="true">
+                        {w === world ? '✓' : ''}
+                      </span>
+                      {worldLabel(w, t)}
                     </span>
-                  ) : null}
-                </button>
-              );
-            })
+                    {probe === 'probing' ? (
+                      <span className="muted small">{t('world.probing')}</span>
+                    ) : probe?.error != null ? (
+                      <span className="world-err small">{probe.error}</span>
+                    ) : probe != null ? (
+                      /* Which agents that world can actually run, named. A
+                         world with one of the two is a world half the board
+                         can open in, and saying only "claude" there would be
+                         a smaller truth than the person asked for. */
+                      <span className="muted small mono">
+                        {found(probe).join(' · ') || t('world.noAgent')}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
       )}
@@ -164,7 +170,9 @@ export function WorldPicker() {
         ref={chipRef}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={t('world.pick')}
+        // The label truncates now that the chip is one line, so the tooltip
+        // names the host in full before saying what the chip is for.
+        title={`${worldLabel(world, t)}${t('common.sep')}${t('world.pick')}`}
         onClick={() => setOpen((v) => !v)}
       >
         <span aria-hidden="true">⊕</span> {worldLabel(world, t)}

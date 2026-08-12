@@ -121,12 +121,16 @@ export function SessionList({
         })}
       </div>
 
-      {/* The desk's own corner: where new things open (the world), and
-          how the desk is set (the environment). */}
-      <WorldPicker />
-      <button className="sidebar-foot" onClick={onShowSettings}>
-        {t('common.env')}
-      </button>
+      {/* The corner: where new things open (the host), and how the app is
+          set (settings). One block, so the two rows share a gutter, a seam
+          and a hover — and so neither can be squeezed by a short window
+          (.sidebar-corner is flex: none). */}
+      <div className="sidebar-corner">
+        <WorldPicker />
+        <button className="sidebar-foot" onClick={onShowSettings}>
+          {t('common.env')}
+        </button>
+      </div>
     </aside>
   );
 }

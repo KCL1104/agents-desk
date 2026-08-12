@@ -185,15 +185,24 @@ textarea { resize: vertical; }
   background: var(--bg-2);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* Deliberately NOT hidden. This box is a 220px track with a 1px right
+     border, so its clip edge sat at x=219 — and it was slicing the world
+     menu (230px wide from x=8), the menu's drop shadow, and the focus ring
+     on the menu's rows straight down the middle. Nothing here needs the
+     sidebar to clip: the list below is its own scroll container, and the
+     head and the corner are flex: none. */
+  overflow: visible;
 }
 .sidebar-head {
+  flex: none;
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 12px;
   font-size: var(--fs-label); letter-spacing: 0.08em; color: var(--fg-dim);
   border-bottom: 1px solid var(--line);
 }
-.session-groups { overflow-y: auto; flex: 1; }
+/* The one child that may overflow, clipping itself. min-height: 0 says out
+   loud what the overflow value already implied: this flex item may shrink. */
+.session-groups { flex: 1; min-height: 0; overflow: hidden auto; }
 .group { margin-bottom: 10px; }
 .group-head { padding: 6px 12px 2px; color: var(--fg-dim); font-size: var(--fs-label); }
 /* Every status dot, in one place. Filled is the state itself; hollow is its
@@ -359,37 +368,82 @@ textarea { resize: vertical; }
   padding: 1px 6px; white-space: nowrap;
 }
 
-.sidebar-foot {
-  margin: 8px; border: none; background: transparent; color: var(--fg-dim);
-  text-align: left; font-size: var(--fs-label);
+/* ---------- the corner ----------
+   The bottom-left block: where new things open (the host chip and its menu)
+   and how the app is set (設定). One block, one gutter — 12px, the same edge
+   .sidebar-head and .section-head read off. The arithmetic, once:
+
+     sidebar padding box   0 → 219   (a 220px track less its 1px border)
+     chip / 設定 text      0 + 12 (padding-left)                     = 12
+     menu card             left 6 → right 213: inside 219, never clipped
+     menu row text         6 (inset) + 1 (border) + 0 (pad) + 5      = 12
+
+   Those three used to land on 8, 18 and 19. */
+.sidebar-corner {
+  flex: none;
+  padding: 4px 0 6px;
+  border-top: 1px solid var(--line);   /* the seam the head has always had */
 }
-.sidebar-foot:hover { color: var(--fg); background: transparent; }
+
+/* Both rows are the same quiet full-bleed control — the .section-head shape.
+   A long ssh alias truncates here as it does in every other row. */
+.world-chip, .sidebar-foot {
+  display: block; width: 100%; margin: 0; padding: 4px 12px;
+  border: none; border-radius: 0; background: transparent;
+  color: var(--fg-dim); text-align: left; font-size: var(--fs-label);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Every :hover here carries :not(:disabled) on purpose. The global
+   `button:hover:not(:disabled)` is (0,2,1); a bare `.world-chip:hover` is
+   (0,2,0) and LOSES to it — which is why the chip wore a slab of --bg-3 it
+   never asked for while 設定 beside it wore nothing. (0,3,0) wins by
+   specificity, not by source order. Open is a state too: the menu belongs to
+   the chip, so the chip stays lit while it is up. */
+.world-chip:hover:not(:disabled),
+.sidebar-foot:hover:not(:disabled),
+.world-chip[aria-expanded='true'] {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 4%, var(--bg-2));
+}
 
 /* The world switch, in the corner VS Code taught hands to reach for.
-   The chip names where new things open; the menu floats above it. */
-.world { position: relative; margin: 0 8px; }
-.world-chip {
-  display: block; width: 100%; text-align: left;
-  border: none; background: transparent; color: var(--fg-dim);
-  font-size: var(--fs-label); padding: 2px 0;
-}
-.world-chip:hover { color: var(--accent); background: transparent; }
+   position: relative stays — it is the box the menu is positioned against,
+   which keeps this fix inside the sidebar's own coordinate space: no portal,
+   no fixed positioning, no second source of truth. */
+.world { position: relative; margin: 0; }
+
+/* Pinned to both of the sidebar's edges instead of sized by a min-width the
+   sidebar cannot afford. `min-width: 230px` against 203px of room was the
+   slice: shrink-to-fit resolved to 203, min-width pushed it back to 230, and
+   the last 19px went past the clip edge. Pinned, the card is 207px here and
+   right at any sidebar width. (`max-width: 320px` was dead code — it could
+   never bind inside a 220px sidebar.) */
 .world-menu {
-  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30;
-  min-width: 230px; max-width: 320px;
-  padding: 4px; border: 1px solid var(--line); border-radius: var(--radius-s);
+  position: absolute; z-index: 30;
+  left: 6px; right: 6px; bottom: calc(100% + 6px);
+  padding: 4px 0; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--radius-s);
   background: var(--bg-3);
   box-shadow: var(--bevel), 0 10px 32px rgba(0, 0, 0, 0.5);
 }
-.world-menu-hint { margin: 2px 6px 6px; }
+.world-menu-loading { margin: 0; padding: 5px 5px; }
+
+/* align-items: stretch, not flex-start, so a long ssh alias (or a refusal
+   string) wraps inside the row instead of sizing a shrink-to-fit box that
+   pokes out of the card. */
 .world-row {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 2px;
   width: 100%; text-align: left;
-  border: none; background: transparent; color: var(--fg);
-  font-size: var(--fs-data); padding: 5px 6px; border-radius: var(--radius-xs);
+  border: none; border-radius: 0; background: transparent; color: var(--fg);
+  font-size: var(--fs-data); padding: 5px 5px;
 }
-.world-row:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.world-row:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .world-row.active .world-row-name { color: var(--accent); }
+/* The mark rides its own reserved column, so a checked row's label starts
+   where every other row's does. */
+.world-row-name { display: flex; align-items: baseline; gap: 5px; overflow-wrap: anywhere; }
+.world-row-mark { flex: none; width: 1em; text-align: center; }
 /* A refusal is content, not a tooltip: it wraps in place, in full. */
 .world-err { color: var(--err); white-space: normal; overflow-wrap: anywhere; }
 
