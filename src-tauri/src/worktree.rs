@@ -506,22 +506,21 @@ impl Worktrees {
         let dirty = git(hr, worktree, &["status", "--porcelain"])?;
         if !dirty.trim().is_empty() {
             return Err(anyhow!(
-                "{branch} 還有沒有 commit 的變更，合併不會包含它們。\
-                 請先在 attempt 的 TUI 裡 commit，或改用「丟棄」。"
+                "{branch} 有未提交的變更，合併不會包含。"
             ));
         }
 
         let on = git(hr, repo, &["rev-parse", "--abbrev-ref", "HEAD"])?;
         if on.trim() != base_branch {
             return Err(anyhow!(
-                "這個 repo 目前在 `{}`，不是 `{base_branch}`。切過去再合併。",
+                "這個 repo 目前在 `{}`，不是 `{base_branch}`。",
                 on.trim()
             ));
         }
         let repo_dirty = git(hr, repo, &["status", "--porcelain"])?;
         if !repo_dirty.trim().is_empty() {
             return Err(anyhow!(
-                "`{base_branch}` 的工作目錄有未提交的變更，先收乾淨再合併。"
+                "`{base_branch}` 的工作目錄有未提交的變更。"
             ));
         }
 
@@ -532,7 +531,7 @@ impl Worktrees {
         )?;
         if ahead.trim() == "0" {
             return Err(anyhow!(
-                "{branch} 沒有任何 `{base_branch}` 還沒有的 commit，沒有東西可以合併。"
+                "{branch} 沒有任何 `{base_branch}` 還沒有的 commit。"
             ));
         }
         Ok(())
@@ -564,38 +563,10 @@ impl Worktrees {
         branch: &str,
         base_branch: &str,
     ) -> Result<String> {
-        let dirty = git(hr, worktree, &["status", "--porcelain"])?;
-        if !dirty.trim().is_empty() {
-            return Err(anyhow!(
-                "{branch} 還有沒有 commit 的變更，合併不會包含它們。\
-                 請先在 attempt 的 TUI 裡 commit，或改用「丟棄」。"
-            ));
-        }
-
-        let on = git(hr, repo, &["rev-parse", "--abbrev-ref", "HEAD"])?;
-        if on.trim() != base_branch {
-            return Err(anyhow!(
-                "這個 repo 目前在 `{}`，不是 `{base_branch}`。切過去再合併。",
-                on.trim()
-            ));
-        }
-        let repo_dirty = git(hr, repo, &["status", "--porcelain"])?;
-        if !repo_dirty.trim().is_empty() {
-            return Err(anyhow!(
-                "`{base_branch}` 的工作目錄有未提交的變更，先收乾淨再合併。"
-            ));
-        }
-
-        let ahead = git(
-            hr,
-            repo,
-            &["rev-list", "--count", &format!("{base_branch}..{branch}")],
-        )?;
-        if ahead.trim() == "0" {
-            return Err(anyhow!(
-                "{branch} 沒有任何 `{base_branch}` 還沒有的 commit，沒有東西可以合併。"
-            ));
-        }
+        // Asked again, in one call rather than a second copy of the four
+        // sentences: the questions have to be true at the moment git acts,
+        // but only one place should own how the refusals read.
+        self.check_merge(hr, repo, worktree, branch, base_branch)?;
 
         // `--no-ff` so the attempt stays legible as one piece of work in the
         // history rather than dissolving into the base.
@@ -631,7 +602,7 @@ impl Worktrees {
         let dirty = git(hr, worktree, &["status", "--porcelain"])?;
         if !dirty.trim().is_empty() {
             return Err(anyhow!(
-                "{branch} 還有沒有 commit 的變更，推上去不會包含它們。請先 commit。"
+                "{branch} 有未提交的變更，推送不會包含。"
             ));
         }
 

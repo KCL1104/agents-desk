@@ -164,7 +164,7 @@ test.describe('finishing an attempt', () => {
     await page.getByTestId('merge-attempt').click();
     await page.getByTestId('confirm-merge').click();
 
-    await expect(page.getByTestId('finish-error')).toContainText('沒有 commit');
+    await expect(page.getByTestId('finish-error')).toContainText('未提交的變更');
     // Nothing was given up on the way to finding out.
     await page.getByTestId('view-board').click();
     await expect(page.getByTestId('state-k1')).not.toHaveText(/已合併/);

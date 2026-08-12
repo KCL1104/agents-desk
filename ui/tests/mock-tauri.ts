@@ -559,7 +559,7 @@ export function installMock(): void {
       for (const r of [{ repo_path: repo, base_branch: branch }, ...extra]) {
         if (world(r.repo_path) !== world(repo)) {
           throw new Error(
-            `一張卡上的 repo 必須在同一個世界：${repo} 和 ${r.repo_path} 不在。`,
+            `同一張卡的 repo 必須在同一台主機：${repo} 和 ${r.repo_path} 不是。`,
           );
         }
         if (seen.has(r.repo_path)) throw new Error(`${r.repo_path} 在這張卡上出現了兩次`);
@@ -683,7 +683,7 @@ export function installMock(): void {
       if (!attempt) throw new Error(`no such attempt: ${String(args.attemptId)}`);
       // The core refuses rather than producing a merge without the work in it.
       if (mock.dirtyWorktrees.has(attempt.id)) {
-        throw new Error(`${attempt.branch} 還有沒有 commit 的變更，合併不會包含它們。`);
+        throw new Error(`${attempt.branch} 有未提交的變更，合併不會包含。`);
       }
       finishAttempt(attempt.id, 'merged');
       return 'deadbeefcafe';
@@ -695,7 +695,7 @@ export function installMock(): void {
         .find((a) => a.id === args.attemptId);
       if (!attempt) throw new Error(`no such attempt: ${String(args.attemptId)}`);
       if (mock.dirtyWorktrees.has(attempt.id)) {
-        throw new Error(`${attempt.branch} 還有沒有 commit 的變更，推上去不會包含它們。`);
+        throw new Error(`${attempt.branch} 有未提交的變更，推送不會包含。`);
       }
       // One per repository the card spans, newline-separated in the order
       // the card names them — a pull request belongs to a repository, so a

@@ -1608,14 +1608,13 @@ impl Core {
             let (loc, he) = self.located(&r.repo_path)?;
             if loc.host != first_host {
                 return Err(anyhow!(
-                    "一張卡上的 repo 必須在同一個世界：{} 和 {} 不在。\
-                     一個 attempt 的所有 worktree 共用一個資料夾，資料夾跨不過那道門。",
+                    "同一張卡的 repo 必須在同一台主機：{} 和 {} 不是。",
                     repos[0].repo_path,
                     r.repo_path
                 ));
             }
             if seen.insert(loc.path.clone(), ()).is_some() {
-                return Err(anyhow!("{} 在這張卡上出現了兩次", r.repo_path));
+                return Err(anyhow!("{} 在這張卡上出現了兩次。", r.repo_path));
             }
             self.worktrees
                 .check_repo(&he.hr(&self.env), &loc.path, &r.base_branch)?;
@@ -2177,7 +2176,7 @@ impl Core {
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         if attempt.outcome.is_some() {
             return Err(anyhow!(
-                "attempt {attempt_id} is finished; its worktree has been removed"
+                "this attempt is finished; its worktree has been removed"
             ));
         }
         if attempt.parked_at.is_some() {
@@ -2516,7 +2515,7 @@ impl Core {
             .get_attempt(attempt_id)?
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         if attempt.outcome.is_some() {
-            return Err(anyhow!("attempt {attempt_id} is finished; its worktree has been removed"));
+            return Err(anyhow!("this attempt is finished; its worktree has been removed"));
         }
         // Which checkout's script this is comes from the name the drawer
         // pressed — `web:dev` — so two repositories may each have a `dev`.
@@ -2653,7 +2652,7 @@ impl Core {
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         if attempt.outcome.is_some() {
             return Err(anyhow!(
-                "attempt {attempt_id} is finished; its worktree has been removed"
+                "this attempt is finished; its worktree has been removed"
             ));
         }
 
@@ -2965,8 +2964,7 @@ impl Core {
             return match against {
                 None | Some(0) => Ok(frozen),
                 Some(n) => Err(anyhow!(
-                    "a finished attempt has no checkpoint #{n} left to compare against — \
-                     its refs are gone and the frozen diff is the record"
+                    "a finished attempt has no checkpoint #{n} to compare against"
                 )),
             };
         }
@@ -3138,11 +3136,11 @@ impl Core {
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         if attempt.outcome.is_some() {
             return Err(anyhow!(
-                "this attempt is finished — its frozen diff is a record, not a document"
+                "this attempt is finished; its files are read-only"
             ));
         }
         if attempt.parked_at.is_some() {
-            return Err(anyhow!("this attempt is parked — there is no worktree to read"));
+            return Err(anyhow!("this attempt is parked; resume it to read its files"));
         }
         let trees = self.trees(&attempt)?;
         let (tree, rel) = self.tree_for_path(&trees, path)?;
@@ -3181,12 +3179,12 @@ impl Core {
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         if attempt.outcome.is_some() {
             return Err(anyhow!(
-                "this attempt is finished — its frozen diff is a record, not a document"
+                "this attempt is finished; its files are read-only"
             ));
         }
         if attempt.parked_at.is_some() {
             return Err(anyhow!(
-                "this attempt is parked — resume it first, then edit"
+                "this attempt is parked; resume it first, then edit"
             ));
         }
         let busy = self.sessions.lock().unwrap().values().any(|s| {
@@ -3366,8 +3364,7 @@ impl Core {
                         .collect::<Vec<_>>()
                         .join("、");
                     return Err(anyhow!(
-                        "{} 合併失敗：{e:#}\n已經合併進去的：{}。\
-                         這個 attempt 沒有關掉，worktree 還在。",
+                        "{} 合併失敗：{e:#}\n已合併：{}",
                         tree.repo_path,
                         if landed.is_empty() { "（沒有）" } else { &landed },
                     ));
@@ -3545,7 +3542,7 @@ impl Core {
                 Err(e) if urls.is_empty() => return Err(e),
                 Err(e) => {
                     return Err(anyhow!(
-                        "{} 開 PR 失敗：{e:#}\n已經開好的：\n{}",
+                        "{} 開 PR 失敗：{e:#}\n已開好：\n{}",
                         tree.repo_path,
                         urls.join("\n")
                     ))
@@ -4541,7 +4538,7 @@ impl Core {
             .get_attempt(attempt_id)?
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         if attempt.outcome.is_some() {
-            return Err(anyhow!("this attempt is finished — there is nothing left to park"));
+            return Err(anyhow!("this attempt is finished"));
         }
         if attempt.parked_at.is_some() {
             return Err(anyhow!("this attempt is already parked"));
@@ -4622,7 +4619,7 @@ impl Core {
             .get_attempt(attempt_id)?
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         if attempt.outcome.is_some() {
-            return Err(anyhow!("this attempt is finished; the frozen diff is its record"));
+            return Err(anyhow!("this attempt is finished and cannot be resumed"));
         }
         if attempt.parked_at.is_none() {
             return Err(anyhow!("this attempt is not parked"));
@@ -4940,12 +4937,12 @@ impl Core {
             .ok_or_else(|| anyhow!("no such attempt: {attempt_id}"))?;
         if attempt.outcome.is_some() {
             return Err(anyhow!(
-                "this attempt is finished — its worktree is gone and the frozen diff is the record"
+                "this attempt is finished; its worktree is gone, so there is nothing to restore into"
             ));
         }
         if attempt.parked_at.is_some() {
             return Err(anyhow!(
-                "this attempt is parked — resume it first, then restore"
+                "this attempt is parked; resume it first, then restore"
             ));
         }
         let busy = self.sessions.lock().unwrap().values().any(|s| {

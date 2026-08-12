@@ -90,7 +90,7 @@ pub fn waiting_input(locale: Locale) -> &'static str {
 pub fn turn_done(locale: Locale) -> &'static str {
     match locale {
         Locale::En => "finished its turn",
-        Locale::ZhTw => "完成了一輪，等你看",
+        Locale::ZhTw => "完成了一輪",
     }
 }
 
@@ -102,18 +102,17 @@ pub fn test_title(locale: Locale) -> &'static str {
     }
 }
 
-pub fn test_body(locale: Locale) -> &'static str {
-    match locale {
-        Locale::En => "This is what a session's notification looks like.",
-        Locale::ZhTw => "session 的通知就長這樣。",
-    }
+/// Empty on purpose: the title already says notifications work, and the
+/// notification the user is reading is itself the demonstration.
+pub fn test_body(_locale: Locale) -> &'static str {
+    ""
 }
 
 /// Title of the notification raised when a queued card cannot be started.
 pub fn queued_start_failed(locale: Locale) -> &'static str {
     match locale {
         Locale::En => "A queued task could not start",
-        Locale::ZhTw => "排隊中的 task 起不來",
+        Locale::ZhTw => "排隊中的 task 無法啟動",
     }
 }
 

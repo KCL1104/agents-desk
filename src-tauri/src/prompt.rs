@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 pub const DEFAULT_TEMPLATE: &str = r#"[Marol 任務] {title}
 
 {repos}
-完成時請把變更 commit 在這些分支上 —— Marol 用它們來做 diff 檢視與合併回 base。
+完成時請把變更 commit 到這些分支上。
 
 ---
 
@@ -90,8 +90,7 @@ pub fn repos_block(vars: &Vars) -> String {
         ));
     }
     out.push_str(
-        "這些 worktree 都只屬於這張卡，不要切換分支，也不要動它們的 base。\n\
-         工作區本身不是 repo：要改哪個 repo，就進它自己的資料夾。",
+        "這些 worktree 都只屬於這張卡，不要切換分支，也不要動它們的 base。",
     );
     out
 }

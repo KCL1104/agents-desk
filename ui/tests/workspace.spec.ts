@@ -200,7 +200,7 @@ test.describe('a card that spans more than one repo', () => {
     await page.getByTestId('task-repo-2').fill('wsl://Ubuntu/home/me/service');
     await page.getByTestId('task-create').click();
 
-    await expect(page.getByTestId('task-error')).toContainText('同一個世界');
+    await expect(page.getByTestId('task-error')).toContainText('同一台主機');
     // The dialog is still open, with what was typed still in it.
     await expect(page.getByTestId('task-repo-2')).toHaveValue('wsl://Ubuntu/home/me/service');
     expect(await page.evaluate(() => window.__mock.tasks.length)).toBe(0);
