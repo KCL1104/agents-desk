@@ -57,13 +57,13 @@ for (const [w, h] of SIZES) {
         bad.push(`board-cols squeezed: content ${cols.scrollHeight}px into ${cols.clientHeight}px`);
       }
 
-      // 2) 卡片不得畫到 ad-hoc 面板上。
-      const adhoc = rect('.board-adhoc');
-      if (adhoc) {
-        for (const c of document.querySelectorAll('.board-card')) {
+      // 2) 卡片不得溢出自己的欄位 —— 欄位被壓扁時卡片會畫到欄外。
+      for (const col of document.querySelectorAll('.board-col')) {
+        const box = col.getBoundingClientRect();
+        for (const c of col.querySelectorAll('.board-card')) {
           const b = c.getBoundingClientRect();
-          if (b.bottom > adhoc.top + 1 && b.top < adhoc.bottom) {
-            bad.push(`card overlaps the ad-hoc panel by ${Math.round(b.bottom - adhoc.top)}px`);
+          if (b.bottom > box.bottom + 1) {
+            bad.push(`card overflows its column by ${Math.round(b.bottom - box.bottom)}px`);
             break;
           }
         }

@@ -896,6 +896,58 @@ export default function App() {
   );
 
   /**
+   * Make the card and start it in one act, then land in the terminal.
+   *
+   * The board's ordinary path. It used to be two dialogs and seven fields —
+   * make a card, find it on the board, press 開始, answer a second dialog —
+   * for the case that is nearly every case: something to do, somewhere to do
+   * it, go. The planning path did not disappear; it is the secondary button
+   * in the same dialog, and a card left in 待辦 still starts the old way.
+   *
+   * The opening prompt is composed by the core exactly as the start dialog
+   * composed it, so what reaches the agent is unchanged — only the step where
+   * a human was asked to look at it again is gone.
+   */
+  const onCreateAndStart = useCallback(
+    async (
+      title: string,
+      prompt: string,
+      repoPath: string,
+      baseBranch: string,
+      extraRepos: TaskRepo[],
+      agent: string,
+      mode: PermissionMode,
+    ) => {
+      setDialogError(null);
+      try {
+        const id = await api.createTask(title, prompt, repoPath, baseBranch, extraRepos);
+        for (const r of [repoPath, ...extraRepos.map((e) => e.repo_path)]) rememberRepo(r);
+        setShowNewTask(false);
+        setComposed('');
+        setView('board');
+        // What the start dialog would have shown in its textarea. A CLI whose
+        // argument conventions are unmeasured gets the session and not the
+        // prompt — the same refusal as before, made without a second dialog.
+        const preview = await api.previewPrompt(id, agent).catch(() => null);
+        const result = await api.openAttempt(
+          id,
+          agent,
+          preview?.willSend === false ? null : (preview?.prompt ?? prompt),
+          mode,
+          INITIAL_COLS,
+          INITIAL_ROWS,
+        );
+        teach(mode !== 'normal' ? 'mode' : 'attempt');
+        if (result.attempt) await onOpen(result.attempt.session_id);
+        else setBoardFocusId(id);
+      } catch (e) {
+        setDialogError(String(e));
+      }
+    },
+    [onOpen, teach],
+  );
+
+  /**
    * Start an attempt, then go straight into its terminal.
    *
    * Landing in the TUI is the point: the first thing a new worktree does is
@@ -1314,6 +1366,8 @@ export default function App() {
               setShowNewTask(true);
             }}
             onDeleteTask={onDeleteTask}
+            onCloseSession={(id) => void api.closeSession(id)}
+            onArchiveSession={(id) => void api.archiveSession(id)}
             onAnnounce={say}
             focusTaskId={boardFocusId}
             onFocusedTask={() => setBoardFocusId(null)}
@@ -1576,6 +1630,7 @@ export default function App() {
             setComposed('');
           }}
           onCreate={onCreateTask}
+          onCreateAndStart={onCreateAndStart}
         />
       )}
       {starting && (

@@ -53,6 +53,61 @@ async function dragCardTo(page: Page, taskId: string, target: string) {
   );
 }
 
+test.describe('one dialog, one act', () => {
+  test('建立並開始 makes the card, runs it, and lands in the terminal', async ({ page }) => {
+    await boot(page);
+    await page.getByRole('button', { name: '新增卡片', exact: true }).click();
+    await expect(page.locator('.modal')).toBeVisible();
+    await page.getByTestId('task-title').fill('修好登入');
+    await page.getByTestId('task-prompt').fill('把它修好');
+    await page.getByTestId('task-repo').fill(REPO);
+    await page.getByTestId('task-branch').fill('main');
+
+    // The agent and the permission mode are in this dialog now: there is no
+    // second one to answer.
+    await expect(page.getByTestId('task-agent')).toBeVisible();
+    await expect(page.getByTestId('task-mode')).toBeVisible();
+    await page.getByTestId('task-start').click();
+
+    // Straight into the TUI — no board stop, no start dialog.
+    await expect(page.getByTestId('attempt-prompt')).toHaveCount(0);
+    await expect(page.locator('.pane[data-session-id="s1"]')).toHaveClass(/focused/);
+
+    // And the card is real, in 進行中, with the attempt behind it.
+    await page.getByTestId('view-board').click();
+    await expect(page.getByTestId('col-running').getByTestId('task-k1')).toBeVisible();
+  });
+
+  test('放進待辦 still files a card without running anything', async ({ page }) => {
+    await boot(page);
+    await newCard(page, '晚點再說');
+    await expect(page.getByTestId('col-backlog').getByTestId('task-k1')).toBeVisible();
+    await expect(page.locator('.pane[data-session-id]')).toHaveCount(0);
+    await expect(page.getByTestId('state-k1')).toHaveText(/尚未開始/);
+  });
+
+  test('an unmeasured CLI gets the session and not the prompt, with no second dialog', async ({
+    page,
+  }) => {
+    await boot(page);
+    await page.getByRole('button', { name: '新增卡片', exact: true }).click();
+    await page.getByTestId('task-prompt').fill('把它修好');
+    await page.getByTestId('task-repo').fill(REPO);
+    await page.getByTestId('task-branch').fill('main');
+    await page.getByTestId('task-agent').selectOption('gemini');
+    // The mode picker belongs to measured CLIs only, and withdraws with them.
+    await expect(page.getByTestId('task-mode')).toHaveCount(0);
+    await page.getByTestId('task-start').click();
+
+    await expect(page.locator('.pane[data-session-id="s1"]')).toHaveClass(/focused/);
+    const sent = await page.evaluate(() =>
+      window.__mock.calls.filter((c) => c.cmd === 'open_attempt').map((c) => c.args),
+    );
+    expect(sent).toHaveLength(1);
+    expect((sent[0] as { prompt: string | null }).prompt).toBeNull();
+  });
+});
+
 test.describe('board', () => {
   test('a new card lands in 待辦 and nothing is running behind it', async ({ page }) => {
     await boot(page);
@@ -230,11 +285,10 @@ test.describe('board', () => {
     await expect(page.getByTestId('state-k1')).toHaveText(/啟動中/);
   });
 
-  test('ad-hoc sessions live outside the board and still get you into their TUI', async ({
+  test('a session with no card sits in the board columns and gets you into its TUI', async ({
     page,
   }) => {
     await boot(page);
-    await expect(page.getByTestId('adhoc')).toContainText('沒有臨時 session');
 
     // Opened from the sidebar, with no card behind it.
     await page.locator('.sidebar-head button.icon').click();
@@ -242,13 +296,14 @@ test.describe('board', () => {
     await page.locator('.modal button.primary').click();
 
     await page.getByTestId('view-board').click();
-    await expect(page.getByTestId('adhoc-s1')).toBeVisible();
-    await expect(page.locator('.board-card')).toHaveCount(0);
+    // Live, so it is in 進行中 — beside the cards, not in a strip of its own.
+    await expect(page.getByTestId('col-running').getByTestId('loose-s1')).toBeVisible();
+    await expect(page.getByTestId('col-running').locator('.section-count')).toHaveText('1');
 
     await page.evaluate(() => window.__mock.report('s1', 'waiting_input'));
-    await expect(page.getByTestId('adhoc-s1')).toHaveClass(/needs-you/);
+    await expect(page.getByTestId('loose-s1')).toHaveClass(/needs-you/);
 
-    await page.getByTestId('adhoc-s1').click();
+    await page.getByTestId('loose-s1').getByRole('button', { name: /scratch/ }).click();
     await expect(page.locator('.pane[data-session-id="s1"]')).toHaveClass(/focused/);
   });
 

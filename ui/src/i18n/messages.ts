@@ -77,6 +77,11 @@ export const en = {
   'newTask.baseHint': 'Attempts branch from here, and diff against it.',
   'newTask.addRepo': 'Add another repo',
   'newTask.dropRepo': 'Remove',
+  // The two ways out of the one dialog that used to be two. Starting is the
+  // primary because it is what nearly every card is for; filing it in the
+  // backlog is the planning path, kept and demoted.
+  'newTask.createAndStart': 'Create and start',
+  'newTask.createOnly': 'Add to backlog',
   'newTask.repoN': 'Repo {n}',
   'newTask.baseN': 'Base branch {n}',
   // The card's badge when it spans more than one: the first repo's name and
@@ -207,8 +212,6 @@ export const en = {
   // 完整的句子;桌子用過之後,短標籤就夠了。
   'board.emptyBacklogFirst': 'Add the first card: a repo, a branch, something to do',
   'board.emptyDrop': 'Drag a card here',
-  'board.adHoc': 'Ad-hoc sessions',
-  'board.adHocEmpty': 'No ad-hoc sessions.',
   'board.concurrency': 'Running at once',
   'board.less': 'Lower the concurrency limit',
   'board.more': 'Raise the concurrency limit',
@@ -638,6 +641,8 @@ export const zhTW: Record<MessageKey, string> = {
   'newTask.baseHint': 'attempt 從這裡開分支，diff 也以這裡為基準。',
   'newTask.addRepo': '再加一個 repo',
   'newTask.dropRepo': '移除',
+  'newTask.createAndStart': '建立並開始',
+  'newTask.createOnly': '放進待辦',
   'newTask.repoN': 'Repo {n}',
   'newTask.baseN': 'Base 分支 {n}',
   'board.repoPlus': '{name} +{n}',
@@ -746,8 +751,6 @@ export const zhTW: Record<MessageKey, string> = {
   'board.emptyBacklog': '按 ＋ 新增卡片',
   'board.emptyBacklogFirst': '開第一張卡：一個 repo、一個分支、一件要做的事',
   'board.emptyDrop': '把卡片拖到這裡',
-  'board.adHoc': '臨時 session',
-  'board.adHocEmpty': '沒有臨時 session。',
   'board.concurrency': '同時執行',
   'board.less': '減少同時執行數',
   'board.more': '增加同時執行數',

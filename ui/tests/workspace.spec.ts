@@ -44,9 +44,9 @@ test.describe('workspace scripts and the multi-repo board', () => {
     await expect(page.locator('.pane[data-session-id="s2"]')).toBeVisible();
     await expect(page.locator('.pane[data-session-id="s1"]')).toBeVisible();
 
-    // It is ad-hoc: on the board it lives in the ad-hoc strip, not on a card.
+    // It has no card of its own: on the board it sits in 進行中 as a session.
     await page.getByTestId('view-board').click();
-    await expect(page.getByTestId('adhoc-s2')).toContainText('▶ dev');
+    await expect(page.getByTestId('loose-s2')).toContainText('▶ dev');
   });
 
   test('a repo without run scripts still offers the shell, and no ▶ buttons', async ({ page }) => {

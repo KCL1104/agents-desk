@@ -15,6 +15,7 @@ import {
   liveLabel,
   liveStateOf,
   liveTone,
+  looseOf,
   repoName,
   STATUS_KEY,
   TASK_MIME,
@@ -44,6 +45,10 @@ interface Props {
   onCancelQueued: (taskId: string) => void;
   onNewTask: () => void;
   onDeleteTask: (id: string) => void;
+  /** End a card-less session's terminal. */
+  onCloseSession: (id: string) => void;
+  /** Take a finished card-less session off the board for good. */
+  onArchiveSession: (id: string) => void;
   /** Say something through the app's aria-live channel. */
   onAnnounce: (text: string) => void;
   /** App 請看板聚焦這張卡 —— 面板選了沒有終端機的卡、或剛建立的新卡。
@@ -80,6 +85,8 @@ export function Board({
   onCancelQueued,
   onNewTask,
   onDeleteTask,
+  onCloseSession,
+  onArchiveSession,
   onAnnounce,
   focusTaskId,
   onFocusedTask,
@@ -142,7 +149,6 @@ export function Board({
     onAnnounce(t('board.reordered', { title: task.title, n: to + 1 }));
   };
 
-  const adHoc = sessions.filter((s) => s.attempt_id === null);
   const running = sessions.filter((s) => s.live && s.attempt_id !== null).length;
 
   // One timer drives every blocked card's elapsed readout, same as the
@@ -218,6 +224,12 @@ export function Board({
       <div className="board-cols">
         {COLUMNS.map((col) => {
           const cards = columnOf(tasks, col);
+          /* Sessions opened without a card sit in the same columns, sorted by
+             what they are doing rather than by where anyone put them. They
+             used to live in a strip of their own below the board, which meant
+             the one surface built for "who needs me" answered only for half
+             the running agents. */
+          const loose = looseOf(sessions, col);
           return (
             <section
               key={col}
@@ -245,7 +257,7 @@ export function Board({
             >
               <h2 className="board-col-head">
                 {t(COLUMN_KEY[col])}
-                <span className="section-count">{cards.length}</span>
+                <span className="section-count">{cards.length + loose.length}</span>
                 {col === 'backlog' && (
                   <button className="icon" onClick={onNewTask} title={t('board.newCard')} aria-label={t('board.newCard')}>
                     ＋
@@ -296,7 +308,20 @@ export function Board({
                     now={now}
                   />
                 ))}
+                {loose.map((s) => (
+                  <SessionCard
+                    key={s.id}
+                    session={s}
+                    unread={unseen.has(s.id)}
+                    now={now}
+                    onOpen={() => onOpenSession(s.id)}
+                    onPreview={() => s.live && onPreview(s.id)}
+                    onClose={() => onCloseSession(s.id)}
+                    onArchive={() => onArchiveSession(s.id)}
+                  />
+                ))}
                 {cards.length === 0 &&
+                  loose.length === 0 &&
                   (col === 'backlog' ? (
                     // The empty backlog is a door, not a caption: the words
                     // already say "add a card", so the words are the button.
@@ -317,34 +342,103 @@ export function Board({
           );
         })}
       </div>
-
-      {/* Not everything is worth a card. These sit outside the board on
-          purpose: they have no worktree, no branch, and no lifecycle. */}
-      <section className="board-adhoc" data-testid="adhoc">
-        <h2 className="board-col-head">
-          {t('board.adHoc')}
-          <span className="section-count">{adHoc.length}</span>
-        </h2>
-        <div className="adhoc-row">
-          {adHoc.map((s) => (
-            <button
-              key={s.id}
-              className={`adhoc-chip${needsYou(s.status) ? ' needs-you' : ''}`}
-              data-testid={`adhoc-${s.id}`}
-              onClick={() => onOpenSession(s.id)}
-              onMouseEnter={() => s.live && onPreview(s.id)}
-              onFocus={() => s.live && onPreview(s.id)}
-            >
-              <span className={`dot ${s.status}`} />
-              <span className="adhoc-title">{s.title}</span>
-              {unseen.has(s.id) && <span className="unseen-dot" title={t('unseen.label')} />}
-              <span className="muted small">{t(STATUS_KEY[s.status])}</span>
-            </button>
-          ))}
-          {adHoc.length === 0 && <p className="muted small">{t('board.adHocEmpty')}</p>}
-        </div>
-      </section>
     </div>
+  );
+}
+
+/**
+ * A session that was opened without a card.
+ *
+ * It wears the card's shape so one column reads as one list, and says the two
+ * things a card says that it cannot: no worktree behind it, and no branch of
+ * its own. Everything else a card offers — start, park, inspect, merge —
+ * belongs to attempts, so none of it appears here.
+ */
+function SessionCard({
+  session: s,
+  unread,
+  now,
+  onOpen,
+  onPreview,
+  onClose,
+  onArchive,
+}: {
+  session: SessionMeta;
+  unread: boolean;
+  now: number;
+  onOpen: () => void;
+  onPreview: () => void;
+  onClose: () => void;
+  onArchive: () => void;
+}) {
+  const t = useT();
+  const waiting = needsYou(s.status);
+  const astir = !waiting && (s.status === 'running' || s.status === 'starting');
+  const since = elapsed(s.last_active_at, now);
+
+  return (
+    <article
+      className={[
+        'board-card',
+        'loose-card',
+        waiting ? 'needs-you' : '',
+        astir ? 'astir' : '',
+        'enterable',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      data-testid={`loose-${s.id}`}
+      data-live={s.live ? 'session' : 'stopped'}
+      role="group"
+      tabIndex={-1}
+      aria-label={`${s.title}${t('common.sep')}${
+        waiting ? `${t('board.needsYou')}${t('common.sep')}` : ''
+      }${t(STATUS_KEY[s.status])}${unread ? `${t('common.sep')}${t('unseen.label')}` : ''}`}
+      onMouseEnter={onPreview}
+      onFocus={onPreview}
+    >
+      <header className="board-card-head">
+        <span className={`dot ${s.status}`} />
+        <button className="card-door board-card-title" onClick={onOpen}>
+          {s.title}
+        </button>
+        {unread && (
+          <span className="unseen-dot" data-testid={`unseen-loose-${s.id}`} title={t('unseen.label')} />
+        )}
+        <span className="ov-agent mono">{s.agent}</span>
+      </header>
+
+      {/* Where it is running, in place of the card's repo-and-branch row: a
+          session has a directory and nothing else to say about git. */}
+      <div className="board-card-repo mono small muted" title={s.cwd}>
+        <span className="board-card-where">
+          {hostLabel(s.cwd) && <span className="host-badge">{hostLabel(s.cwd)} · </span>}
+          {repoName(s.cwd)}
+        </span>
+      </div>
+
+      <div className="board-card-state" data-testid={`loose-state-${s.id}`}>
+        {waiting && (
+          <>
+            <Icon name="warn" />{' '}
+          </>
+        )}
+        {t(STATUS_KEY[s.status])}
+        {waiting && since && <span className="card-elapsed"> · {since}</span>}
+      </div>
+
+      <div className="board-card-foot">
+        {s.live ? (
+          <button className="quiet" onClick={stop(onClose)}>
+            {t('sidebar.closeTerminal')}
+          </button>
+        ) : (
+          <button className="quiet" onClick={stop(onArchive)}>
+            {t('sidebar.removeFromList')}
+          </button>
+        )}
+      </div>
+    </article>
   );
 }
 

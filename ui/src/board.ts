@@ -1,5 +1,6 @@
 import type { MessageKey, TFn } from './i18n';
 import type { Attempt, Lifecycle, SessionMeta, Status, Task } from './types';
+import { needsYou } from './types';
 import { STATUS_KEY } from './sections';
 
 export { STATUS_KEY };
@@ -194,4 +195,38 @@ export function columnOf(tasks: readonly Task[], lifecycle: Lifecycle): Task[] {
     .filter((t) => t.lifecycle === lifecycle)
     .slice()
     .sort((a, b) => a.position - b.position);
+}
+
+/**
+ * Which column a session without a card belongs in.
+ *
+ * A session has no lifecycle to drag: there is no worktree to review and no
+ * outcome to file. So its column is read off what it is doing rather than off
+ * where somebody put it — a terminal still attached is work in progress, and
+ * one that has closed is over. Nothing else can ever land it in 待辦 or
+ * 待驗收, which is why those two columns hold cards alone.
+ */
+export function sessionColumn(s: SessionMeta): Lifecycle {
+  return s.live ? 'running' : 'done';
+}
+
+/**
+ * The card-less sessions belonging in one column, blocked ones first.
+ *
+ * Same ordering the sidebar runs triage on: with several agents going, "who is
+ * waiting on me" is the only sort that matters, and the top of the column is
+ * the queue. Ties break on most-recently-active.
+ */
+export function looseOf(
+  sessions: readonly SessionMeta[],
+  lifecycle: Lifecycle,
+): SessionMeta[] {
+  return sessions
+    .filter((s) => s.attempt_id === null && sessionColumn(s) === lifecycle)
+    .slice()
+    .sort(
+      (a, b) =>
+        Number(needsYou(b.status)) - Number(needsYou(a.status)) ||
+        b.last_active_at - a.last_active_at,
+    );
 }

@@ -45,9 +45,9 @@ test.describe('the worktree shell', () => {
     await expect(page.locator('.pane[data-session-id="s2"] .pane-title')).toContainText(
       '$ 修好登入 #1',
     );
-    // Ad-hoc, like the ▶ scripts: the card stays about the agent.
+    // Card-less, like the ▶ scripts: the card stays about the agent.
     await page.getByTestId('view-board').click();
-    await expect(page.getByTestId('adhoc-s2')).toBeVisible();
+    await expect(page.getByTestId('loose-s2')).toBeVisible();
   });
 
   test('asking twice returns the shell already there', async ({ page }) => {

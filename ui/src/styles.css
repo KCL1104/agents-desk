@@ -816,8 +816,7 @@ button.board-cta:hover {
   50% { border-left-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .board-card.needs-you,
-  .adhoc-chip.needs-you {
+  .board-card.needs-you {
     animation: none;
     box-shadow: var(--bevel), 0 0 0 2px color-mix(in srgb, var(--warn) 28%, transparent);
   }
@@ -924,24 +923,11 @@ button.board-cta:hover {
 .board-card:hover .board-card-foot .quiet,
 .board-card:focus-within .board-card-foot .quiet { display: inline-flex; }
 
-/* Outside the columns on purpose: no worktree, no branch, no lifecycle. */
-.board-adhoc {
-  background: var(--bg-2); border: 1px solid var(--line);
-  border-radius: var(--radius-l); padding: 10px;
-}
-.adhoc-row { display: flex; flex-wrap: wrap; gap: 7px; }
-.adhoc-chip {
-  display: flex; align-items: center; gap: 7px;
-  padding: 5px 10px; font-size: var(--fs-data);
-}
-/* The same breath as a blocked board card — one attention language, worn by
-   every surface that can be blocked on you. */
-.adhoc-chip.needs-you {
-  border-color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 5%, var(--bg-2));
-  animation: breathe 2.4s ease-in-out infinite;
-}
-.adhoc-title { font-weight: 600; }
+/* A session with no card behind it: same shape, one tier back. The dashed
+   edge is the whole difference — no worktree, so no branch to spend and
+   nothing to merge — and it is a border style rather than a colour, because
+   colour on a resting edge is reserved for what is happening. */
+.loose-card { border-left-style: dashed; }
 
 /* The trust gate wears a different shape, not a third warn variant: it is
    a door to answer once, not a light to watch. */

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
+import { isMeasured } from '../agents';
 import { api } from '../api';
 import { useT } from '../i18n';
 import { chord } from '../platform';
-import type { TaskRepo } from '../types';
+import type { PermissionMode, TaskRepo } from '../types';
 import { composePath, storedWorld, type World } from '../worlds';
+import { useLaunchers } from './launchers';
 import { Modal } from './Modal';
 import { WorldSelect } from './WorldSelect';
 import { FriendlyError } from './FriendlyError';
@@ -18,12 +20,32 @@ interface Props {
     baseBranch: string,
     extraRepos: TaskRepo[],
   ) => void | Promise<void>;
+  /** Create the card and start it in one act, landing in the terminal. The
+   *  dialog's primary action, and the board's ordinary path. */
+  onCreateAndStart: (
+    title: string,
+    prompt: string,
+    repoPath: string,
+    baseBranch: string,
+    extraRepos: TaskRepo[],
+    agent: string,
+    mode: PermissionMode,
+  ) => void | Promise<void>;
   /** Set when the core refused the repository or the base branch. */
   error: string | null;
   /** A goal typed into the palette, taken as the prompt. Empty when the
    *  dialog was opened the ordinary way. */
   goal?: string;
 }
+
+/** Offered in this order: each step down asks less. */
+const MODES: readonly PermissionMode[] = ['normal', 'accept_edits', 'yolo'];
+
+const MODE_KEY = {
+  normal: 'mode.normal',
+  accept_edits: 'mode.accept_edits',
+  yolo: 'mode.yolo',
+} as const;
 
 /** One of the repositories beside the first, while the dialog is open. */
 interface Extra {
@@ -199,11 +221,20 @@ function ExtraRepo({
  * is rare makes everyone pay for it. Pressing it is the whole of the
  * ceremony — the row that appears is the same two fields as the first.
  */
-export function NewTaskDialog({ onCancel, onCreate, error, goal = '' }: Props) {
+export function NewTaskDialog({ onCancel, onCreate, onCreateAndStart, error, goal = '' }: Props) {
   const t = useT();
   const [title, setTitle] = useState('');
   const [prompt, setPrompt] = useState(goal);
   const [repo, setRepo] = useState(recents()[0] ?? '');
+  const [agent, setAgent] = useState('claude');
+  const [mode, setMode] = useState<PermissionMode>('normal');
+  const launchers = useLaunchers();
+  /** What the picked launcher runs underneath — a profile of claude is still
+   *  claude for every convention that matters here. */
+  const resolved = launchers.find((l) => l.name === agent)?.agent ?? agent;
+  /** Only a measured CLI's permission flags exist, so only its attempts get
+   *  the choice. Modes are an attempt's alone: the worktree is the fence. */
+  const modeChoice = isMeasured(resolved);
   /** Which world the repo path lives in — defaulted from the bottom-left
       picker, overridable per card. The scheme never rides the keyboard:
       `composePath` assembles it, and pasted schemes or \\wsl$ UNC paths
@@ -251,25 +282,41 @@ export function NewTaskDialog({ onCancel, onCreate, error, goal = '' }: Props) {
     prompt.trim() !== '' && repo.trim() !== '' && extras.every((e) => e.repo.trim() !== '');
   const dirty = title.trim() !== '' || prompt.trim() !== '';
 
-  const submit = () => {
-    if (!ready || busy) return;
-    setBusy(true);
+  /** The card the form describes, assembled once for both actions. */
+  const compose = () => {
     // 標題留白的規則(確定性,同一份 prompt 永遠得到同一個標題):
     // trim 後取第一個換行前的內容,再 trim、截到前 80 個字元。
     // 打了字的標題永遠優先 —— 這裡只補空白,不改寫任何人寫的字。
     const fallback = prompt.trim().split('\n')[0].trim().slice(0, 80);
-    const finalTitle = title.trim() !== '' ? title.trim() : fallback;
+    return {
+      title: title.trim() !== '' ? title.trim() : fallback,
+      prompt: prompt.trim(),
+      repoPath: composePath(world, repo),
+      branch: branch.trim(),
+      extras: extras.map((e) => ({
+        repo_path: composePath(world, e.repo),
+        base_branch: e.branch.trim(),
+      })),
+    };
+  };
+
+  /** The primary act: make it and run it, ending in the terminal. */
+  const submit = () => {
+    if (!ready || busy) return;
+    setBusy(true);
+    const c = compose();
     void Promise.resolve(
-      onCreate(
-        finalTitle,
-        prompt.trim(),
-        composePath(world, repo),
-        branch.trim(),
-        extras.map((e) => ({
-          repo_path: composePath(world, e.repo),
-          base_branch: e.branch.trim(),
-        })),
-      ),
+      onCreateAndStart(c.title, c.prompt, c.repoPath, c.branch, c.extras, agent, mode),
+    ).finally(() => setBusy(false));
+  };
+
+  /** The planning act: file it in 待辦 and start it whenever. */
+  const createOnly = () => {
+    if (!ready || busy) return;
+    setBusy(true);
+    const c = compose();
+    void Promise.resolve(
+      onCreate(c.title, c.prompt, c.repoPath, c.branch, c.extras),
     ).finally(() => setBusy(false));
   };
 
@@ -366,6 +413,61 @@ export function NewTaskDialog({ onCancel, onCreate, error, goal = '' }: Props) {
         </datalist>
         <p className="muted small">{t('newTask.baseHint')}</p>
 
+        {/* Which CLI runs it, and how much it asks. Both used to live in a
+            second dialog that opened after the card existed — the step this
+            one exists to remove. */}
+        <div className="row fields">
+          <div className="field">
+            <label htmlFor="task-agent">{t('attempt.agent')}</label>
+            <select
+              id="task-agent"
+              value={agent}
+              data-testid="task-agent"
+              onChange={(e) => {
+                const next = e.target.value;
+                setAgent(next);
+                // A mode chosen for one CLI must not ride silently into a CLI
+                // that was never measured against it.
+                const nextAgent = launchers.find((l) => l.name === next)?.agent ?? next;
+                if (!isMeasured(nextAgent)) setMode('normal');
+              }}
+            >
+              {launchers.map((l) => (
+                <option key={l.name} value={l.name}>
+                  {l.profile ? `${l.name} · ${l.agent}` : l.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          {modeChoice && (
+            <div className="field">
+              <label htmlFor="task-mode">{t('attempt.modeLabel')}</label>
+              <select
+                id="task-mode"
+                value={mode}
+                data-testid="task-mode"
+                onChange={(e) => setMode(e.target.value as PermissionMode)}
+              >
+                {MODES.map((m) => (
+                  <option key={m} value={m}>
+                    {t(MODE_KEY[m])}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+        {modeChoice && mode === 'accept_edits' && (
+          <p className="muted small" data-testid="task-accept-hint">
+            {t('attempt.acceptHint')}
+          </p>
+        )}
+        {modeChoice && mode === 'yolo' && (
+          <p className="dialog-warn small" data-testid="task-yolo-hint">
+            {t('attempt.yoloHint')}
+          </p>
+        )}
+
         {extras.map((extra, i) => (
           <ExtraRepo
             key={extra.key}
@@ -385,13 +487,18 @@ export function NewTaskDialog({ onCancel, onCreate, error, goal = '' }: Props) {
             {t('common.cancel')}
             <kbd>Esc</kbd>
           </button>
+          {/* Filing it without running it: the backlog is still a place to
+              put work, it is just no longer the only way through. */}
+          <button disabled={!ready || busy} data-testid="task-create" onClick={createOnly}>
+            {t('newTask.createOnly')}
+          </button>
           <button
             className="primary"
             disabled={!ready || busy}
-            data-testid="task-create"
+            data-testid="task-start"
             onClick={submit}
           >
-            {busy ? t('inspector.working') : t('common.create')}
+            {busy ? t('inspector.working') : t('newTask.createAndStart')}
             <kbd>{chord('↵')}</kbd>
           </button>
         </div>
