@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, type AttemptStat } from '../api';
+import { isMeasured } from '../agents';
 import { useT } from '../i18n';
 import { useArmed } from './armed';
 import { Icon } from './Icon';
@@ -621,11 +622,15 @@ function Card({
         )}
         {liveLabel(live, t)}
         {hasAttempt && <span className="muted small mono"> #{live.attempt.seq}</span>}
-        {/* Hooks are Claude Code's; for anyone else 「安靜」 must never be
-            read as 「沒事」— the absence of signal is itself the signal. */}
+        {/* Hooks belong to the CLIs that have them; for anyone else
+            「安靜」 must never be read as 「沒事」— the absence of signal is
+            itself the signal. A measured CLI is expected to report, so it
+            never wears this: a disclaimer that appears for a second and then
+            withdraws itself on the first hook is a flicker on the one
+            surface whose job is to be believed at a glance. */}
         {live.kind === 'session' &&
           !live.session.reports_status &&
-          live.attempt.agent !== 'claude' && (
+          !isMeasured(live.attempt.agent) && (
             <span
               className="chip no-signal"
               data-testid={`nosignal-${task.id}`}

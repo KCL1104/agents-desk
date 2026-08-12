@@ -115,16 +115,24 @@ test.describe('board', () => {
     await expect(page.getByTestId('nosignal-k1')).toHaveCount(0);
   });
 
-  test('a claude card never wears the no-signal chip', async ({ page }) => {
-    await boot(page);
-    await newCard(page, '修好登入');
-    await start(page, 'k1');
-    await page.getByTestId('view-board').click();
+  // One test per CLI rather than a loop inside one: the board keeps its
+  // state across a reload, so a second card in the same page is `k2` and
+  // the assertions would quietly move off the card they were written for.
+  for (const agent of ['claude', 'codex']) {
+    test(`a ${agent} card never wears the no-signal chip`, async ({ page }) => {
+      await boot(page);
+      await newCard(page, '修好登入');
+      await start(page, 'k1', agent);
+      await page.getByTestId('view-board').click();
 
-    // Fresh and silent, but its silence is trustworthy: hooks will speak.
-    await expect(page.locator('[data-testid="col-running"] .board-card')).toHaveCount(1);
-    await expect(page.getByTestId('nosignal-k1')).toHaveCount(0);
-  });
+      // Fresh and silent, but its silence is trustworthy: hooks will speak.
+      // A chip that appeared here and withdrew itself on the first report
+      // would be a flicker on the surface whose whole job is to be believed
+      // at a glance.
+      await expect(page.locator('[data-testid="col-running"] .board-card')).toHaveCount(1);
+      await expect(page.getByTestId('nosignal-k1')).toHaveCount(0);
+    });
+  }
 
   /**
    * The other half of the same criterion: the card is a way *into* the live

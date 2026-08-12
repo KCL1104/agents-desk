@@ -59,10 +59,9 @@ export function WelcomeDialog({ boot, onReprobe, onNewTask, onNewSession, onClos
           <span className="stat-label mono">{a.name}</span>
           {a.path !== null ? (
             <span className="stat-value mono" title={a.path}>
-              {/* The one CLI whose version gates features says which. */}
-              {a.name === 'claude' && boot.claudeVersion
-                ? `✓ ${boot.claudeVersion}`
-                : '✓'}
+              {/* A CLI whose version gates features says which. The two
+                  measured ones carry theirs; the rest are found or not. */}
+              {a.version ? `✓ ${a.version}` : '✓'}
             </span>
           ) : (
             <span className="stat-value mono muted">{t('env.cliMissing')}</span>
