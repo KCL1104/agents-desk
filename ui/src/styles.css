@@ -407,6 +407,36 @@ textarea { resize: vertical; }
   background: color-mix(in srgb, var(--fg) 4%, var(--bg-2));
 }
 
+/* The folder picker's list. Sized so a home directory's worth of dotfiles
+   scrolls rather than pushing the buttons off a short window, and monospaced
+   because these are paths — a proportional font makes a column of them
+   impossible to scan. */
+.dirpick-list {
+  max-height: 46vh; min-height: 120px; overflow-y: auto;
+  margin: 8px 0; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg-2);
+}
+
+.dirpick-row {
+  display: block; width: 100%; margin: 0; padding: 3px 10px;
+  border: none; border-radius: 0; background: transparent;
+  color: var(--fg); text-align: left;
+  font-family: var(--mono); font-size: var(--fs-label);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* One highlight for hover and for the keyboard, because they are the same
+   state: the pointer moves the cursor rather than competing with it, so the
+   row under the mouse and the row Enter would open are never two rows. */
+.dirpick-row.on,
+.dirpick-row:hover:not(:disabled) {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 8%, var(--bg-2));
+}
+
+/* `..` reads as a direction, not a directory. */
+.dirpick-row.up { color: var(--fg-dim); }
+
 /* A newer version exists. Deliberately the quietest thing in the sidebar:
    no count, no motion, and --accent rather than the amber that means an
    agent is blocked on you. An update is never urgent, and borrowing the

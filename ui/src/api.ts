@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
   AttemptEvent,
   BootStatus,
+  DirListing,
   Launcher,
   Lifecycle,
   NotifyPrefs,
@@ -214,6 +215,12 @@ export const api = {
       restored, terminal reopened on the old conversation. */
   resumeAttempt: (attemptId: string, cols: number, rows: number) =>
     invoke<Resumed>('resume_attempt', { attemptId, cols, rows }),
+
+  /** One directory inside a world, for the folder picker. `path` of null
+      starts at that world's own home. The platform's folder dialog cannot
+      answer this for WSL or SSH — see DirPicker. */
+  listDir: (world: string, path: string | null) =>
+    invoke<DirListing>('list_dir', { world, path }),
 
   /** What this build is, whether it can update itself, and what restarting
       would cost right now. Free of network — see update_status in main.rs. */

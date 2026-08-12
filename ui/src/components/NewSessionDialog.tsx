@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { open } from '@tauri-apps/plugin-dialog';
 import { useT } from '../i18n';
 import { splitArgs } from '../profiles';
 import { composePath, storedWorld, type World } from '../worlds';
+import { DirPicker } from './DirPicker';
 import { useLaunchers } from './launchers';
 import { Modal } from './Modal';
 import { WorldSelect } from './WorldSelect';
@@ -36,10 +36,9 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
   const launchers = useLaunchers();
   const list = recents();
 
-  const pick = async () => {
-    const picked = await open({ directory: true, multiple: false });
-    if (typeof picked === 'string') setCwd(picked);
-  };
+  /** The picker browses the world this session will run in — see DirPicker
+   *  for why this is not the platform's folder dialog. */
+  const [picking, setPicking] = useState(false);
 
   const create = () => {
     if (cwd.trim() === '') return;
@@ -70,8 +69,21 @@ export function NewSessionDialog({ onCancel, onCreate }: Props) {
             onChange={(e) => setCwd(e.target.value)}
             onKeyDown={submitOnEnter}
           />
-          <button onClick={pick}>{t('common.choose')}</button>
+          <button data-testid="session-pick" onClick={() => setPicking(true)}>
+            {t('common.choose')}
+          </button>
         </div>
+        {picking && (
+          <DirPicker
+            world={world}
+            start={cwd.trim()}
+            onCancel={() => setPicking(false)}
+            onPick={(p) => {
+              setCwd(p);
+              setPicking(false);
+            }}
+          />
+        )}
         {list.length > 0 && (
           <div className="recents">
             {list.map((r) => (

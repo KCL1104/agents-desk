@@ -701,6 +701,22 @@ fn probe_world(state: State<'_, AppState>, world: String) -> StdResult<core::Wor
     Ok(state.core()?.probe_world(&world))
 }
 
+/// One directory inside a world, for the folder picker.
+///
+/// `path` of `null` starts at that world's own home. See `Core::list_dir` for
+/// why this exists rather than the platform's folder dialog.
+#[tauri::command]
+fn list_dir(
+    state: State<'_, AppState>,
+    world: String,
+    path: Option<String>,
+) -> StdResult<core::DirListing, String> {
+    state
+        .core()?
+        .list_dir(&world, path.as_deref())
+        .map_err(|e| format!("{e:#}"))
+}
+
 /* ------------------------- editable diff --------------------------- */
 
 /// Both sides of one file in an attempt's diff, as full text: the base
@@ -1051,7 +1067,6 @@ fn save_profiles(
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_dialog::init())
         // For the PR URL: an anchor inside the webview would navigate the
         // app itself, so external links go out through the opener.
         .plugin(tauri_plugin_opener::init())
@@ -1145,6 +1160,7 @@ fn main() {
             probe_port,
             list_worlds,
             probe_world,
+            list_dir,
             attempt_file,
             write_attempt_file,
             cancel_queued,

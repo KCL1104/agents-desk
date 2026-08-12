@@ -6,7 +6,7 @@
 //! so the same core can later be driven by an axum websocket without being
 //! rewritten.
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -1199,6 +1199,90 @@ pub struct WorldProbe {
     pub claude: Option<String>,
     pub codex: Option<String>,
     pub error: Option<String>,
+}
+
+/// List the current directory: where it really is, then its subdirectories.
+///
+/// Run with the target as the process's working directory, so nothing about
+/// the path is interpolated into this text — see `Core::list_dir`.
+///
+/// `pwd -P` first, on its own line, because the answer to "where am I" is a
+/// fact only the world can supply: `~`, a symlink, and a relative step all
+/// arrive here as something else, and a picker that echoed back what it was
+/// asked for would build its next path on a guess.
+///
+/// The `case` skips `.` and `..` rather than a `find` with `-maxdepth`,
+/// whose `-printf` is GNU-only — this has to run on a BSD userland over SSH
+/// as readily as on a WSL Ubuntu. An empty directory leaves the globs
+/// unexpanded and `[ -d ]` discards the literals, which is why there is no
+/// `nullglob` here to depend on.
+const LIST_DIR: &str = r#"pwd -P
+for e in .* *; do
+  case "$e" in .|..) continue;; esac
+  [ -d "$e" ] && printf '%s\n' "$e"
+done"#;
+
+/// Where `..` goes from an absolute path, or `None` at a root.
+///
+/// String work rather than `Path`: this answers for the world the path came
+/// from, not the one this process runs on, and a `PathBuf` on Windows would
+/// join a WSL path with backslashes — the same trap `worktree.rs` documents.
+fn parent_of(path: &str) -> Option<String> {
+    let sep = if path.contains('\\') && !path.starts_with('/') {
+        '\\'
+    } else {
+        '/'
+    };
+    let trimmed = path.trim_end_matches(sep);
+
+    // Two roots, and neither has anywhere above it: `/`, which trims away to
+    // nothing, and a Windows drive letter, which trims to `C:`. Both must
+    // answer `None` rather than a `..` that walks in a circle.
+    if trimmed.is_empty() || is_drive_root(trimmed) {
+        return None;
+    }
+
+    match trimmed.rsplit_once(sep) {
+        // The last step out of a drive: `C:\Users` → `C:\`, keeping the
+        // separator, because `C:` alone means "wherever that drive last was"
+        // to Windows rather than its root.
+        Some((head, _)) if is_drive_root(head) => Some(format!("{head}{sep}")),
+        // The last step out of a POSIX tree: `/home` → `/`.
+        Some(("", _)) => Some(sep.to_string()),
+        Some((head, _)) => Some(head.to_string()),
+        None => None,
+    }
+}
+
+/// `C:` — a drive letter and a colon, and nothing else.
+fn is_drive_root(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
+}
+
+/// One directory in some world, as a folder picker needs it.
+///
+/// The picker exists because the platform's own dialog cannot answer this
+/// question for two of the three worlds. A native dialog browses the machine
+/// the app is running on: it can be pointed at `\\wsl$\<distro>` and made to
+/// work, slowly, through Explorer's idea of a filesystem — and it has nothing
+/// at all to say about an SSH host, where there is no local mount to browse.
+/// So the desk asks the world itself, which is one code path for all three
+/// instead of one that half-works and one that cannot exist.
+#[derive(Debug, Clone, Serialize)]
+pub struct DirListing {
+    /// The path actually listed, absolute and symlink-resolved by the world
+    /// itself rather than guessed at from the string that was asked for.
+    pub path: String,
+    /// Where `..` goes, or `None` at the root.
+    pub parent: Option<String>,
+    /// Subdirectory names, sorted, dotfiles last. Names only — the caller
+    /// joins them, because only the world knows what its separator is.
+    pub dirs: Vec<String>,
+    /// Whether this directory is itself a git repository. The picker is
+    /// almost always looking for one, and saying so where it stands beats
+    /// making somebody descend to find out.
+    pub is_repo: bool,
 }
 
 /// Both sides of one file in an attempt's diff, as full text — the data
@@ -3197,6 +3281,102 @@ impl Core {
                 error: Some(format!("{e:#}")),
             },
         }
+    }
+
+    /// List one directory inside a world, for the folder picker.
+    ///
+    /// `path` of `None` means "start where a person starts", which is that
+    /// world's own home — not this machine's, and not a remembered path that
+    /// may not exist over there.
+    ///
+    /// Absolute paths are the whole point here, so the invoke boundary's
+    /// usual refusal of them does not apply: that rule guards a *relative*
+    /// path being resolved inside an attempt's worktree, where an absolute
+    /// one would escape it. This is a person browsing their own filesystem
+    /// at their own request, and the only thing it can read is the names of
+    /// directories.
+    pub fn list_dir(&self, world: &str, path: Option<&str>) -> Result<DirListing> {
+        // Resolve the world through the same door every other path takes, so
+        // `wsl://Ubuntu` and `ssh://devbox` mean here what they mean anywhere.
+        let probe = if world.is_empty() {
+            "/".to_string()
+        } else {
+            format!("{world}/")
+        };
+        let (_, he) = self.located(&probe)?;
+        let hr = he.hr(&self.env);
+
+        let start = match path {
+            Some(p) if !p.trim().is_empty() => p.trim().to_string(),
+            // The world's own HOME. Windows has no HOME to speak of, so the
+            // profile directory answers for it there.
+            _ => he
+                .env
+                .vars
+                .get("HOME")
+                .or_else(|| he.env.vars.get("USERPROFILE"))
+                .cloned()
+                .unwrap_or_else(|| "/".to_string()),
+        };
+
+        let (resolved, mut dirs) = match &he.host {
+            // Locally this is a filesystem call, not a shell. Windows is the
+            // reason: `sh` is not on a Windows login-shell PATH, and the one
+            // world that would need the fallback most is the one that cannot
+            // run it.
+            Host::Local => {
+                let base = std::path::Path::new(&start)
+                    .canonicalize()
+                    .with_context(|| format!("{start} cannot be opened"))?;
+                let mut names = Vec::new();
+                for entry in std::fs::read_dir(&base)
+                    .with_context(|| format!("{} cannot be read", base.display()))?
+                    .flatten()
+                {
+                    // `file_type` rather than `metadata`: a symlink pointing
+                    // nowhere should be skipped, not raise an error that
+                    // hides every sibling it stands next to.
+                    if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                        names.push(entry.file_name().to_string_lossy().to_string());
+                    }
+                }
+                (base.to_string_lossy().to_string(), names)
+            }
+            _ => {
+                // The path rides as the working directory rather than inside
+                // the script, so a directory with a quote or a space in its
+                // name is carried by the doorway's own escaping instead of
+                // this string's.
+                let out = hr
+                    .run_ok("sh", &["-c", LIST_DIR], Some(&start))
+                    .with_context(|| format!("{start} cannot be opened"))?;
+                let mut lines = out.lines();
+                let resolved = lines
+                    .next()
+                    .ok_or_else(|| anyhow!("{start} answered with nothing"))?
+                    .to_string();
+                (resolved, lines.map(|s| s.to_string()).collect())
+            }
+        };
+
+        // Dotfiles last, then alphabetical within each half: a home directory
+        // is mostly `.config`-shaped noise, and the thing being looked for is
+        // almost never in it.
+        dirs.sort_by(|a, b| {
+            let dot = |s: &String| s.starts_with('.');
+            dot(a)
+                .cmp(&dot(b))
+                .then_with(|| a.to_lowercase().cmp(&b.to_lowercase()))
+        });
+
+        let parent = parent_of(&resolved);
+        let is_repo = hr.exists(&hr.join(&resolved, ".git"));
+        Ok(DirListing {
+            path: resolved,
+            parent,
+            dirs,
+            is_repo,
+        })
     }
 
     /// Both sides of one file in the diff, as full text — what the editable
@@ -5216,6 +5396,51 @@ impl Core {
 mod tests {
     use super::*;
     use crate::store::StoredTab;
+
+    /// Walking up out of a POSIX tree, and stopping at the top rather than
+    /// offering a `..` that goes in circles.
+    #[test]
+    fn the_way_up_ends_at_the_root() {
+        assert_eq!(parent_of("/home/you/project").as_deref(), Some("/home/you"));
+        assert_eq!(parent_of("/home").as_deref(), Some("/"));
+        assert_eq!(parent_of("/"), None, "the root has nowhere above it");
+        assert_eq!(
+            parent_of("/home/you/").as_deref(),
+            Some("/home"),
+            "a trailing slash is not an extra level"
+        );
+    }
+
+    /// The same, on the one platform whose root is not `/`. A drive keeps its
+    /// separator: `C:` on its own means "wherever that drive last was" to
+    /// Windows, which is not a place a picker can stand.
+    #[test]
+    fn a_drive_is_a_root_too() {
+        assert_eq!(
+            parent_of(r"C:\Users\you\project").as_deref(),
+            Some(r"C:\Users\you")
+        );
+        assert_eq!(parent_of(r"C:\Users").as_deref(), Some(r"C:\"));
+        assert_eq!(parent_of(r"C:\"), None);
+        assert_eq!(parent_of("C:"), None);
+    }
+
+    /// A WSL path is POSIX even when this process is Windows. Deciding the
+    /// separator from the *path* rather than from `cfg!(windows)` is what
+    /// keeps `wsl://Ubuntu/home/you` walking up correctly from a Windows
+    /// desk — the same trap `worktree.rs` documents about `PathBuf::join`.
+    #[test]
+    fn a_posix_path_stays_posix_wherever_it_is_read() {
+        assert_eq!(parent_of("/home/you").as_deref(), Some("/home"));
+        assert_eq!(
+            parent_of("/mnt/c/Users").as_deref(),
+            Some("/mnt/c"),
+            "a path that mentions drives is still POSIX if it starts at /"
+        );
+    }
+
+    // The listing itself needs a whole Core, so those tests live where the
+    // harness that builds one does: `tests/attempts.rs`.
 
     /// CI 守門的第二半:找到的 CLI 要真的答得出 `--version`,而且版本
     /// 字串解析得出來 ——「偵測到」不是檔案存在,是問得到話。跟著

@@ -392,6 +392,12 @@ export const en = {
   'env.degraded':
     'Could not read the login shell environment, so this process’s own was used instead. npx-style MCP servers may fail to start.',
 
+  /* --------------------------- folder picker -------------------------- */
+  'pick.title': 'Choose a directory',
+  'pick.path': 'Path',
+  'pick.empty': 'No subdirectories here.',
+  'pick.isRepo': '✓ a git repository',
+
   /* ------------------------------ updates ----------------------------- */
   'set.updates': 'Updates',
   'up.section': 'Updates',
@@ -889,6 +895,12 @@ export const zhTW: Record<MessageKey, string> = {
   'env.version': '目前版本',
   'env.degraded':
     '無法從 login shell 取得環境，已退回本行程的環境。npx 型的 MCP server 可能起不來。',
+
+  /* --------------------------- folder picker -------------------------- */
+  'pick.title': '選擇資料夾',
+  'pick.path': '路徑',
+  'pick.empty': '這裡沒有子資料夾。',
+  'pick.isRepo': '✓ 是一個 git repo',
 
   /* ------------------------------ updates ----------------------------- */
   'set.updates': '更新',

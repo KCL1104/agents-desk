@@ -174,6 +174,13 @@ test('J5 · the zh-TW journey, end to end', async ({ page }) => {
       .getByTestId('task-prompt')
       .fill('登入後畫面全白，console 沒有錯誤。先重現再修，修完把測試補齊。');
     await page.locator('.modal').getByRole('button', { name: zh('common.choose') }).click();
+    // 挑選器也是中文的 —— 它是這個 app 畫的,不是系統對話框,所以它跟著
+    // 介面的語言走而不是跟著作業系統的。`.last()`:挑選器疊在新卡片對話框
+    // 上面,兩個都是 .modal。
+    await expect(page.locator('.modal').last()).toContainText(zh('pick.title'));
+    await page.getByTestId('dirpick-path').fill(REPO);
+    await page.getByTestId('dirpick-path').press('Enter');
+    await page.getByTestId('dirpick-ok').click();
     await expect(page.getByTestId('task-repo')).toHaveValue(REPO);
     await expect(page.getByTestId('task-branch')).toHaveValue('main');
     await expect(page.getByTestId('task-create')).toBeEnabled();

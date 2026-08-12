@@ -3481,3 +3481,118 @@ fn a_session_tmux_kept_running_does_not_come_back_as_closed() {
 
     core2.shutdown();
 }
+
+/* --------------------------- the folder picker --------------------------- */
+
+/// The listing a folder picker reads: where it actually is, a way back up,
+/// directories only, and the dotfile noise after the thing somebody came for.
+///
+/// This exists because no platform folder dialog can answer the same question
+/// for all three worlds — it browses the machine the app runs on, which is
+/// the wrong filesystem for a WSL card and a filesystem that is not mounted
+/// at all for an SSH one. Local is the case that could have used the dialog,
+/// and it goes through the same door so there is only one to keep correct.
+#[test]
+fn a_listing_names_the_directories_and_nothing_else() {
+    let h = Harness::new("lsdir");
+    let _guard = h.rt.enter();
+
+    let dir = h.root.join("browse");
+    std::fs::create_dir_all(dir.join("project")).unwrap();
+    std::fs::create_dir_all(dir.join("Apples")).unwrap();
+    std::fs::create_dir_all(dir.join(".config")).unwrap();
+    std::fs::write(dir.join("notes.txt"), "not a directory").unwrap();
+
+    let listing = h
+        .core
+        .list_dir("", Some(&dir.to_string_lossy()))
+        .expect("the directory lists");
+
+    assert_eq!(
+        listing.dirs,
+        vec!["Apples", "project", ".config"],
+        "case-insensitive alphabetical, dotfiles last, and the file not at all"
+    );
+    assert!(
+        listing.parent.is_some(),
+        "this is not a root, so there is a way back up"
+    );
+    assert!(!listing.is_repo);
+}
+
+/// `None` starts where a person starts: that world's own home. Not this
+/// machine's, and not a remembered path that may not exist over there.
+#[test]
+fn no_path_starts_at_the_worlds_own_home() {
+    let h = Harness::new("lshome");
+    let _guard = h.rt.enter();
+
+    let listing = h.core.list_dir("", None).expect("home lists");
+
+    assert_eq!(
+        listing.path,
+        std::fs::canonicalize(&h.root).unwrap().to_string_lossy(),
+        "the harness sets HOME to its own root, and that is where a picker opens"
+    );
+}
+
+/// A path that is not there is a refusal naming it, not an empty listing —
+/// which would read as "this directory happens to have nothing in it".
+#[test]
+fn a_missing_directory_says_so_rather_than_reading_as_empty() {
+    let h = Harness::new("lsmissing");
+    let _guard = h.rt.enter();
+
+    let missing = h.root.join("no-such-directory-ever");
+    let err = h
+        .core
+        .list_dir("", Some(&missing.to_string_lossy()))
+        .expect_err("a directory that is not there cannot be listed");
+
+    assert!(
+        format!("{err:#}").contains("no-such-directory-ever"),
+        "the refusal names what could not be opened: {err:#}"
+    );
+}
+
+/// A checkout is called out where it stands. The picker is nearly always
+/// looking for one, and saying so beats making somebody descend to find out.
+#[test]
+fn a_repository_is_named_as_one_where_it_stands() {
+    let h = Harness::new("lsrepo");
+    let _guard = h.rt.enter();
+
+    let listing = h
+        .core
+        .list_dir("", Some(&h.repo.to_string_lossy()))
+        .expect("the harness repo lists");
+
+    assert!(
+        listing.is_repo,
+        "the harness builds a real git checkout there"
+    );
+}
+
+/// The resolved path is the world's answer, not an echo of the question.
+/// A picker that echoed would build its next step on a guess — and one
+/// symlink in the way makes every path below it wrong.
+#[test]
+fn the_listing_reports_where_it_really_is() {
+    let h = Harness::new("lsreal");
+    let _guard = h.rt.enter();
+
+    let real = h.root.join("actual");
+    std::fs::create_dir_all(real.join("inside")).unwrap();
+
+    let listing = h
+        .core
+        .list_dir("", Some(&format!("{}/./actual", h.root.to_string_lossy())))
+        .expect("lists through the detour");
+
+    assert!(
+        !listing.path.contains("/./"),
+        "the path came back resolved, not as it was typed: {}",
+        listing.path
+    );
+    assert_eq!(listing.dirs, vec!["inside"]);
+}

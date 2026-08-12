@@ -228,6 +228,53 @@ export function installMock(): void {
     checkpointsOn: true,
     checkpoints: new Map<string, Array<{ n: number; sha: string; at: number }>>(),
     checkpointQuiet: false,
+    /** One directory tree per world, keyed by the world's own prefix. The
+     *  local and WSL trees deliberately differ under the same path names:
+     *  `/home/you` exists in both, and only what is inside says which
+     *  machine the picker is actually reading. */
+    dirs: {
+      '': {
+        '/home/you': ['code', 'Downloads', '.config'],
+        '/home/you/code': ['picked-repo'],
+        '/home/you/code/picked-repo': [],
+        '/home/you/Downloads': [],
+        '/home/you/.config': [],
+        '/home': ['you'],
+        // The path the journeys walk to. It lives outside home on purpose:
+        // typing a path you already know is the picker's fast lane, and a
+        // journey that only ever clicked would never exercise it.
+        '/Users/test': ['picked-repo'],
+        '/Users/test/picked-repo': [],
+        '/Users': ['test'],
+        '/': ['home', 'Users'],
+      },
+      'wsl://Ubuntu': {
+        '/home/you': ['service', 'client'],
+        '/home/you/service': [],
+        '/home/you/client': [],
+        '/home': ['you'],
+        '/': ['home'],
+      },
+      'ssh://devbox': {
+        '/home/you': ['deploy'],
+        '/home/you/deploy': [],
+        '/home': ['you'],
+        '/': ['home'],
+      },
+    } as Record<string, Record<string, string[]>>,
+    /** Where each world's picker opens when asked for no path. */
+    dirHome: {
+      '': '/home/you',
+      'wsl://Ubuntu': '/home/you',
+      'ssh://devbox': '/home/you',
+    } as Record<string, string>,
+    /** Which paths answer "yes, a git checkout". */
+    dirRepos: [
+      '/home/you/code/picked-repo',
+      '/home/you/service',
+      '/Users/test/picked-repo',
+    ] as string[],
+
     /** The updater's whole surface. Defaults describe the build a person
      *  actually has: a real version, a key in place, self-contained, and no
      *  newer release waiting — so every existing test paints the "you are on
@@ -685,6 +732,30 @@ export function installMock(): void {
       mock.pendingStarts.delete(taskId);
       mock.pushTasks();
       return null;
+    },
+
+    /* -------------------------- folder picker ------------------------- */
+
+    list_dir: (args) => {
+      const world = String(args.world ?? '');
+      // A tiny filesystem per world, so a test can prove the picker is
+      // browsing the machine the card runs on rather than this one. The
+      // shapes differ on purpose: /home/you exists in both, and only the
+      // contents say which you are looking at.
+      const tree = mock.dirs[world];
+      if (!tree) throw new Error(`no such world: ${world}`);
+      const path = args.path == null || String(args.path).trim() === ''
+        ? mock.dirHome[world]
+        : String(args.path);
+      const dirs = tree[path];
+      if (!dirs) throw new Error(`${path} cannot be opened`);
+      const cut = path.replace(/\/+$/, '').lastIndexOf('/');
+      return {
+        path,
+        parent: path === '/' ? null : cut <= 0 ? '/' : path.slice(0, cut),
+        dirs,
+        is_repo: mock.dirRepos.includes(path),
+      };
     },
 
     /* ---------------------------- updates ---------------------------- */
@@ -1196,7 +1267,6 @@ export function installMock(): void {
       return handler;
     },
     'plugin:event|unlisten': () => null,
-    'plugin:dialog|open': () => '/Users/test/picked-repo',
     'plugin:opener|open_url': () => null,
     'plugin:opener|open_path': () => null,
 

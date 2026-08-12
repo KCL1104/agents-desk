@@ -235,6 +235,26 @@ export interface BootStatus {
   promptTemplate?: string;
 }
 
+/** A world's path prefix: '' is local, 'wsl://Ubuntu' and 'ssh://devbox'
+ *  name the others. Re-exported from worlds.ts so a component can take one
+ *  without importing the helpers too. */
+export type { World } from './worlds';
+
+/** One directory inside a world. Mirrors core.rs DirListing. */
+export interface DirListing {
+  /** Where it really is — absolute and symlink-resolved by the world, not
+      an echo of what was asked for. A picker that echoed would build its
+      next path on a guess. */
+  path: string;
+  /** Where `..` goes, or null at a root. */
+  parent: string | null;
+  /** Subdirectory names, sorted, dotfiles last. Names only: the caller
+      joins them, because only the world knows its own separator. */
+  dirs: string[];
+  /** Whether this directory is itself a git checkout. */
+  is_repo: boolean;
+}
+
 /** What this build is and what updating it would take. Mirrors the
  *  update_status command in main.rs; every field is free to answer, so the
  *  panel paints without waiting on GitHub. */

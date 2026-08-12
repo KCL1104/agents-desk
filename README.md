@@ -469,6 +469,16 @@ The pieces that carry the triage loop, in roughly the order you meet them:
   by recency instead of asking you to type one from memory. The title is
   optional: left blank, the card takes the prompt's first line, a rule the
   dialog states rather than a lucky default.
+- **Folder picker.** Its own, not the platform's, because the platform's
+  browses the machine the app is running on — which for a WSL card is the
+  Windows side, reachable only by navigating to `\\wsl$\<distro>` through
+  Explorer, and for an SSH host is a filesystem that is not mounted at all.
+  So the desk asks the world instead: one list, filled by the same door
+  everything else goes through, identical for local, WSL and SSH. It opens
+  at that world's home, the box takes a whole path for anyone who already
+  knows where they are going, arrows and Enter walk it, and a directory that
+  is a git checkout says so where it stands rather than making you descend
+  to find out.
 - **Hosts.** The bottom-left switch picks where new cards and sessions open
   (WSL distros and SSH hosts enumerated, never invented) and probes the chosen
   world's agents on demand. Repos over WSL or SSH carry a host badge on

@@ -72,8 +72,14 @@ test('J1 · the first run, end to end', async ({ page }) => {
     await page
       .getByTestId('task-prompt')
       .fill(`${FIRST_LINE}\n\n登入後畫面全白,console 沒有錯誤。先重現再修。`);
-    // repo 走「選擇…」—— mock 的 chooser 固定回 picked-repo。
+    // repo 走「選擇…」。它開的是這個 app 自己的挑選器,不是作業系統的
+    // 資料夾對話框 —— 因為對 WSL 卡和 SSH 主機來說,後者看的是錯的那台
+    // 機器。打路徑是它的快車道,這裡就走這條。
     await page.locator('.modal').getByRole('button', { name: '選擇…' }).click();
+    await page.getByTestId('dirpick-path').fill(REPO);
+    await page.getByTestId('dirpick-path').press('Enter');
+    await expect(page.getByTestId('dirpick-repo')).toBeVisible();
+    await page.getByTestId('dirpick-ok').click();
     await expect(page.getByTestId('task-repo')).toHaveValue(REPO);
     await expect(page.getByTestId('task-branch')).toHaveValue('main');
 

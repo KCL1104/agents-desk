@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { open } from '@tauri-apps/plugin-dialog';
 import { isMeasured } from '../agents';
 import { api } from '../api';
 import { useT } from '../i18n';
 import { chord } from '../platform';
 import type { PermissionMode, TaskRepo } from '../types';
 import { composePath, storedWorld, type World } from '../worlds';
+import { DirPicker } from './DirPicker';
 import { useLaunchers } from './launchers';
 import { Modal } from './Modal';
 import { WorldSelect } from './WorldSelect';
@@ -164,10 +164,9 @@ function ExtraRepo({
     if (corrected !== value.branch) onChange({ branch: corrected });
   }, [corrected, value.branch]);
 
-  const pick = async () => {
-    const picked = await open({ directory: true, multiple: false });
-    if (typeof picked === 'string') onChange({ repo: picked });
-  };
+  // Every repository on one card is in the same world, so this row's picker
+  // browses the same place the first one does.
+  const [picking, setPicking] = useState(false);
 
   return (
     <>
@@ -187,8 +186,21 @@ function ExtraRepo({
           onChange={(e) => onChange({ repo: e.target.value })}
           onKeyDown={onEnter(onSubmit)}
         />
-        <button onClick={pick}>{t('common.choose')}</button>
+        <button data-testid={`task-pick-${n}`} onClick={() => setPicking(true)}>
+          {t('common.choose')}
+        </button>
       </div>
+      {picking && (
+        <DirPicker
+          world={world}
+          start={value.repo.trim()}
+          onCancel={() => setPicking(false)}
+          onPick={(p) => {
+            onChange({ repo: p });
+            setPicking(false);
+          }}
+        />
+      )}
 
       <label>{t('newTask.baseN', { n: String(n) })}</label>
       <input
@@ -260,10 +272,9 @@ export function NewTaskDialog({ onCancel, onCreate, onCreateAndStart, error, goa
     setBranch((cur) => correctedBase(branches, cur, branchEdited.current));
   }, [branches]);
 
-  const pick = async () => {
-    const picked = await open({ directory: true, multiple: false });
-    if (typeof picked === 'string') setRepo(picked);
-  };
+  /** Browses the world this card lives in, not the machine the app runs on
+   *  — see DirPicker. */
+  const [picking, setPicking] = useState(false);
 
   const addExtra = () =>
     setExtras((cur) => [
@@ -385,8 +396,21 @@ export function NewTaskDialog({ onCancel, onCreate, onCreateAndStart, error, goa
             onChange={(e) => setRepo(e.target.value)}
             onKeyDown={submitOnEnter}
           />
-          <button onClick={pick}>{t('common.choose')}</button>
+          <button data-testid="task-pick" onClick={() => setPicking(true)}>
+            {t('common.choose')}
+          </button>
         </div>
+        {picking && (
+          <DirPicker
+            world={world}
+            start={repo.trim()}
+            onCancel={() => setPicking(false)}
+            onPick={(p) => {
+              setRepo(p);
+              setPicking(false);
+            }}
+          />
+        )}
         <p className="muted small">{t('newTask.repoHint')}</p>
 
         {list.length > 0 && (
