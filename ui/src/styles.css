@@ -474,9 +474,12 @@ textarea { resize: vertical; }
   padding: 1px 6px; white-space: nowrap;
 }
 
+/* The ⚠ is drawn rather than typed, so the space that used to live inside
+   the string is a gap now. */
 .waiting-banner {
   margin: 8px; border-color: color-mix(in srgb, var(--warn) 25%, var(--bg-2)); color: var(--warn);
   background: color-mix(in srgb, var(--warn) 7%, var(--bg-2)); text-align: left; font-size: var(--fs-data);
+  display: flex; align-items: center; gap: 6px;
 }
 .waiting-banner:hover { background: color-mix(in srgb, var(--warn) 12%, var(--bg-2)); }
 
