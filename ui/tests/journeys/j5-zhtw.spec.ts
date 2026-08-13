@@ -178,6 +178,8 @@ test('J5 · the zh-TW journey, end to end', async ({ page }) => {
     // 介面的語言走而不是跟著作業系統的。`.last()`:挑選器疊在新卡片對話框
     // 上面,兩個都是 .modal。
     await expect(page.locator('.modal').last()).toContainText(zh('pick.title'));
+    // 同 J1:內容落地會覆寫路徑框,所以先等它到了再打字。
+    await expect(page.getByTestId('dirpick-path')).not.toHaveValue('');
     await page.getByTestId('dirpick-path').fill(REPO);
     await page.getByTestId('dirpick-path').press('Enter');
     await page.getByTestId('dirpick-ok').click();

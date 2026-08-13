@@ -76,6 +76,9 @@ test('J1 · the first run, end to end', async ({ page }) => {
     // 資料夾對話框 —— 因為對 WSL 卡和 SSH 主機來說,後者看的是錯的那台
     // 機器。打路徑是它的快車道,這裡就走這條。
     await page.locator('.modal').getByRole('button', { name: '選擇…' }).click();
+    // 先等它到了某個地方再打字:清單的容器比內容早出現,而內容落地時會把
+    // 路徑框寫成當前目錄 —— 早一步打的字會被蓋掉。
+    await expect(page.getByTestId('dirpick-path')).not.toHaveValue('');
     await page.getByTestId('dirpick-path').fill(REPO);
     await page.getByTestId('dirpick-path').press('Enter');
     await expect(page.getByTestId('dirpick-repo')).toBeVisible();

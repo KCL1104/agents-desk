@@ -22,7 +22,23 @@ async function openSessionPicker(page: Page, world?: string) {
   await expect(page.locator('.modal')).toBeVisible();
   if (world) await page.getByTestId('session-world').selectOption(world);
   await page.getByTestId('session-pick').click();
-  await expect(page.getByTestId('dirpick-list')).toBeVisible();
+  await settled(page);
+}
+
+/**
+ * Wait for the picker to have finished arriving somewhere.
+ *
+ * The list element renders before its contents do, so waiting on the list
+ * alone proves nothing: a test that typed at that moment would have its text
+ * overwritten when the listing landed and called `setTyped(l.path)`. That is
+ * a race a fast machine wins and a slow one loses — which is exactly how it
+ * behaved, green on the Linux runner and red on the macOS one.
+ *
+ * The path box holding a value is the honest signal, because it is written
+ * by the same callback that fills the list.
+ */
+async function settled(page: Page) {
+  await expect(page.getByTestId('dirpick-path')).not.toHaveValue('');
 }
 
 test.describe('choosing a directory inside a world', () => {
@@ -106,6 +122,8 @@ test.describe('choosing a directory inside a world', () => {
     await land(page);
     await openSessionPicker(page);
     await page.getByTestId('dirpick-row-code').click();
+    // Arrived, before typing over it — see `settled`.
+    await expect(page.getByTestId('dirpick-path')).toHaveValue('/home/you/code');
 
     await page.getByTestId('dirpick-path').fill('/nope/not/here');
     await page.getByTestId('dirpick-path').press('Enter');
