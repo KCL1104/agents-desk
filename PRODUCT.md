@@ -47,6 +47,23 @@ Distribution and licensing (confirmed 2026-08-09): free and open source under **
 
 **Shipped capabilities (M1–M10b)**: attempts with worktree isolation, four-column board, changes/activity drawer, finishing + concurrency queue, the review loop (editable diff, line comments), workspace scripts, per-attempt permission modes, named profiles, cross-session messaging (Claude v2.1.224+), WSL bridge, SSH hosts. Plus checkpoints (per-turn snapshots into private refs), park/resume, dev preview (iframe, look-not-touch), the token account, cards that span several repositories (one workspace, one branch name, diff/review/merge covering all of them), and in-place updating.
 
+**Naming a session (2026-08-13)**: every session's row can be renamed in place
+(sidebar and overview: double-click, F2, or ✎), and the agent inside it can set
+the name itself by POSTing plain text to `$MAROL_NAME_URL` — that session's own
+address on the listener the status hooks already use, so the token, the
+remembered port, the WSL mount and the SSH tunnel all already know it. Three
+rulings: a name landing on the wrong session is worse than a lost one, so the
+name route refuses the cwd fallback the status route depends on and requires an
+id; a rename reaches the board immediately and the `--name` other sessions
+message at the session's *next* start, because that flag is fixed on a running
+command line and pretending otherwise leaves someone addressing a name nothing
+answers to; and an ad-hoc session's directory-derived default now counts up
+(`repo`, `repo 2`) rather than repeating, because that string is also what the
+CLI answers to. The mechanism costs the plugin its "adds nothing to the model's
+context" claim: the naming skill is measured at ~90 tokens per session
+(`claude --plugin-dir … plugin details marol-status`, Claude Code 2.1.229) and
+that number is recorded rather than assumed.
+
 **Updating (2026-08-12)**: `tauri-plugin-updater` against a signed `latest.json` published beside each release. Three rulings this app's own architecture forced, all in `src-tauri/src/update.rs`: the database is snapshotted (`VACUUM INTO`, not a file copy — WAL) before anything is replaced, because migration is one-way and an older build refuses a newer database; the restart is priced in agents, split into those a world's `tmux` hands back and those it ends, and the second number gates the button (native Windows has no holder, so there it is all of them); and `.deb`/`.rpm` are refused in favour of the package manager that owns those files, with AppImage/macOS/Windows treated as self-contained. Nothing applies itself — the check is the app's, the restart is the person's. **No signing key exists yet**: released builds carry an empty `pubkey` and say so where the button would be, and `release.yml` arms artifact signing only on a run that has the secret, refusing loudly if it finds a secret without a matching `pubkey`. A useful side effect: an updater-fetched bundle carries no quarantine attribute, so Gatekeeper's "damaged" dialog is a first-install cost only.
 
 **Multi-agent commitment (confirmed 2026-08-09): parity is the goal.** Today's Claude-first state is honest degradation, not permanent positioning: other CLIs run, but with no hook status (no-signal chip), no auto-sent first prompt (copy, not send), no messaging. The gaps close as upstream CLIs grow measurable interfaces (hooks / structured output); until then, no guessing. **Design work must leave room for future parity — do not weld Claude-only assumptions into the layout.**

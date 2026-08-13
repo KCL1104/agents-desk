@@ -113,6 +113,10 @@ export const en = {
   'sidebar.unmarkDone': 'Clear done',
   'sidebar.closeTerminal': 'Close terminal',
   'sidebar.removeFromList': 'Remove from list',
+  // The rename input has no label beside it to point at, so it borrows this
+  // sentence — the same arrangement the tab strip's own rename uses.
+  'sidebar.rename': 'Session name',
+  'sidebar.renameHint': 'Rename (F2)',
 
   /* ---------------------------- overview ------------------------------ */
   'overview.noAction': 'Nothing in progress',
@@ -644,6 +648,8 @@ export const zhTW: Record<MessageKey, string> = {
   'sidebar.unmarkDone': '取消完成標記',
   'sidebar.closeTerminal': '關閉終端機',
   'sidebar.removeFromList': '從清單移除',
+  'sidebar.rename': 'session 名稱',
+  'sidebar.renameHint': '改名（F2）',
 
   /* ---------------------------- overview ------------------------------ */
   'overview.noAction': '沒有進行中的動作',

@@ -156,7 +156,12 @@ test.describe('sidebar sections', () => {
 
     // s1 is the selected session, so the pin would normally hold it in place.
     // An explicit action must override that without waiting.
-    await page.locator('[data-testid="session-s1"] .row-action').first().click();
+    // By its name, not its place in the row: the actions are a list that
+    // grows, and "the first one" is not what this test is about.
+    await page
+      .locator('[data-testid="session-s1"] .row-action')
+      .and(page.getByLabel('標記為完成'))
+      .click();
     await expect(page.locator('[data-section="done"]')).toBeVisible();
 
     // 已完成 starts collapsed, so the row is filed there but out of the way.
@@ -173,5 +178,82 @@ test.describe('sidebar sections', () => {
     const row = page.locator('[data-testid="session-s1"]');
     await expect(row.locator('.row-tool')).toHaveText('Bash');
     await expect(row.locator('.row-detail')).toHaveText('pytest tests/test_auth.py -v');
+  });
+});
+
+/**
+ * Telling one session from another.
+ *
+ * A session opened without a card can only be called after its directory, and
+ * opening several terminals in one checkout is the ordinary thing to do here
+ * — so the default has to stop repeating itself, and the name has to be
+ * changeable once the work has a better one.
+ */
+test.describe('naming a session', () => {
+  test('sessions in one directory do not all get the same row name', async ({ page }) => {
+    await boot(page);
+    await newSession(page, '/Users/test/repo-one');
+    await newSession(page, '/Users/test/repo-one');
+    await newSession(page, '/Users/test/repo-one');
+
+    await expect(page.locator('[data-testid="session-s1"] .row-title')).toHaveText('repo-one');
+    await expect(page.locator('[data-testid="session-s2"] .row-title')).toHaveText('repo-one 2');
+    await expect(page.locator('[data-testid="session-s3"] .row-title')).toHaveText('repo-one 3');
+  });
+
+  test('double-clicking the name edits it in place, Enter keeps it', async ({ page }) => {
+    await boot(page);
+    await newSession(page, '/Users/test/repo-one');
+
+    await page.locator('[data-testid="session-s1"] .row-title').dblclick();
+    const input = page.getByTestId('rename-s1');
+    await expect(input).toBeFocused();
+    await input.fill('改登入導向');
+    await input.press('Enter');
+
+    await expect(page.locator('[data-testid="session-s1"] .row-title')).toHaveText('改登入導向');
+    // The name is the row's whole identity, so it reaches what a screen
+    // reader hears too, not only what is drawn.
+    await expect(page.getByTestId('session-s1')).toHaveAttribute(
+      'aria-label',
+      /^改登入導向，/,
+    );
+  });
+
+  test('Escape puts the old name back, and F2 opens the editor from the keyboard', async ({
+    page,
+  }) => {
+    await boot(page);
+    await newSession(page, '/Users/test/repo-one');
+    const title = page.locator('[data-testid="session-s1"] .row-title');
+
+    await title.focus();
+    await page.keyboard.press('F2');
+    const input = page.getByTestId('rename-s1');
+    await expect(input).toBeFocused();
+    await input.fill('半路反悔');
+    await input.press('Escape');
+    await expect(title).toHaveText('repo-one');
+
+    // And the ✎ button is the same door for anyone who never learns F2.
+    await page
+      .locator('[data-testid="session-s1"] .row-action')
+      .and(page.getByLabel('改名（F2）'))
+      .click();
+    await page.getByTestId('rename-s1').fill('改登入導向');
+    await page.getByTestId('rename-s1').press('Enter');
+    await expect(title).toHaveText('改登入導向');
+  });
+
+  test('a name blanked to nothing leaves the row as it was', async ({ page }) => {
+    await boot(page);
+    await newSession(page, '/Users/test/repo-one');
+
+    await page.locator('[data-testid="session-s1"] .row-title').dblclick();
+    await page.getByTestId('rename-s1').fill('   ');
+    await page.getByTestId('rename-s1').press('Enter');
+
+    // A row with no name is a row you can no longer pick out at all.
+    await expect(page.locator('[data-testid="session-s1"] .row-title')).toHaveText('repo-one');
   });
 });

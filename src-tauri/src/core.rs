@@ -887,6 +887,31 @@ impl PtySink for Router {
     }
 }
 
+/// The longest a session's name may be.
+///
+/// It is read in a narrow sidebar column, at a glance, beside a dozen others
+/// — the width at which a long name stops being information and becomes a
+/// truncation. Generous enough that nobody writing a name meets it, low
+/// enough that nobody pasting a paragraph gets one.
+const MAX_TITLE: usize = 80;
+
+/// A name as it goes on the row: one line, trimmed, bounded.
+///
+/// Repaired rather than refused, because half the names arriving here come
+/// from an agent's `curl` rather than a person's keyboard, and a trailing
+/// newline is not a reason to throw away a perfectly good name. Only an empty
+/// one is refused, and that is the one case where there is nothing to keep.
+fn clean_title(raw: &str) -> Option<String> {
+    let one_line = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let kept: String = one_line
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_TITLE)
+        .collect();
+    let kept = kept.trim().to_string();
+    (!kept.is_empty()).then_some(kept)
+}
+
 /// Which session a report belongs to.
 ///
 /// The id is the answer whenever it survived the trip — a header for an
@@ -1058,6 +1083,27 @@ impl HookHandler for Router {
                 core.usage_after_turn(&session_id);
             }
         }
+    }
+
+    /// A session saying what it should be called.
+    ///
+    /// The rename writes to SQLite, and the iron law of this path is that an
+    /// agent never waits on us — so it leaves for a thread, as everything
+    /// that touches the disk from here does. A rename is a once-a-session
+    /// event, so a thread apiece costs nothing worth measuring.
+    ///
+    /// A name for a session this desk does not have is dropped, quietly and
+    /// on purpose: it is a terminal from a previous run of the app, and
+    /// inventing a row for it would be worse than losing a name.
+    fn on_name(&self, report: hooks::NameReport) {
+        let Some(core) = self.core.get().and_then(|w| w.upgrade()) else {
+            return;
+        };
+        std::thread::spawn(move || {
+            if let Err(e) = core.rename_session(&report.session_id, &report.name) {
+                eprintln!("[core] a session could not name itself: {e:#}");
+            }
+        });
     }
 }
 
@@ -3852,10 +3898,11 @@ impl Core {
         opts.extend(extra_args);
         let extra_args = opts;
         let id = uuid::Uuid::new_v4().to_string();
-        let title = std::path::Path::new(&cwd)
+        let base = std::path::Path::new(&cwd)
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| cwd.clone());
+        let title = self.unique_title(&base);
         let at = now_ms();
 
         let meta = SessionMeta {
@@ -4002,8 +4049,23 @@ impl Core {
         // this app knows how to wire that CLI up: it is a fact about the
         // session rather than about the CLI, and somebody's own hook is
         // entitled to read it too.
-        if he.hooks.is_some() {
+        if let Some(wiring) = &he.hooks {
             session_env.push(("MAROL_SESSION_ID".to_string(), id.to_string()));
+            // Where a session says what it should be called. This session's
+            // own address, id and all, so an agent uses one variable
+            // verbatim instead of composing a URL under whichever shell the
+            // platform handed it.
+            //
+            // It carries the listener's token, which the session could
+            // already read out of the plugin `--plugin-dir` points at — this
+            // hands the agent nothing its own configuration did not already
+            // give it. What it does add is that the agent's *subprocesses*
+            // inherit it, which is the price of the one-liner working from
+            // inside a tool call at all.
+            session_env.push((
+                "MAROL_NAME_URL".to_string(),
+                hooks::name_url(&wiring.url, id),
+            ));
         }
 
         // Whether this world can be wired at all was settled when the host
@@ -4164,6 +4226,38 @@ impl Core {
         self.ptys.kill(id);
         self.store.archive_session(id)?;
         self.sessions.lock().unwrap().remove(id);
+        self.broadcast();
+        Ok(())
+    }
+
+    /// Give a session a different name.
+    ///
+    /// Two callers, one path: a person editing the row in the sidebar, and
+    /// the agent in the session posting to the plugin's own endpoint. The
+    /// name a session wears is the same fact either way, so it gets the same
+    /// cleaning and the same round trip through the store.
+    ///
+    /// **It renames the row, and only the row.** The name Claude Code answers
+    /// to for cross-session messages is `--name`, fixed on the command line
+    /// when the session started, and there is no way to move it from outside
+    /// a running CLI. So a rename reaches that name at the session's next
+    /// start and not before — which is worth saying plainly rather than
+    /// leaving someone to address a name nothing replies to.
+    pub fn rename_session(&self, id: &str, title: &str) -> Result<()> {
+        let title =
+            clean_title(title).ok_or_else(|| anyhow!("a session's name cannot be empty"))?;
+        let meta = {
+            let mut sessions = self.sessions.lock().unwrap();
+            let s = sessions
+                .get_mut(id)
+                .ok_or_else(|| anyhow!("no such session: {id}"))?;
+            if s.title == title {
+                return Ok(());
+            }
+            s.title = title;
+            s.clone()
+        };
+        self.persist(&meta);
         self.broadcast();
         Ok(())
     }
@@ -5381,6 +5475,35 @@ impl Core {
         }
     }
 
+    /// A default name no session on the list already has.
+    ///
+    /// A directory's name is the only thing there is to call a session opened
+    /// without a card, and opening several terminals in one checkout is the
+    /// ordinary thing to do here — so the list filled up with rows that all
+    /// said the same word and could only be told apart by hovering for the
+    /// path. The same string is what `--name` hands Claude Code, so the
+    /// sessions were also indistinguishable to *each other*.
+    ///
+    /// A counter is not a name and is not pretending to be one. It is what
+    /// the list says before anyone has said anything better, and renaming —
+    /// by hand or by the agent itself — is the rest of the answer.
+    fn unique_title(&self, base: &str) -> String {
+        let taken: std::collections::HashSet<String> = self
+            .sessions
+            .lock()
+            .unwrap()
+            .values()
+            .map(|s| s.title.clone())
+            .collect();
+        if !taken.contains(base) {
+            return base.to_string();
+        }
+        (2..)
+            .map(|n| format!("{base} {n}"))
+            .find(|candidate| !taken.contains(candidate))
+            .unwrap_or_else(|| base.to_string())
+    }
+
     fn broadcast(&self) {
         let list = self.sessions();
         let waiting = list.iter().filter(|s| s.status.needs_you()).count();
@@ -5905,6 +6028,35 @@ mod tests {
         assert!(Some((2, 2, 0)) >= since);
         assert!(Some((2, 1, 223)) < since, "one release short must stay off");
         assert!(None::<(u64, u64, u64)> < since, "unknown must stay off");
+    }
+
+    /// A name is repaired, not refused.
+    ///
+    /// Half of these arrive from an agent's `curl` rather than a person's
+    /// keyboard, and the shapes below are what that actually produces: a
+    /// trailing newline from `echo`, a wrapped line from a heredoc, an escape
+    /// sequence from a terminal that thought it was talking to a screen. All
+    /// of them carry a perfectly good name, and rejecting one would leave the
+    /// row saying nothing about a session that just tried to say something.
+    #[test]
+    fn a_name_is_made_into_one_line_rather_than_turned_away() {
+        assert_eq!(clean_title("  改登入導向\n"), Some("改登入導向".into()));
+        assert_eq!(
+            clean_title("Fix the login\n   redirect"),
+            Some("Fix the login redirect".into())
+        );
+        assert_eq!(clean_title("bell\u{7}rings"), Some("bellrings".into()));
+
+        // Only nothing is nothing. A row whose name had been blanked is a row
+        // that can no longer be picked out at all.
+        assert_eq!(clean_title(""), None);
+        assert_eq!(clean_title("  \n\t "), None);
+
+        // Bounded, in characters rather than bytes — the cap is about how
+        // wide the row is, and 「改」 is one column-ish and three bytes.
+        let long = clean_title(&"改".repeat(200)).unwrap();
+        assert_eq!(long.chars().count(), MAX_TITLE);
+        assert_eq!(clean_title(&"x".repeat(200)).unwrap().len(), MAX_TITLE);
     }
 
     #[test]

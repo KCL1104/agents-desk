@@ -18,6 +18,7 @@ interface Props {
   onClose: (id: string) => void;
   onArchive: (id: string) => void;
   onComplete: (id: string, completed: boolean) => void;
+  onRename: (id: string, title: string) => void;
   onShowSettings: () => void;
 }
 
@@ -34,6 +35,7 @@ export function SessionList({
   onClose,
   onArchive,
   onComplete,
+  onRename,
   onShowSettings,
 }: Props) {
   const t = useT();
@@ -117,6 +119,7 @@ export function SessionList({
                     onClose={onClose}
                     onArchive={onArchive}
                     onComplete={onComplete}
+                    onRename={onRename}
                   />
                 ))}
             </div>
@@ -148,6 +151,7 @@ function Row({
   onClose,
   onArchive,
   onComplete,
+  onRename,
 }: {
   session: SessionMeta;
   active: boolean;
@@ -157,10 +161,12 @@ function Row({
   onClose: (id: string) => void;
   onArchive: (id: string) => void;
   onComplete: (id: string, completed: boolean) => void;
+  onRename: (id: string, title: string) => void;
 }) {
   const t = useT();
   const activity = s.activity;
   const since = elapsed(s.activity_since, now);
+  const [editing, setEditing] = useState(false);
 
   return (
     <div
@@ -171,6 +177,16 @@ function Row({
       // The label carries the status so AT hears which row is waiting.
       role="group"
       aria-label={`${s.title}${t('common.sep')}${t(STATUS_KEY[s.status])}${unseen ? `${t('common.sep')}${t('unseen.label')}` : ''}`}
+      // F2 renames, which is the shortcut the tab strip already answers to —
+      // one gesture for "give this thing a different name", wherever the
+      // thing is. Only when the row itself has focus: keys typed into the
+      // rename input bubble through here and belong to it.
+      onKeyDown={(e) => {
+        if (e.key !== 'F2' || editing) return;
+        if (!(e.target as HTMLElement).classList.contains('row-door')) return;
+        e.preventDefault();
+        setEditing(true);
+      }}
       // Dragging a row into the grid is the direct way to say which sessions
       // the layout should hold.
       draggable
@@ -181,19 +197,63 @@ function Row({
     >
       <div className="row-top">
         <span className={`dot ${s.status}`} />
-        {/* The door: a real button stretched over the whole row, so a click
-            anywhere enters and the keyboard gets one honest tab stop. The
-            title is what a person scans for; the directory is a hover away. */}
-        <button className="row-door row-title" title={s.cwd} onClick={() => onSelect(s.id)}>
-          {s.title}
-        </button>
+        {editing ? (
+          /* Same arrangement as the tab strip's rename, deliberately: the
+             input replaces the name in place, Enter commits through blur,
+             Escape puts the old name back and leaves the same way. */
+          <input
+            className="row-rename"
+            data-testid={`rename-${s.id}`}
+            autoFocus
+            aria-label={t('sidebar.rename')}
+            defaultValue={s.title}
+            onBlur={(e) => {
+              const next = e.target.value.trim();
+              if (next && next !== s.title) onRename(s.id, next);
+              setEditing(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+              if (e.key === 'Escape') {
+                e.currentTarget.value = s.title;
+                e.currentTarget.blur();
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          /* The door: a real button stretched over the whole row, so a click
+             anywhere enters and the keyboard gets one honest tab stop. The
+             title is what a person scans for; the directory is a hover away.
+             Double-click renames — the gesture every list of named things
+             has, and the one the tabs above already answer to. */
+          <button
+            className="row-door row-title"
+            title={s.cwd}
+            onClick={() => onSelect(s.id)}
+            onDoubleClick={() => setEditing(true)}
+          >
+            {s.title}
+          </button>
+        )}
         {/* Finished behind your back — unread until its terminal has been
             in front of you. The label rides the aria-label above. */}
         {unseen && (
           <span className="unseen-dot" data-testid={`unseen-${s.id}`} title={t('unseen.label')} />
         )}
         <span className="row-actions">
-          {/* aria-label 與 title 同一句：字形（✓ ↩ ✕）不是可朗讀的名字。 */}
+          {/* aria-label 與 title 同一句：字形（✎ ✓ ↩ ✕）不是可朗讀的名字。 */}
+          <button
+            className="row-action"
+            aria-label={t('sidebar.renameHint')}
+            title={t('sidebar.renameHint')}
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditing(true);
+            }}
+          >
+            ✎
+          </button>
           <button
             className="row-action"
             aria-label={s.completed ? t('sidebar.unmarkDone') : t('sidebar.markDone')}

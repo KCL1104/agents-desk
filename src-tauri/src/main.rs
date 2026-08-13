@@ -347,6 +347,16 @@ fn archive_session(state: State<'_, AppState>, id: String) -> StdResult<(), Stri
     state.core()?.archive_session(&id).map_err(|e| e.to_string())
 }
 
+/// Rename a session's row. The same door the agent's own naming goes through
+/// — see `Core::rename_session` for what a rename does and does not reach.
+#[tauri::command]
+fn rename_session(state: State<'_, AppState>, id: String, title: String) -> StdResult<(), String> {
+    state
+        .core()?
+        .rename_session(&id, &title)
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn list_tabs(state: State<'_, AppState>) -> StdResult<Vec<store::StoredTab>, String> {
     Ok(state.core()?.tabs())
@@ -1118,6 +1128,7 @@ fn main() {
             term_snapshot,
             close_session,
             archive_session,
+            rename_session,
             set_completed,
             list_sessions,
             list_tabs,

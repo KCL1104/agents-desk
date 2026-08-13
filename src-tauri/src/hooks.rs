@@ -95,6 +95,27 @@ pub struct HookReport {
     pub transcript_path: Option<String>,
 }
 
+/// A session saying what it should be called.
+///
+/// The other direction of the same channel the status hooks use, and the only
+/// thing on it that is not a status. It arrives from the agent's own shell
+/// rather than from a hook the CLI fires, so the session id is already in the
+/// URL: nothing has to expand, and `cmd.exe` cannot lose it.
+///
+/// Unlike a status report there is no falling back on the working directory
+/// here. A status report that cannot be placed is a gap in a status; a name
+/// landing on the wrong session renames somebody else's card, and two agents
+/// sharing a directory is exactly the situation this app is built for.
+#[derive(Debug, Clone)]
+pub struct NameReport {
+    /// Which session is naming itself. Baked into the URL that was handed to
+    /// the session, so it is here whenever the URL was not edited.
+    pub session_id: String,
+    /// What it wants to be called, exactly as the body carried it. Cleaning
+    /// it is the core's business — the same cleaning a person's rename gets.
+    pub name: String,
+}
+
 /// What one world needs in order to point a CLI at this listener.
 ///
 /// Both halves are per-world, not per-session: an SSH host gets a plugin
@@ -110,8 +131,29 @@ pub struct Wiring {
     pub url: String,
 }
 
+/// The URL a session posts its own name to.
+///
+/// One session's address, not a world's: the id is in the query rather than
+/// left for a shell to expand, so the whole thing can be handed over as a
+/// single environment variable and used verbatim. That is the difference
+/// between an agent that can name itself in one line and one that has to
+/// compose a URL correctly under whichever shell it happens to have.
+pub fn name_url(hook_url: &str, session_id: &str) -> String {
+    format!("{hook_url}?sid={session_id}&set=name")
+}
+
+/// What arrived on the listener: a status report, or a session naming itself.
+pub enum Incoming {
+    Status(HookReport),
+    Name(NameReport),
+}
+
 pub trait HookHandler: Send + Sync + 'static {
     fn on_hook(&self, report: HookReport);
+
+    /// A session saying what it should be called. Ignored by default, so a
+    /// handler that only cares about status stays as short as it was.
+    fn on_name(&self, _report: NameReport) {}
 }
 
 pub struct HookServer {
@@ -276,9 +318,18 @@ pub async fn start(data_dir: &Path, handler: Arc<dyn HookHandler>) -> Result<Hoo
 /// clients are Claude Code's own hook runner and our `curl` one-liner, and the
 /// reply is always the same. Every request is answered 200 so a hook never
 /// fails and never blocks the agent.
+///
+/// The route carries two kinds of message now — a status report, and a
+/// session saying what it should be called — told apart by `set=name` in the
+/// query. One route rather than two because the *token* is the hard part:
+/// it survives restarts, rides a WSL mount and an SSH tunnel, and every one
+/// of those arrangements already knows this URL. A second endpoint would have
+/// had to be taught all of it again.
 async fn serve(mut stream: tokio::net::TcpStream, want_prefix: &str, handler: Arc<dyn HookHandler>) {
-    if let Some(report) = read_request(&mut stream, want_prefix).await {
-        handler.on_hook(report);
+    match read_request(&mut stream, want_prefix).await {
+        Some(Incoming::Status(report)) => handler.on_hook(report),
+        Some(Incoming::Name(report)) => handler.on_name(report),
+        None => {}
     }
     let _ = stream
         .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
@@ -289,7 +340,7 @@ async fn serve(mut stream: tokio::net::TcpStream, want_prefix: &str, handler: Ar
 async fn read_request(
     stream: &mut tokio::net::TcpStream,
     want_prefix: &str,
-) -> Option<HookReport> {
+) -> Option<Incoming> {
     // Read until the headers are complete.
     let mut buf = Vec::with_capacity(8 * 1024);
     let mut chunk = [0u8; 8 * 1024];
@@ -338,12 +389,17 @@ async fn read_request(
     }
 
     let mut state = None;
+    let mut naming = false;
     if let Some(query) = target.split_once('?').map(|(_, q)| q) {
         for pair in query.split('&') {
             match pair.split_once('=') {
                 Some(("sid", v)) if !v.is_empty() => session_id.get_or_insert(v.to_string()),
                 Some(("state", v)) => {
                     state = HookState::parse(v);
+                    continue;
+                }
+                Some(("set", "name")) => {
+                    naming = true;
                     continue;
                 }
                 _ => continue,
@@ -372,6 +428,19 @@ async fn read_request(
         }
     }
 
+    // A name is not a hook payload: the body is the name, as plain text, so
+    // an agent can send one without composing JSON or percent-encoding a
+    // query. Handled before the JSON parse for that reason — there is
+    // nothing here for `serde_json` to read.
+    if naming {
+        let name = String::from_utf8_lossy(&body).trim().to_string();
+        let session_id = session_id.filter(|s| expanded(s))?;
+        if name.is_empty() {
+            return None;
+        }
+        return Some(Incoming::Name(NameReport { session_id, name }));
+    }
+
     let payload = serde_json::from_slice::<serde_json::Value>(&body).ok();
     let activity = payload.as_ref().and_then(activity_from_payload);
     let str_field = |key: &str| {
@@ -390,13 +459,13 @@ async fn read_request(
         return None;
     }
 
-    Some(HookReport {
+    Some(Incoming::Status(HookReport {
         session_id,
         cwd,
         state: state?,
         activity,
         transcript_path: str_field("transcript_path"),
-    })
+    }))
 }
 
 /// Whether a session id is a session id rather than the name of one.
@@ -621,7 +690,7 @@ pub fn plugin_files(url: &str) -> Vec<(&'static str, String)> {
     let manifest = serde_json::json!({
         "name": "marol-status",
         "version": env!("CARGO_PKG_VERSION"),
-        "description": "Reports session status to the Marol window. Adds no tools and changes no behaviour."
+        "description": "Reports session status to the Marol window, and lets a session say what it should be called there. Adds no tools and changes nothing about how the agent works."
     });
     vec![
         (
@@ -632,8 +701,70 @@ pub fn plugin_files(url: &str) -> Vec<(&'static str, String)> {
             "hooks/hooks.json",
             serde_json::to_string_pretty(&hooks_json(url)).unwrap_or_default(),
         ),
+        ("skills/name-this-session/SKILL.md", NAME_SKILL.to_string()),
     ]
 }
+
+/// The one thing in the plugin that is not a hook.
+///
+/// A skill rather than a hook because naming is a judgement, and the only
+/// party who knows what this session turned out to be about is the agent
+/// running in it. It is offered, never required: a session that never uses it
+/// keeps the name Marol gave it, which is what every session did before this
+/// existed.
+///
+/// **What it costs, measured rather than assumed.** Claude Code 2.1.229,
+/// `claude --plugin-dir <this> plugin details marol-status`: one skill, ~90
+/// tokens always-on in every session, ~430 more on the turn it fires. The
+/// hooks beside it are harness-only and cost the model nothing — so this file
+/// is the first thing this app has ever put in an agent's context, and the
+/// number is here because a claim of that shape should be checkable.
+///
+/// **No URL is baked in.** `hooks.json` is a photograph — Claude Code reads it
+/// once, so the endpoint had to be stable across restarts for it to keep
+/// working. This file is read by the agent at the moment it acts, so it can
+/// point at the environment instead, and `$MAROL_NAME_URL` is already this
+/// session's own address with its id in it. One variable, used verbatim: no
+/// composing a URL under whichever shell the platform has.
+///
+/// It renames the row on the person's board and nothing else. The name the
+/// CLI itself answers to for cross-session messaging was fixed by `--name` at
+/// launch and cannot be changed from inside a running session — so this says
+/// so, rather than implying an address that would not work.
+const NAME_SKILL: &str = r#"---
+name: name-this-session
+description: Name this session on the Marol board, so the person running several agents at once can tell at a glance which row is this piece of work. Use once you know what the session is actually about — after reading the request, or when the work turns out to be something other than what it was opened for.
+---
+
+# Name this session
+
+This session is running in a Marol window, beside other agents. Its row there
+carries a name, and by default that name is whatever Marol could tell from the
+outside: the card's title, or the folder the terminal opened in. Several
+sessions in one directory therefore look alike, which is the problem this
+solves.
+
+Set it with one request:
+
+```bash
+curl -sS --max-time 2 -X POST "$MAROL_NAME_URL" --data-binary "Fix the login redirect"
+```
+
+- `$MAROL_NAME_URL` is already this session's own address. Use it exactly as
+  it is; do not build a URL out of its parts.
+- The body is the name, as plain text. No JSON, no escaping.
+- Short and concrete beats complete: it is read in a narrow sidebar, at a
+  glance, next to a dozen others. Say the work, not the repository — the row
+  already shows where it is.
+- Say it in the language the person is speaking to you in.
+- If `$MAROL_NAME_URL` is unset, this session is not wired for it. Do nothing
+  and do not mention it.
+
+Naming again replaces the name; do it when the work changes, not on a timer.
+The rename lands on the person's board immediately. It does not change the
+name the CLI answers to for messages from other sessions, which was fixed when
+this session started.
+"#;
 
 /// Write (or refresh) the plugin so an app upgrade updates the hooks too.
 ///
@@ -846,6 +977,133 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(a.detail.chars().count(), 160);
+    }
+
+    /* ----------------------------- naming ---------------------------- */
+
+    #[derive(Default)]
+    struct Heard {
+        names: std::sync::Mutex<Vec<(String, String)>>,
+        states: std::sync::Mutex<Vec<HookState>>,
+    }
+
+    impl HookHandler for Heard {
+        fn on_hook(&self, r: HookReport) {
+            self.states.lock().unwrap().push(r.state);
+        }
+        fn on_name(&self, r: NameReport) {
+            self.names.lock().unwrap().push((r.session_id, r.name));
+        }
+    }
+
+    /// One POST, spelled by hand so the test proves what is on the wire
+    /// rather than what a client library thinks it means.
+    async fn post(url: &str, body: &str) {
+        let rest = url.strip_prefix("http://").unwrap();
+        let (authority, target) = rest.split_once('/').unwrap();
+        let mut s = tokio::net::TcpStream::connect(authority).await.unwrap();
+        let req = format!(
+            "POST /{target} HTTP/1.1\r\nhost: {authority}\r\n\
+             content-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        s.write_all(req.as_bytes()).await.unwrap();
+        let mut buf = Vec::new();
+        let _ = s.read_to_end(&mut buf).await;
+    }
+
+    /// The whole naming path, on a real listener.
+    ///
+    /// It shares a route with the status reports on purpose — the token, the
+    /// remembered port, the WSL mount and the SSH tunnel all know that one
+    /// URL already — so the thing worth proving is that the two kinds of
+    /// message stay told apart, and that everything which could put a name on
+    /// the wrong row drops it instead.
+    #[test]
+    fn a_session_names_itself_over_the_endpoint_the_hooks_already_use() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let dir = std::env::temp_dir().join(format!("marol-naming-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            let heard = Arc::new(Heard::default());
+            let server = start(&dir, Arc::clone(&heard) as Arc<dyn HookHandler>)
+                .await
+                .unwrap();
+            let base = server.url();
+
+            // The ordinary case: the variable the session was handed, used
+            // verbatim, with the name as the body. `curl --data-binary` sends
+            // no trailing newline; a person's `echo` would, and either is a
+            // perfectly good name.
+            post(&name_url(&base, "sess-1"), "Fix the login redirect\n").await;
+            post(&name_url(&base, "sess-2"), "改登入導向").await;
+
+            // Nothing to say is not a rename. A row whose name had been
+            // blanked would be a row you could no longer pick out at all.
+            post(&name_url(&base, "sess-3"), "   ").await;
+
+            // A URL the shell never expanded — `cmd.exe` leaves the literal
+            // text — would file the name under a session that cannot exist.
+            post(&name_url(&base, "$MAROL_SESSION_ID"), "nowhere").await;
+
+            // No id at all: there is no working directory to fall back on
+            // here, and guessing would rename somebody else's card.
+            post(&format!("{base}?set=name"), "unaddressed").await;
+
+            // Someone else's token is someone else's business.
+            let forged = base.replace("/h/", "/h/x") + "?sid=sess-9&set=name";
+            post(&forged, "forged").await;
+
+            // And the status route is untouched by any of it.
+            post(&format!("{base}?sid=sess-1&state=idle"), "{}").await;
+
+            server.stop();
+            let names = heard.names.lock().unwrap().clone();
+            assert_eq!(
+                names,
+                vec![
+                    ("sess-1".to_string(), "Fix the login redirect".to_string()),
+                    ("sess-2".to_string(), "改登入導向".to_string()),
+                ],
+                "a name landed somewhere it should not have, or one was lost"
+            );
+            assert_eq!(*heard.states.lock().unwrap(), vec![HookState::Idle]);
+            let _ = std::fs::remove_dir_all(&dir);
+        });
+    }
+
+    /// The address is one variable, not a recipe.
+    ///
+    /// It carries the session's own id because the alternative is asking an
+    /// agent to compose a URL under whichever shell the platform handed it —
+    /// which is the exact failure `expanded` exists to catch on the hook
+    /// side, and there is no need to invite it twice.
+    #[test]
+    fn the_name_url_is_one_sessions_whole_address() {
+        assert_eq!(
+            name_url(URL, "abc-123"),
+            "http://127.0.0.1:1234/h/tok?sid=abc-123&set=name"
+        );
+    }
+
+    /// The plugin's one non-hook file, and the two things about it that are
+    /// load-bearing: it reads the endpoint out of the environment at the
+    /// moment it acts (unlike `hooks.json`, which is a photograph), and it
+    /// tells the agent to use that variable whole.
+    #[test]
+    fn the_naming_skill_points_at_the_environment_rather_than_a_baked_url() {
+        let files = plugin_files(URL);
+        let (_, skill) = files
+            .iter()
+            .find(|(rel, _)| *rel == "skills/name-this-session/SKILL.md")
+            .expect("the plugin ships the naming skill");
+        assert!(skill.starts_with("---\nname: name-this-session\n"));
+        assert!(skill.contains("description:"), "a skill with no description is never reached");
+        assert!(skill.contains("$MAROL_NAME_URL"));
+        assert!(
+            !skill.contains(URL) && !skill.contains("127.0.0.1"),
+            "a URL baked into the skill would go stale the way hooks.json cannot afford to"
+        );
     }
 
     /* ----------------------------- codex ----------------------------- */

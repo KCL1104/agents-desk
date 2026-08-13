@@ -317,8 +317,9 @@ test('J4 · the accessibility contract, end to end under reduced motion', async 
     const row = page.getByTestId('session-s95');
     await expect(row).toHaveAttribute('role', 'group');
     await expect(row).toHaveAttribute('aria-label', '背景重構 #1，執行中');
-    await expect(row.locator('.row-action').nth(0)).toHaveAccessibleName('標記為完成');
-    await expect(row.locator('.row-action').nth(1)).toHaveAccessibleName('關閉終端機');
+    await expect(row.locator('.row-action').nth(0)).toHaveAccessibleName('改名（F2）');
+    await expect(row.locator('.row-action').nth(1)).toHaveAccessibleName('標記為完成');
+    await expect(row.locator('.row-action').nth(2)).toHaveAccessibleName('關閉終端機');
 
     // (b) 一個跑著的 session 不是要朗讀的事;(a) 焦點仍在 <body>。
     await expect(live).not.toContainText('背景重構');

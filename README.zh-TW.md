@@ -162,6 +162,15 @@ review 迴圈最常見的收尾是一行小修，所以 diff 直接讓你修。`
   口的名字去找另一張卡的 agent。送出的訊息會落在活動時間軸上。啟動時探測
   一次 `claude --version` 做版本閘門，因為舊版 CLI 遇到不認識的 flag 會直接
   拒絕啟動
+- **名字可以改，session 也可以自己取名**：有卡片的 session 叫卡片的名字；
+  沒有卡片的終端機以前只能叫它開在哪個目錄，所以同一個 checkout 裡開幾個
+  就有幾列寫著同一個字。現在它們會自己往上數（`repo`、`repo 2`），更重要的
+  是可以改名：在側欄或總覽上雙擊那一列、按 F2，或按 ✎。session 裡的 agent
+  也可以自己設——它的 plugin 帶一個 skill，而 `$MAROL_NAME_URL` 就是這個
+  session 在狀態 hooks 本來就在用的那個 listener 上的位址，所以
+  `curl -X POST "$MAROL_NAME_URL" --data-binary "改登入導向"` 就是全部了。
+  改名立刻反映在桌面上；至於別的 session 拿來傳訊息的那個 `--name`，它釘在
+  一條已經跑起來的命令列上，所以要等這個 session 下次啟動才會換
 - **活得比 app 久的 session**：agent 的 session 由 `tmux` 扛著，一個 session
   一個 socket，而且是在它自己所在的世界裡——本機、WSL distro、SSH host 都算。
   關掉 Marol 是斷開，不是殺掉。重開卡片會接回那個一直在跑的 agent（見下）
@@ -760,13 +769,19 @@ Linux、macOS、Windows 三個平台都跑：
 多開 session 時你唯一真正需要的資訊是「哪一個在等我」。取得方式是請 agent
 自己回報，不是去解析畫面，因為解析 ANSI 會在 TUI 改版時無聲壞掉。
 
-App 啟動時做兩件事：在 loopback 開一個小 HTTP listener，以及把一份只含 hooks
-的 plugin 寫到資料目錄。每個 session 都被注入 `MAROL_SESSION_ID`，並用它那支
+App 啟動時做兩件事：在 loopback 開一個小 HTTP listener，以及把一份 plugin
+寫到資料目錄。每個 session 都被注入 `MAROL_SESSION_ID`，並用它那支
 CLI 自己提供的方式指向那個 listener —— Claude Code 用 `--plugin-dir` 載入
 plugin，Codex 收 `-c hooks.*` 覆寫，那是只屬於這一次啟動的設定、不碰磁碟上
 任何檔案。兩種都不寫進你自己的設定檔，因為一個會去改
 `~/.claude/settings.json` 或 `~/.codex/config.toml` 的 app，就是一個能悄悄
 關掉你自己寫的 hooks 的 app。
+
+這份 plugin 是 hooks，加一個 skill。hooks 只跑在 harness 上，不花模型任何
+context；那個 skill 是 session 用來幫自己取名的，也是這個 app 有史以來唯一
+放進 agent context 的東西——在 Claude Code 2.1.229 上用
+`claude --plugin-dir … plugin details marol-status` 量到每個 session 約 90
+tokens。寫在這裡是因為這種形狀的主張應該可以被查證，而不是被宣稱。
 
 | Hook 事件 | 回報狀態 | |
 |---|---|---|

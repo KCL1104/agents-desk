@@ -95,7 +95,7 @@ struct Harness {
 /// test's boot by the probe's timeout.
 const STUB: &str = r#"#!/bin/bash
 if [ "$1" = "--version" ]; then echo "2.1.226 (Claude Code)"; exit 0; fi
-printf '%s\0' "$PWD" "$@" > "$MAROL_STUB_LOG/${MAROL_SESSION_ID:-unknown}.$$"
+printf '%s\0' "$PWD" "${MAROL_NAME_URL:-}" "$@" > "$MAROL_STUB_LOG/${MAROL_SESSION_ID:-unknown}.$$"
 # 宣告它所替身的那個 CLI 真的會宣告的模式:Claude Code 開啟 bracketed
 # paste(DECSET 2004),而 `bracketed_followup` 只送給量測過會開它的 CLI。
 # 這一行之前 stub 是個沉默的位元組水槽,而任何會照 2004 決定要不要轉發
@@ -113,7 +113,7 @@ exec cat > "$MAROL_STUB_LOG/stdin.${MAROL_SESSION_ID:-unknown}.$$"
 /// that shape pass.
 const CODEX_STUB: &str = r#"#!/bin/bash
 if [ "$1" = "--version" ]; then echo "codex-cli 0.147.0"; exit 0; fi
-printf '%s\0' "$PWD" "$@" > "$MAROL_STUB_LOG/${MAROL_SESSION_ID:-unknown}.$$"
+printf '%s\0' "$PWD" "${MAROL_NAME_URL:-}" "$@" > "$MAROL_STUB_LOG/${MAROL_SESSION_ID:-unknown}.$$"
 printf '\033[?2004h'
 exec cat > "$MAROL_STUB_LOG/stdin.${MAROL_SESSION_ID:-unknown}.$$"
 "#;
@@ -122,7 +122,7 @@ exec cat > "$MAROL_STUB_LOG/stdin.${MAROL_SESSION_ID:-unknown}.$$"
 /// given for the tests that assert it was given nothing of ours.
 const UNMEASURED_STUB: &str = r#"#!/bin/bash
 if [ "$1" = "--version" ]; then echo "0.9.0"; exit 0; fi
-printf '%s\0' "$PWD" "$@" > "$MAROL_STUB_LOG/${MAROL_SESSION_ID:-unknown}.$$"
+printf '%s\0' "$PWD" "${MAROL_NAME_URL:-}" "$@" > "$MAROL_STUB_LOG/${MAROL_SESSION_ID:-unknown}.$$"
 exec cat > "$MAROL_STUB_LOG/stdin.${MAROL_SESSION_ID:-unknown}.$$"
 "#;
 
@@ -130,7 +130,7 @@ exec cat > "$MAROL_STUB_LOG/stdin.${MAROL_SESSION_ID:-unknown}.$$"
 /// What matters is what it is NOT handed: `--name` would stop it starting.
 const OLD_STUB: &str = r#"#!/bin/bash
 if [ "$1" = "--version" ]; then echo "2.0.14 (Claude Code)"; exit 0; fi
-printf '%s\0' "$PWD" "$@" > "$MAROL_STUB_LOG/${MAROL_SESSION_ID:-unknown}.$$"
+printf '%s\0' "$PWD" "${MAROL_NAME_URL:-}" "$@" > "$MAROL_STUB_LOG/${MAROL_SESSION_ID:-unknown}.$$"
 exec cat > "$MAROL_STUB_LOG/stdin.${MAROL_SESSION_ID:-unknown}.$$"
 "#;
 
@@ -335,7 +335,10 @@ exec "$@"
                     if parts.last().is_some_and(|s| s.is_empty()) {
                         parts.pop();
                     }
-                    if parts.is_empty() {
+                    // The working directory and the naming endpoint, then
+                    // argv. A record missing either header is a half-written
+                    // file caught mid-`printf`, not a launch.
+                    if parts.len() < 2 {
                         continue;
                     }
                     let when = e.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
@@ -343,6 +346,7 @@ exec "$@"
                         when,
                         Launch {
                             cwd: parts.remove(0),
+                            name_url: parts.remove(0),
                             args: parts,
                         },
                     ));
@@ -364,6 +368,50 @@ exec "$@"
 
     fn args_of(&self, session_id: &str) -> Vec<String> {
         self.launches(session_id, 1).pop().unwrap().args
+    }
+
+    /// Wait until nothing is holding this session's terminal any more.
+    ///
+    /// `close_session` asks tmux to end the server and returns; the server
+    /// exits on its own time. Opening the session again inside that window
+    /// finds the old one still answering, and `new-session -A -D` attaches to
+    /// it — which drops the argv and is exactly not a start. A person takes
+    /// long enough over the two clicks that this never bites them; a test
+    /// doing both in the same microsecond has to say what it is waiting for.
+    ///
+    /// A world with no tmux holds nothing, so there is nothing to wait for
+    /// and the first look already says so.
+    fn wait_unheld(&self, id: &str) {
+        let tag = pty::desk_tag(&self.root.join("data").to_string_lossy());
+        let sock = pty::hold_socket(&tag, id);
+        let alive = || {
+            std::process::Command::new("tmux")
+                .args(["-L", &sock, "has-session", "-t", "agent"])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
+        assert!(
+            wait_for(Duration::from_secs(10), || !alive()),
+            "the holder for {id} never let go",
+        );
+    }
+
+    /// One session's row as the list has it right now.
+    fn session(&self, id: &str) -> crate::core::SessionMeta {
+        self.core
+            .sessions()
+            .into_iter()
+            .find(|s| s.id == id)
+            .unwrap_or_else(|| panic!("no session {id} on the list"))
+    }
+
+    /// The title, once it is the one expected. A name arriving from the
+    /// listener leaves the hook path for a thread before it touches the
+    /// store, so reading straight after the POST is a race.
+    fn wait_for_title(&self, id: &str, want: &str) -> String {
+        wait_for(Duration::from_secs(5), || self.session(id).title == want);
+        self.session(id).title
     }
 
     /// Post a hook report the way Claude Code's own hook runner would.
@@ -470,6 +518,23 @@ exec "$@"
     }
 }
 
+/// A session naming itself, spelled the way the skill tells it to: the whole
+/// address as one string, the name as the plain-text body.
+fn post_name(url: &str, name: &str) {
+    use std::io::{Read as _, Write as _};
+    let rest = url.trim_start_matches("http://");
+    let (addr, target) = rest.split_once('/').expect("url has a path");
+    let mut sock = std::net::TcpStream::connect(addr).expect("connect to the hook listener");
+    let req = format!(
+        "POST /{target} HTTP/1.1\r\nHost: localhost\r\ncontent-length: {}\r\n\r\n{name}",
+        name.len()
+    );
+    sock.write_all(req.as_bytes()).unwrap();
+    let mut resp = String::new();
+    let _ = sock.read_to_string(&mut resp);
+    assert!(resp.starts_with("HTTP/1.1 200"), "the name was not answered: {resp}");
+}
+
 /// Poll until `done`, for the things another thread makes true.
 fn wait_for(timeout: Duration, mut done: impl FnMut() -> bool) -> bool {
     let deadline = Instant::now() + timeout;
@@ -484,6 +549,10 @@ fn wait_for(timeout: Duration, mut done: impl FnMut() -> bool) -> bool {
 
 struct Launch {
     cwd: String,
+    /// Where this session was told to post its own name, out of the
+    /// environment the process actually got. Empty when the world had no
+    /// listener to point at — which is the honest answer, not a failure.
+    name_url: String,
     args: Vec<String>,
 }
 
@@ -2114,7 +2183,7 @@ impl SshFixture {
                 }
                 let body = format!(
                     "#!/bin/bash\nif [ \"$1\" = \"--version\" ]; then echo \"2.1.226 (Claude Code)\"; exit 0; fi\n\
-                     printf '%s\\0' \"$PWD\" \"$@\" > \"{logs}/${{MAROL_SESSION_ID:-unknown}}.$$\"\n\
+                     printf '%s\\0' \"$PWD\" \"${{MAROL_NAME_URL:-}}\" \"$@\" > \"{logs}/${{MAROL_SESSION_ID:-unknown}}.$$\"\n\
                      exec cat > \"{logs}/stdin.${{MAROL_SESSION_ID:-unknown}}.$$\"\n",
                     logs = logs.display()
                 );
@@ -2346,6 +2415,140 @@ fn an_older_claude_is_not_handed_the_name_flag() {
     // Everything else about the session is untouched by the gate.
     assert_eq!(args.last(), Some(&a.prompt));
     assert!(args.iter().any(|x| x == "--plugin-dir"));
+}
+
+/* --------------------------- naming a session -------------------------- */
+
+/// The name on the row is the person's to change.
+///
+/// A session opened without a card can only be called after its directory,
+/// and that is frequently the same directory as the session beside it. The
+/// rename is the way out, and it has to survive a restart or it is a label
+/// rather than a name.
+#[test]
+fn a_session_can_be_renamed_and_the_name_outlives_the_desk() {
+    let h = Harness::new("rename");
+    let _guard = h.rt.enter();
+    let id = h
+        .core
+        .new_session(h.repo.to_string_lossy().into(), "claude".into(), vec![], 100, 30)
+        .unwrap();
+    assert_eq!(h.session(&id).title, "repo");
+    // Waited for on purpose, and not only to read the name off the command
+    // line: closing a session in the microsecond before its holder has
+    // finished coming up is a race with tmux, not with this feature.
+    let first = h.args_of(&id);
+    assert!(first.windows(2).any(|w| w[0] == "--name" && w[1] == "repo"), "{first:?}");
+
+    h.core.rename_session(&id, "  改登入導向\n ").unwrap();
+    // Repaired rather than refused: the surrounding whitespace goes, the
+    // name stays.
+    assert_eq!(h.session(&id).title, "改登入導向");
+
+    // Nothing is not a name. The old one is kept rather than blanked, which
+    // would leave a row nobody could pick out.
+    assert!(h.core.rename_session(&id, "   ").is_err());
+    assert_eq!(h.session(&id).title, "改登入導向");
+
+    // The name the CLI answers to is fixed on a running command line, so the
+    // rename reaches it at the session's next start — the one claim about
+    // this that could quietly stop being true. Closing tears the holder down
+    // too, so reopening is a start rather than a reattach.
+    h.core.close_session(&id).unwrap();
+    h.wait_unheld(&id);
+    h.core.reopen_session(&id, 100, 30).unwrap();
+    let again = h.launches(&id, 2).pop().unwrap().args;
+    assert!(
+        again.windows(2).any(|w| w[0] == "--name" && w[1] == "改登入導向"),
+        "the second start still answered to the old name: {again:?}"
+    );
+
+    h.core.shutdown();
+    let core2 = h
+        .rt
+        .block_on(Core::start_with(
+            h.env.clone(),
+            Arc::new(Events::default()) as Arc<dyn UiSink>,
+            h.root.join("marol.db"),
+            h.root.join("data"),
+            h.root.join("worktrees"),
+        ))
+        .expect("second core");
+    let restored = core2
+        .sessions()
+        .into_iter()
+        .find(|s| s.id == id)
+        .expect("the session is still on the list");
+    assert_eq!(restored.title, "改登入導向", "the rename did not reach the disk");
+}
+
+/// The other half of the same fact: the agent in the session can set it.
+///
+/// It goes through the listener the status hooks already use, addressed by
+/// the one variable the session was launched with — so an agent that has
+/// worked out what it is actually doing can say so on the board without a
+/// person typing it in.
+#[test]
+fn an_agent_names_its_own_session_through_the_endpoint_it_was_given() {
+    let h = Harness::new("selfname");
+    let _guard = h.rt.enter();
+    let task = h.card("修好登入", "make it work");
+    let a = h.start(&task, "claude");
+    assert_eq!(h.session(&a.session_id).title, "修好登入 #1");
+
+    // The address the session was actually handed, read back out of the
+    // environment the process got rather than reconstructed here.
+    let url = h.launches(&a.session_id, 1).pop().unwrap().name_url;
+    assert!(!url.is_empty(), "the session was launched without an address to name itself at");
+    assert!(url.contains(&format!("sid={}", a.session_id)), "{url}");
+
+    post_name(&url, "改 session 端的導向\n");
+    assert_eq!(h.wait_for_title(&a.session_id, "改 session 端的導向"), "改 session 端的導向");
+
+    // And it reaches the disk on the same terms a person's rename does.
+    let stored = h
+        .core
+        .sessions()
+        .into_iter()
+        .find(|s| s.id == a.session_id)
+        .unwrap();
+    assert_eq!(stored.title, "改 session 端的導向");
+
+    // A name for a session this desk does not have is dropped rather than
+    // landing on a neighbour.
+    let stray = url.replace(&a.session_id, "00000000-0000-0000-0000-000000000000");
+    post_name(&stray, "somebody else's");
+    assert_eq!(h.session(&a.session_id).title, "改 session 端的導向");
+}
+
+/// Three terminals in one checkout is the ordinary thing to do here, and it
+/// used to produce three rows saying the same word — on screen, and in the
+/// `--name` each one answers to for messages from the others.
+#[test]
+fn ad_hoc_sessions_in_one_directory_do_not_all_answer_to_one_name() {
+    let h = Harness::new("dupname");
+    let _guard = h.rt.enter();
+    let cwd: String = h.repo.to_string_lossy().into();
+    let ids: Vec<String> = (0..3)
+        .map(|_| {
+            h.core
+                .new_session(cwd.clone(), "claude".into(), vec![], 100, 30)
+                .unwrap()
+        })
+        .collect();
+
+    let titles: Vec<String> = ids.iter().map(|id| h.session(id).title).collect();
+    assert_eq!(titles, vec!["repo", "repo 2", "repo 3"]);
+
+    // The counter is not decoration: it is what the CLI answers to, so two
+    // sessions can address each other at all.
+    for (id, title) in ids.iter().zip(&titles) {
+        let args = h.args_of(id);
+        assert!(
+            args.windows(2).any(|w| w[0] == "--name" && &w[1] == title),
+            "{title} is not the name it launched with: {args:?}"
+        );
+    }
 }
 
 /* ------------------------------ profiles ------------------------------- */

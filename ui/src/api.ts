@@ -132,6 +132,12 @@ export const api = {
 
   closeSession: (id: string) => invoke<void>('close_session', { id }),
   archiveSession: (id: string) => invoke<void>('archive_session', { id }),
+  /** Rename a session's row. The same door the agent in the session uses when
+      it names itself — see `Core::rename_session` for what a rename reaches
+      (the board now) and what it does not (the name the CLI answers to for
+      cross-session messages, which is fixed until the session restarts). */
+  renameSession: (id: string, title: string) =>
+    invoke<void>('rename_session', { id, title }),
   setCompleted: (id: string, completed: boolean) =>
     invoke<void>('set_completed', { id, completed }),
   listSessions: () => invoke<SessionMeta[]>('list_sessions'),

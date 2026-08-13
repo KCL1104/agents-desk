@@ -188,6 +188,17 @@ pixel for pixel, beside a plain test runner.
   「修好登入 #1」. Sent messages land on the Activity timeline. Version-gated by
   probing `claude --version` once at startup, because an older CLI refuses to
   start on an unknown flag
+- **A name you can change, and a session that can name itself**: a card's
+  session is called what the card is; a terminal opened without one could only
+  be called after its directory, so several in a checkout were several rows
+  saying the same word. They now count up (`repo`, `repo 2`) and, more to the
+  point, rename: double-click the row, F2, or ✎, in the sidebar or the
+  overview. The agent in the session can set it too — its plugin carries one
+  skill, and `$MAROL_NAME_URL` is that session's own address on the listener
+  the status hooks already use, so `curl -X POST "$MAROL_NAME_URL" --data-binary
+  "Fix the login redirect"` is the whole of it. A rename reaches the board at
+  once; it reaches the `--name` other sessions message, which is fixed on a
+  running command line, at that session's next start
 - **Sessions that outlive the app**: agent sessions are held in `tmux`, one
   socket each, in whichever world they run in — this machine, a WSL distro, or
   an SSH host. Quitting Marol detaches; it does not kill. Reopening the
@@ -922,13 +933,20 @@ from parsing the screen, because parsing ANSI breaks silently whenever the TUI
 changes.
 
 At startup the app does two things: opens a small HTTP listener on loopback,
-and writes a hooks-only plugin into its data directory. Every session gets
+and writes a plugin into its data directory. Every session gets
 `MAROL_SESSION_ID` injected and is pointed at that listener the way its own
 CLI offers — Claude Code loads the plugin with `--plugin-dir`, Codex takes
 `-c hooks.*` overrides, which is config for one launch touching nothing on
 disk. Neither writes into your own configuration, because an app that edits
 `~/.claude/settings.json` or `~/.codex/config.toml` is an app that can
 silently switch off the hooks you wrote for yourself.
+
+The plugin is hooks and one skill. The hooks are harness-only and cost the
+model nothing; the skill is how a session names itself, and it is the only
+thing this app has ever put in an agent's context — `claude --plugin-dir …
+plugin details marol-status` on Claude Code 2.1.229 prices it at ~90 tokens
+per session, which is here because a claim of that shape should be checkable
+rather than asserted.
 
 | Hook event | Reported status | |
 |---|---|---|

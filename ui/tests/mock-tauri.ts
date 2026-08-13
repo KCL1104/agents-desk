@@ -450,10 +450,17 @@ export function installMock(): void {
     // id must never be reissued to a different terminal.
     mock.sessionSeq += 1;
     const id = `s${mock.sessionSeq}`;
+    // The core counts a repeated directory name up rather than handing out
+    // the same row name twice — see Core::unique_title. Without it here the
+    // frontend would be tested against a list the app never produces.
+    const base = cwd.split('/').filter(Boolean).pop() ?? cwd;
+    const taken = new Set(mock.sessions.map((s) => s.title));
+    let title = base;
+    for (let n = 2; taken.has(title); n += 1) title = `${base} ${n}`;
     return {
       id,
       cwd,
-      title: cwd.split('/').filter(Boolean).pop() ?? cwd,
+      title,
       agent,
       status: 'starting',
       created_at: now(),
@@ -600,6 +607,17 @@ export function installMock(): void {
     set_completed: (args) => {
       const s = mock.sessions.find((x) => x.id === args.id);
       if (s) s.completed = Boolean(args.completed);
+      mock.pushSessions();
+      return null;
+    },
+
+    // The core cleans a name to one line and refuses an empty one; the mock
+    // must too, or the frontend is tested against rules the app does not have.
+    rename_session: (args) => {
+      const title = String(args.title).split(/\s+/).filter(Boolean).join(' ');
+      if (!title) throw new Error("a session's name cannot be empty");
+      const s = mock.sessions.find((x) => x.id === args.id);
+      if (s) s.title = title.slice(0, 80);
       mock.pushSessions();
       return null;
     },

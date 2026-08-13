@@ -11,6 +11,7 @@ interface Props {
   onOpen: (id: string) => void;
   onComplete: (id: string, completed: boolean) => void;
   onClose: (id: string) => void;
+  onRename: (id: string, title: string) => void;
 }
 
 const ORDER: Section[] = ['waiting', 'working', 'idle', 'done'];
@@ -38,7 +39,7 @@ function byWorld(rows: SessionMeta[]): Array<[string, SessionMeta[]]> {
  * Sections are ordered the same way as the sidebar, so the two views of the
  * same data never disagree.
  */
-export function Overview({ sessions, unseen, onOpen, onComplete, onClose }: Props) {
+export function Overview({ sessions, unseen, onOpen, onComplete, onClose, onRename }: Props) {
   const t = useT();
   // One timer for every elapsed counter on the page.
   const [now, setNow] = useState(() => Date.now());
@@ -92,6 +93,7 @@ export function Overview({ sessions, unseen, onOpen, onComplete, onClose }: Prop
                         onOpen={onOpen}
                         onComplete={onComplete}
                         onClose={onClose}
+                        onRename={onRename}
                       />
                     ))}
                   </Fragment>
@@ -112,6 +114,7 @@ function Card({
   onOpen,
   onComplete,
   onClose,
+  onRename,
 }: {
   session: SessionMeta;
   unseen: boolean;
@@ -119,9 +122,11 @@ function Card({
   onOpen: (id: string) => void;
   onComplete: (id: string, completed: boolean) => void;
   onClose: (id: string) => void;
+  onRename: (id: string, title: string) => void;
 }) {
   const t = useT();
   const since = elapsed(s.activity_since, now);
+  const [editing, setEditing] = useState(false);
 
   return (
     <article
@@ -136,9 +141,45 @@ function Card({
     >
       <header className="ov-card-head">
         <span className={`dot ${s.status}`} />
-        <button className="card-door ov-title" title={s.cwd} onClick={() => onOpen(s.id)}>
-          {s.title}
-        </button>
+        {editing ? (
+          /* The same rename as the sidebar's, because it is the same name.
+             A view that could only show it, while the other could change it,
+             would be two views of one thing that disagree. */
+          <input
+            className="ov-rename"
+            data-testid={`ov-rename-${s.id}`}
+            autoFocus
+            aria-label={t('sidebar.rename')}
+            defaultValue={s.title}
+            onBlur={(e) => {
+              const next = e.target.value.trim();
+              if (next && next !== s.title) onRename(s.id, next);
+              setEditing(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+              if (e.key === 'Escape') {
+                e.currentTarget.value = s.title;
+                e.currentTarget.blur();
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <button
+            className="card-door ov-title"
+            title={s.cwd}
+            onClick={() => onOpen(s.id)}
+            onDoubleClick={() => setEditing(true)}
+            onKeyDown={(e) => {
+              if (e.key !== 'F2') return;
+              e.preventDefault();
+              setEditing(true);
+            }}
+          >
+            {s.title}
+          </button>
+        )}
         {unseen && <span className="unseen-dot" title={t('unseen.label')} />}
         <span className="ov-agent mono">{s.agent}</span>
       </header>

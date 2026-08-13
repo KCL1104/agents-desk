@@ -1200,6 +1200,7 @@ export default function App() {
         onClose={(id) => void api.closeSession(id)}
         onArchive={(id) => void api.archiveSession(id)}
         onComplete={(id, completed) => void api.setCompleted(id, completed)}
+        onRename={(id, title) => void api.renameSession(id, title)}
         onShowSettings={() => setShowSettings(true)}
       />
 
@@ -1364,6 +1365,7 @@ export default function App() {
             onOpen={onOpen}
             onComplete={(id, completed) => void api.setCompleted(id, completed)}
             onClose={(id) => void api.closeSession(id)}
+            onRename={(id, title) => void api.renameSession(id, title)}
           />
         )}
 

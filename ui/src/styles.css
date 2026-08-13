@@ -572,6 +572,9 @@ textarea { resize: vertical; }
 
 .row-top { display: flex; align-items: center; gap: 7px; }
 .row-title { flex: 1; font-size: var(--fs-data); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Renaming happens where the name is, at the size the name is, so the row
+   does not resize under the cursor at the moment it is being edited. */
+.row-rename { flex: 1; min-width: 0; padding: 1px 4px; font-size: var(--fs-data); }
 /* Hidden until pointed at — or tabbed into. Focus landing on an invisible
    button is the worst of both: the reveal has to follow the keyboard too. */
 .row-actions { display: flex; gap: 2px; opacity: 0; }
@@ -663,6 +666,9 @@ textarea { resize: vertical; }
 
 .ov-card-head { display: flex; align-items: center; gap: 7px; }
 .ov-title { flex: 1; font-weight: 600; font-size: var(--fs-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Editing in place, at the weight and size the name is drawn at, so the head
+   does not jump between reading it and changing it. */
+.ov-rename { flex: 1; min-width: 0; padding: 1px 4px; font-weight: 600; font-size: var(--fs-body); }
 .ov-agent { color: var(--fg-dim); font-size: var(--fs-label); }
 .ov-status { font-size: var(--fs-data); color: var(--fg-dim); }
 
