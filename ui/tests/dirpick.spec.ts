@@ -133,6 +133,34 @@ test.describe('choosing a directory inside a world', () => {
     await expect(page.getByTestId('dirpick-row-picked-repo')).toBeVisible();
   });
 
+  /**
+   * The pointer resting on a row must not decide what Enter in the box does.
+   *
+   * Descending leaves the mouse over whichever row the new list drew under
+   * it, and `onMouseEnter` puts the keyboard cursor there. Enter then took
+   * the cursor's row over the path that had just been typed — going
+   * somewhere nobody asked for, quietly.
+   *
+   * It hid behind a platform difference. Clicking a button moves focus to it
+   * on Linux and Windows, so refocusing the box fired `onFocus` and cleared
+   * the cursor by luck; on macOS a click leaves focus alone, no focus event
+   * follows, and the stale cursor wins. Hence `hover()` rather than
+   * `click()` here — it reproduces the macOS arrangement on any platform,
+   * because the pointer moves and the focus does not.
+   */
+  test('a typed path beats the row the mouse is resting on', async ({ page }) => {
+    await land(page);
+    await openSessionPicker(page);
+    await page.getByTestId('dirpick-row-code').hover();
+
+    await page.getByTestId('dirpick-path').fill('/nope/not/here');
+    await page.getByTestId('dirpick-path').press('Enter');
+
+    await expect(page.getByTestId('dirpick-error')).toBeVisible();
+    // And it went nowhere: the list is the one it was refused from.
+    await expect(page.getByTestId('dirpick-row-code')).toBeVisible();
+  });
+
   /** The keyboard walks the list and Enter descends — the same as clicking,
       because the whole triage loop is keyboard-drivable and a modal that
       forces the mouse would be the one place it stops. */

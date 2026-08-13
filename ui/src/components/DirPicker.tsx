@@ -129,7 +129,19 @@ export function DirPicker({
           data-testid="dirpick-path"
           aria-label={t('pick.path')}
           onFocus={() => setCursor(-1)}
-          onChange={(e) => setTyped(e.target.value)}
+          // Typing is the keyboard saying where it is, and it belongs in the
+          // box. Without this the cursor keeps whatever a passing mouse left
+          // on it — `onMouseEnter` sets it too — and Enter descends into the
+          // row under the pointer instead of going to the path just typed.
+          //
+          // The focus handler above only looked like it covered this. It does
+          // where clicking a row moves focus to that row's button, which is
+          // what happens on Linux and Windows; on macOS a click leaves focus
+          // in the box, no focus event follows, and the stale cursor wins.
+          onChange={(e) => {
+            setTyped(e.target.value);
+            setCursor(-1);
+          }}
         />
         <button
           data-testid="dirpick-ok"
