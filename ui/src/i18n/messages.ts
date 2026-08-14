@@ -117,6 +117,10 @@ export const en = {
   // sentence — the same arrangement the tab strip's own rename uses.
   'sidebar.rename': 'Session name',
   'sidebar.renameHint': 'Rename (F2)',
+  // Both directions get their own sentence rather than one "Toggle sidebar":
+  // the button says what the click will do, which is the half a person needs.
+  'sidebar.fold': 'Collapse the sidebar',
+  'sidebar.unfold': 'Expand the sidebar',
 
   /* ---------------------------- overview ------------------------------ */
   'overview.noAction': 'Nothing in progress',
@@ -143,6 +147,7 @@ export const en = {
   'keys.cyclePanes': 'Next / previous pane',
   'keys.moveCard': 'Move the focused card',
   'keys.cycleTabs': 'Next / previous tab',
+  'keys.sidebar': 'Collapse / expand the sidebar',
   'keys.inspector': 'Toggle the inspector',
   'keys.escape': 'Close the dialog',
   'keys.shellNote': 'Inside a terminal, Marol’s shortcuts take Shift: Ctrl+Shift+E, not Ctrl+E.',
@@ -650,6 +655,8 @@ export const zhTW: Record<MessageKey, string> = {
   'sidebar.removeFromList': '從清單移除',
   'sidebar.rename': 'session 名稱',
   'sidebar.renameHint': '改名（F2）',
+  'sidebar.fold': '收起側欄',
+  'sidebar.unfold': '展開側欄',
 
   /* ---------------------------- overview ------------------------------ */
   'overview.noAction': '沒有進行中的動作',
@@ -674,6 +681,7 @@ export const zhTW: Record<MessageKey, string> = {
   'keys.cyclePanes': '下一個 / 上一個窗格',
   'keys.moveCard': '搬動聚焦的卡片',
   'keys.cycleTabs': '下一個 / 上一個分頁',
+  'keys.sidebar': '收起 / 展開側欄',
   'keys.inspector': '開關檢視器',
   'keys.escape': '關閉對話框',
   'keys.shellNote': '在終端機內，Marol 的快捷鍵需加 Shift：Ctrl+Shift+E，不是 Ctrl+E。',

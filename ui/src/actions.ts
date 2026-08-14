@@ -16,6 +16,7 @@ export type ActionId =
   | 'last-session'
   | 'new-card'
   | 'new-session'
+  | 'toggle-sidebar'
   | 'toggle-inspector'
   | 'view-terminal'
   | 'view-board'
@@ -62,6 +63,10 @@ export const ACTIONS: readonly ActionDef[] = [
   // 已經是叫出面板的寫法),C 是複製,E/F/I 各有原主。
   { id: 'new-card', title: 'board.newCard', keys: '⌘/Ctrl + Shift + N' },
   { id: 'new-session', title: 'sidebar.newSession', keys: null },
+  // B 是每個有側欄的編輯器都用的那顆,所以它不必被學。Ctrl+B 是
+  // readline 的 backward-char,終端機內因此要加 Shift —— 與 E/L/F/I
+  // 同一條規則,不是這顆的例外。
+  { id: 'toggle-sidebar', title: 'keys.sidebar', keys: '⌘/Ctrl + B' },
   { id: 'toggle-inspector', title: 'keys.inspector', keys: '⌘/Ctrl + I', when: (c) => c.canInspect },
   { id: 'view-terminal', title: 'view.terminal', keys: '⌘/Ctrl + 1' },
   { id: 'view-board', title: 'view.board', keys: '⌘/Ctrl + 2' },
